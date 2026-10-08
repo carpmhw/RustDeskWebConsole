@@ -15,3 +15,7 @@ csharp_style_namespace_declarations = file_scoped:warning
 
 [*.{csproj,props}]
 indent_size = 2
+
+[**/Migrations/*.cs]
+charset = utf-8-bom
+csharp_style_namespace_declarations = block_scoped:silent
