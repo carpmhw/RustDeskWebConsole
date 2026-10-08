@@ -1,0 +1,79 @@
+name: M0 verification
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Restore locked dependencies
+        run: |
+          dotnet restore RdWeb.sln --locked-mode
+          dotnet tool restore
+          corepack pnpm --dir frontend install --frozen-lockfile
+      - name: Backend checks
+        run: |
+          dotnet build RdWeb.sln -c Release --no-restore
+          dotnet test RdWeb.sln -c Release --no-build
+          dotnet format RdWeb.sln --verify-no-changes --no-restore
+          dotnet list RdWeb.sln package --vulnerable --include-transitive
+      - name: Frontend checks
+        run: |
+          corepack pnpm --dir frontend lint
+          corepack pnpm --dir frontend test
+          corepack pnpm --dir frontend build
+          corepack pnpm --dir frontend audit --audit-level high
+      - name: Third-party licenses
+        run: |
+          frontend/node_modules/.bin/eslint tools
+          frontend/node_modules/.bin/prettier --check tools/*.mjs .github/workflows/*.yml deploy/dev/*.yml README.md THIRD_PARTY_NOTICES.md
+          node tools/licenses.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-licenses
+          path: artifacts/*-licenses.json
+      - name: Runtime crypto and timezone spikes
+        run: |
+          docker build -f deploy/dev/Dockerfile.api -t rdweb-m0-api .
+          node tools/test-container-timezones.mjs
+      - name: Real nginx subpath matrix
+        run: |
+          corepack pnpm --dir frontend exec playwright install --with-deps chromium
+          bash deploy/dev/test-subpaths.sh
+      - name: Proxy failure must not log request contents
+        run: |
+          docker compose -f deploy/dev/docker-compose.spikes.yml up -d --wait --wait-timeout 60
+          node tools/test-proxy-log-redaction.mjs
+      - name: Cleanup spike containers
+        if: always()
+        run: docker compose -f deploy/dev/docker-compose.spikes.yml down
+  rustdesk-desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build isolated desktop test environment
+        run: |
+          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml build
+          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml up -d --wait --wait-timeout 90
+          node tools/wait-rustdesk-online.mjs
+          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml --profile acceptance up -d --wait --wait-timeout 90
+      - name: Official desktop receives target clock
+        run: |
+          mkdir -p artifacts
+          node tools/capture-rustdesk.mjs artifacts/rustdesk-desktop.png --verify
+      - name: Cleanup test containers
+        if: always()
+        run: docker compose -f deploy/dev/docker-compose.rustdesk-test.yml --profile acceptance down
