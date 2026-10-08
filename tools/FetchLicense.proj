@@ -1,0 +1,6 @@
+<Project DefaultTargets="FetchLicense">
+  <!-- 取得未修改的 GNU 官方授權全文，不以自寫摘要取代授權條款。 -->
+  <Target Name="FetchLicense">
+    <DownloadFile SourceUrl="https://raw.githubusercontent.com/rustdesk/rustdesk/1.4.2/LICENCE" DestinationFolder="$(MSBuildProjectDirectory)/../obj/official-license" DestinationFileName="AGPL-3.0.txt" />
+  </Target>
+</Project>
