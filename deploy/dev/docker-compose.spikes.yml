@@ -1,0 +1,59 @@
+name: rdweb-m0
+services:
+  backend:
+    image: rdweb-m0-api
+    build:
+      context: ../..
+      dockerfile: deploy/dev/Dockerfile.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      APP_BASE_PATH: ${APP_BASE_PATH:-/}
+      APP_PUBLIC_URL: http://127.0.0.1:${RDWEB_DEV_PORT:-18080}${APP_BASE_PATH:-/}
+      TRUSTED_PROXIES: 172.30.70.0/24
+      LOG_TIME_ZONE: ${LOG_TIME_ZONE:-UTC}
+      TZ: UTC
+    healthcheck:
+      test: [CMD, dotnet, RdWeb.Api.dll, healthcheck]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    networks: [spikes]
+  web:
+    image: rdweb-m0-web
+    build:
+      context: ../..
+      dockerfile: deploy/dev/Dockerfile.web
+    environment:
+      APP_BASE_PATH: ${APP_BASE_PATH:-/}
+      DEFAULT_DISPLAY_TIME_ZONE: ${DEFAULT_DISPLAY_TIME_ZONE:-Asia/Taipei}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks: [spikes]
+  ingress:
+    image: rdweb-m0-web
+    environment:
+      WEB_ROLE: ingress
+      APP_BASE_PATH: ${APP_BASE_PATH:-/}
+      PREFIX_MODE: ${PREFIX_MODE:-preserve}
+    ports:
+      - 127.0.0.1:${RDWEB_DEV_PORT:-18080}:8080
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks: [spikes]
+networks:
+  spikes:
+    ipam:
+      config:
+        - subnet: 172.30.70.0/24

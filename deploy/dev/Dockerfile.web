@@ -1,0 +1,16 @@
+FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS build
+WORKDIR /source
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+RUN corepack pnpm install --frozen-lockfile
+COPY frontend/ ./
+RUN corepack pnpm build
+
+FROM nginx:stable-bookworm@sha256:552e7481ca93ffccd046aa658dbbed22caefbc09c66fa7cd247cbb90b8a5c609
+COPY --from=build /source/dist/ /usr/share/nginx/html/
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/nginx/html/
+COPY deploy/dev/nginx.conf.template deploy/dev/ingress.conf.template /etc/rdweb/
+COPY deploy/dev/entrypoint-web.sh /etc/rdweb/entrypoint.sh
+RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx
+USER nginx
+EXPOSE 8080
+ENTRYPOINT ["sh", "/etc/rdweb/entrypoint.sh"]

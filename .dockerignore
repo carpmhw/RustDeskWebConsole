@@ -1,0 +1,15 @@
+.git
+.opencode
+openspec
+docs
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
+**/.env
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/id_ed25519*
