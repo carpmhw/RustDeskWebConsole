@@ -23,7 +23,7 @@ test('deep route, runtime prefix and timezone preference', async ({ page }) => {
   })
   // CSP 或執行期錯誤應直接使端對端驗收失敗。
   page.on('pageerror', (error) => errors.push(error.message))
-  const navigation = await page.goto(`${base}/targets/example`)
+  const navigation = await page.goto(`${base}/login`)
   expect(navigation?.status()).toBe(200)
   expect(navigation?.headers()['x-frame-options']).toBe('DENY')
   expect(navigation?.headers()['content-security-policy']).toContain("frame-ancestors 'none'")

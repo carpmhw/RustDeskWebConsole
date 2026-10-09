@@ -11,6 +11,10 @@ services:
       APP_PUBLIC_URL: http://127.0.0.1:${RDWEB_DEV_PORT:-18080}${APP_BASE_PATH:-/}
       TRUSTED_PROXIES: 172.30.70.0/24
       LOG_TIME_ZONE: ${LOG_TIME_ZONE:-UTC}
+      SECRET_KEY: ${SECRET_KEY:-}
+      VAULT_KEY: ${VAULT_KEY:-}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       TZ: UTC
     healthcheck:
       test: [CMD, dotnet, RdWeb.Api.dll, healthcheck]

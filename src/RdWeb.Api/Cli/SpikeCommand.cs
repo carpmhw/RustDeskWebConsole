@@ -56,11 +56,4 @@ public static class SpikeCommand
         new TimeZoneLogFormatter(zone).Format(logEvent, Console.Out);
     }
 
-    // 執行映像自帶健康探測，不依賴 curl、shell 或容器本地時區。
-    public static async Task HealthcheckAsync()
-    {
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        using var response = await client.GetAsync("http://127.0.0.1:8080/api/v1/health");
-        response.EnsureSuccessStatusCode();
-    }
 }

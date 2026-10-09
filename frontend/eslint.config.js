@@ -13,7 +13,7 @@ export default [
         'error',
         {
           selector:
-            'CallExpression[callee.name=/^(fetch|WebSocket)$/] > Literal.arguments[value=/^\\//]',
+            ':matches(CallExpression, NewExpression)[callee.name=/^(fetch|WebSocket|URL)$/] > Literal.arguments[value=/^\\//]',
           message: 'URL 必須透過 basePath 工具產生，禁止直接使用根路徑網址。',
         },
       ],

@@ -18,11 +18,15 @@ export function isValidTimeZone(zone: string): boolean {
 }
 
 // API 字串必須明確帶 UTC／offset，統一以選定時區及二十四小時制顯示。
-export function formatTimestamp(value: string | null, zone = DEFAULT_TIME_ZONE): string {
+export function formatTimestamp(
+  value: string | null,
+  zone = DEFAULT_TIME_ZONE,
+  locale = 'zh-TW',
+): string {
   if (!value || !/(Z|[+-]\d{2}:\d{2})$/.test(value)) return '—'
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return '—'
-  return new Intl.DateTimeFormat('zh-TW', {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: isValidTimeZone(zone) ? zone : DEFAULT_TIME_ZONE,
     year: 'numeric',
     month: '2-digit',

@@ -8,6 +8,7 @@ RUN dotnet restore src/RdWeb.Api --locked-mode && dotnet publish src/RdWeb.Api -
 FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:222759b391a1aaf241166672c8f99b2d4ada452e7b5319f3c6e8f265a37b5ad4
 WORKDIR /app
 COPY --from=build /out ./
+RUN mkdir -p /app/data && chown app:app /app/data && chmod 700 /app/data
 ENV ASPNETCORE_HTTP_PORTS=8080 LOG_TIME_ZONE=UTC TZ=UTC
 USER app
 EXPOSE 8080

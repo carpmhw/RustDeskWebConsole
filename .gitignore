@@ -38,6 +38,9 @@ ScaffoldingReadMe.txt
 
 # dotenv environment variables file
 .env
+*.db
+*.db-shm
+*.db-wal
 
 # Others
 ~$*
@@ -55,3 +58,9 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# OpenCode agent workspace (local tooling, do not commit)
+.opencode/
+.superpowers/
+openspec
+docs

@@ -94,7 +94,7 @@ public sealed class PathBaseTests
     // 在主機建置前注入每個案例的設定與來源 IP。
     internal static WebApplicationFactory<Program> CreateFactory(string prefix, string remoteIp = "127.0.0.1", string environment = "Development")
     {
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        return new TestApplicationFactory(builder =>
         {
             builder.UseEnvironment(environment);
             // 模擬啟動時讀取 Docker 環境設定。
