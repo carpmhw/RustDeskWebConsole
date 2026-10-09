@@ -1,5 +1,24 @@
 import { expect, it } from 'vitest'
 import { routeDecision, safeNext } from './policy'
+// Viewer硬上限同樣適用console direct route，而非僅隱藏連線link。
+it('does not let a viewer open console routes', () => {
+  expect(
+    routeDecision(
+      {
+        phase: 'authenticated',
+        user: {
+          id: 'id',
+          username: 'reader',
+          role: 'viewer',
+          totp_enabled: false,
+          mfa_enrollment_required: false,
+        },
+      },
+      'console',
+      true,
+    ),
+  ).toBe('targets')
+})
 
 // Restricted session不能透過網址或導覽繞過必要綁定。
 it('guards anonymous and MFA-restricted navigation', () => {

@@ -25,6 +25,8 @@ public static class AuthenticationRegistration
         services.AddScoped<RdWeb.Api.RustDesk.ConnectionCoordinator>();
         services.AddSingleton<RdWeb.Api.RustDesk.ConnectionSlots>();
         services.AddSingleton<RdWeb.Api.RustDesk.RelayBridge>();
+        services.AddSingleton<RdWeb.Api.RustDesk.ActiveConnectionRegistry>();
+        services.AddScoped<RdWeb.Api.RustDesk.LoginAssistService>();
         services.AddSingleton<RdWeb.Api.RustDesk.ConnectionProbe>();
         services.AddSingleton<RdWeb.Api.RustDesk.ProbeSlots>();
         services.AddScoped<RdWeb.Api.RustDesk.ServerService>();

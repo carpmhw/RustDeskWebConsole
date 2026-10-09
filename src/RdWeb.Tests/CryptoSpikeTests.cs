@@ -6,6 +6,16 @@ namespace RdWeb.Tests;
 
 public sealed class CryptoSpikeTests
 {
+    // Browser公開wire fixtures須由獨立Google.Protobuf encoder交叉確認。
+    [Fact]
+    public void BrowserLoginFixturesMatchPinnedSchema()
+    {
+        var hash = new Message { Hash = new Hash { Salt = "s", Challenge = "c" } };
+        Assert.Equal(new byte[] { 0x4a, 6, 0x0a, 1, 115, 0x12, 1, 99 }, hash.ToByteArray());
+        var identity = new IdPk { Id = "123456789", Pk = ByteString.CopyFrom(new byte[32]) };
+        Assert.Equal(new byte[] { 10, 9, 49, 50, 51, 52, 53, 54, 55, 56, 57, 18, 32 }.Concat(new byte[32]), identity.ToByteArray());
+    }
+
     // RFC 8032 公開向量只包含公鑰與簽章，不儲存任何測試私鑰。
     [Fact]
     public void Ed25519AcceptsPublicVectorAndRejectsTampering()

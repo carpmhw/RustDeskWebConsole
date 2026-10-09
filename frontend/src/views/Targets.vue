@@ -85,6 +85,10 @@ function canEdit(row: TargetRow): boolean {
 function canReveal(row: TargetRow): boolean {
   return writer.value && row.has_password === true && row.permissions.can_view_password === true
 }
+// 連線入口依role ceiling與effective can_connect，票證不放新tab URL。
+function canConnect(row: TargetRow): boolean {
+  return writer.value && row.permissions.can_connect === true
+}
 // 新選目標會卸載上一個敏感dialog，不預填密碼。
 function edit(row?: TargetRow): void {
   revealTarget.value = null
@@ -333,6 +337,13 @@ onBeforeUnmount(() => {
               <td>{{ updated(row) }}</td>
               <td>
                 <div class="row-actions">
+                  <RouterLink
+                    v-if="canConnect(row)"
+                    :to="{ name: 'console', params: { targetId: row.id } }"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >{{ t('consoleUI.connect') }}</RouterLink
+                  >
                   <button v-if="canEdit(row)" type="button" :disabled="busy" @click="edit(row)">
                     {{ t('manage.edit') }}</button
                   ><button

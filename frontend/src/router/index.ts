@@ -9,6 +9,7 @@ import Preferences from '../views/Preferences.vue'
 import NotFound from '../views/NotFound.vue'
 import Servers from '../views/Servers.vue'
 import Targets from '../views/Targets.vue'
+import Console from '../views/Console.vue'
 
 export const router = createRouter({
   history: createWebHistory(runtimeBase() || '/'),
@@ -19,6 +20,7 @@ export const router = createRouter({
     { path: '/preferences', name: 'preferences', component: Preferences, meta: { auth: true } },
     { path: '/servers', name: 'servers', component: Servers, meta: { auth: true } },
     { path: '/targets', name: 'targets', component: Targets, meta: { auth: true } },
+    { path: '/console/:targetId', name: 'console', component: Console, meta: { auth: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound },
   ],
 })

@@ -1,0 +1,8 @@
+# 僅真官方browser runner使用此network，不改变production-like spike wiring。
+services:
+  backend:
+    networks: [spikes, official-rustdesk]
+networks:
+  official-rustdesk:
+    external: true
+    name: rdweb-rustdesk-test_default

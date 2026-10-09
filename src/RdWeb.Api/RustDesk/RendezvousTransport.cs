@@ -6,12 +6,14 @@ using System.Net.WebSockets;
 using System.Threading.Channels;
 using Google.Protobuf;
 using Hbb;
+using RdWeb.Api.Endpoints;
 using RdWeb.Api.Security;
 
 namespace RdWeb.Api.RustDesk;
 
 public interface IRustDeskUpstreamSession : IAsyncDisposable
 {
+    VerifiedPeerIdentity? PeerIdentity { get => null; set => throw new NotSupportedException(); }
     string Transport { get; }
     // Control messages依上游TCP或WebSocket framing傳送。
     Task SendControlAsync(RendezvousMessage message, CancellationToken cancellationToken);
@@ -153,6 +155,7 @@ public sealed class RendezvousTransport(ApprovedHostResolver resolver)
 
     private sealed class TcpUpstreamSession : IRustDeskUpstreamSession
     {
+        public VerifiedPeerIdentity? PeerIdentity { get; set; }
         private readonly NetworkStream _stream;
         private readonly CancellationTokenSource _lifetime = new();
         private readonly ControlMessagePump _controlMessages;
@@ -195,6 +198,7 @@ public sealed class RendezvousTransport(ApprovedHostResolver resolver)
 
     private sealed class WebSocketUpstreamSession : IRustDeskUpstreamSession
     {
+        public VerifiedPeerIdentity? PeerIdentity { get; set; }
         private readonly ClientWebSocket _socket;
         private readonly HttpMessageInvoker _invoker;
         private readonly CancellationTokenSource _lifetime = new();

@@ -13,7 +13,7 @@ using RdWeb.Api.Targets;
 namespace RdWeb.Api.RustDesk;
 
 public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy policy, RendezvousTransport transport, TimeProvider clock,
-    ConnectionSlots slots, RelayBridge bridge, AuditWriter audits)
+    ConnectionSlots slots, RelayBridge bridge, AuditWriter audits, ActiveConnectionRegistry registry)
 {
     private const string RustDeskProtocolVersion = "1.4.2";
     private static readonly TimeSpan RelayRaceDelay = TimeSpan.FromMilliseconds(300);
@@ -34,7 +34,8 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
                     new(AuditReason.Completed), "target", grant.TargetId), cancellationToken);
                 started = true;
                 await using var relay = await EstablishRelayAsync(grant, cancellationToken);
-                await bridge.RunAsync(browser, relay, cancellationToken, progress);
+                using var active = registry.Register(grant, relay.PeerIdentity ?? throw new AuthException("service_unavailable", 503));
+                await bridge.RunAsync(browser, relay, cancellationToken, progress, new(active.Id, grant.TargetId, active.Peer));
                 success = true;
             }
         }
@@ -144,12 +145,14 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
         await using var rendezvous = await transport.ConnectAsync(idEndpoint, server.Transport, server.AllowPrivateNetwork, cancellationToken);
         var peerRelay = await RequestPeerRelayAsync(rendezvous, punch, cancellationToken);
         var signingKey = Convert.FromBase64String(server.PublicKey);
+        VerifiedPeerIdentity peerIdentity;
         try
         {
-            if (!PeerIdentityVerifier.TryVerify(signingKey, peerRelay.Pk.Span, target.RustDeskId, out _))
+            if (!PeerIdentityVerifier.TryVerify(signingKey, peerRelay.Pk.Span, target.RustDeskId, out var identity))
                 throw new AuthException("service_unavailable", StatusCodes.Status503ServiceUnavailable);
             if (!Guid.TryParseExact(peerRelay.Uuid, "D", out var relayUuid) || relayUuid == Guid.Empty)
                 throw new AuthException("service_unavailable", StatusCodes.Status503ServiceUnavailable);
+            peerIdentity = new(identity!.Id, Convert.ToBase64String(identity.Pk.Span));
         }
         finally
         {
@@ -170,6 +173,7 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
                     ConnType = ConnType.DefaultConn
                 }
             }, cancellationToken);
+            relay.PeerIdentity = peerIdentity;
             return relay;
         }
         catch

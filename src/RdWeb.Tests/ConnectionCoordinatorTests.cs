@@ -197,8 +197,11 @@ public sealed class ConnectionCoordinatorTests
         };
         database.RustDeskServers.Add(server);
         database.Targets.Add(target);
+        var actor = await database.Users.SingleAsync(user => user.Id == userId);
+        var session = factory.Services.GetRequiredService<TokenService>().Create(actor, false);
+        database.RefreshTokens.Add(session.Token);
         await database.SaveChangesAsync();
-        return (factory, new ConnectionGrant(userId, target.Id));
+        return (factory, new ConnectionGrant(userId, target.Id, new(session.Token.FamilyId, actor.AuthVersion, actor.Role, false)));
     }
 
     // Fake hbbs讀取PunchHoleRequest並回傳由server key簽署的RelayResponse IdPk。
@@ -209,7 +212,7 @@ public sealed class ConnectionCoordinatorTests
         var stream = client.GetStream();
         var request = RendezvousMessage.Parser.ParseFrom(await RustDeskByteStreamCodec.ReadControlFrameAsync(stream, cancellationToken));
         requestObserved.TrySetResult(request);
-        var peerKey = RandomNumberGenerator.GetBytes(32);
+        var peerKey = Enumerable.Range(1, 32).Select(value => (byte)value).ToArray();
         var signedIdPk = SignAttached(signingKey, new IdPk { Id = targetId, Pk = ByteString.CopyFrom(peerKey) }.ToByteArray());
         var response = new RendezvousMessage
         {

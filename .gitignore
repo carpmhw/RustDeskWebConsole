@@ -64,3 +64,4 @@ nunit-*.xml
 .superpowers/
 openspec
 docs
+frontend/.cache/

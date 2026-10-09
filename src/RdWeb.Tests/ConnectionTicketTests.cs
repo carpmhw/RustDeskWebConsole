@@ -15,6 +15,24 @@ namespace RdWeb.Tests;
 
 public sealed class ConnectionTicketTests
 {
+    // ticket發出後logout撤銷family，仍active的user也不能消耗舊ticket。
+    [Fact]
+    public async Task RevokedLoginFamilyCannotConsumeTicket()
+    {
+        await using var factory = new TestApplicationFactory();
+        var setup = await CreateOwnerTargetAsync(factory, "123456789");
+        using var owner = setup.Owner;
+        var issued = await IssueTicketAsync(owner, setup.TargetId);
+        await using (var db = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync())
+        {
+            foreach (var token in await db.RefreshTokens.ToListAsync()) token.RevokedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        await using var scope = factory.Services.CreateAsyncScope();
+        await Assert.ThrowsAsync<AuthException>(() => scope.ServiceProvider.GetRequiredService<ConnectionTicketService>()
+            .ConsumeAsync(setup.TargetId, issued.Ticket, CancellationToken.None));
+    }
+
     // Owner只能取得短效、不含target metadata的單次連線ticket。
     [Fact]
     public async Task OwnerIssueReturnsOpaqueThirtySecondTicket()

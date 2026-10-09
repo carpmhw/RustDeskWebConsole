@@ -2,7 +2,16 @@ import tseslint from 'typescript-eslint'
 import vue from 'eslint-plugin-vue'
 
 export default [
-  { ignores: ['dist/**', 'node_modules/**', 'playwright-report/**', 'test-results/**'] },
+  {
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+      'src/rdweb/generated/**',
+      '.cache/**',
+    ],
+  },
   ...tseslint.configs.recommended,
   ...vue.configs['flat/essential'],
   { files: ['**/*.vue'], languageOptions: { parserOptions: { parser: tseslint.parser } } },

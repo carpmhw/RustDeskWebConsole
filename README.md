@@ -2,9 +2,9 @@
 
 依 C#／ASP.NET Core v0.2 計畫開發的自架瀏覽器遠端主控台，採 AGPL-3.0-or-later。
 
-目前階段為 **M3-A：單次 ticket 與後端 relay bridge 已完成本機驗收**。M0、完整 M1、M2-A／B／C 與 M3-A 均已通過；下一工作單元為 M3-B 瀏覽器主控台。
+目前階段為 **M3-B1：瀏覽器安全握手與登入已完成本機驗收**。M0、完整 M1、M2 與 M3-A／B1 均已通過；下一工作單元為 M3-B2 影像主控台。
 
-提供帳密／TOTP／備援碼登入、JWT／refresh 輪替、強制 MFA、使用者管理與 bootstrap。前端已有 Login／Security、伺服器／目標管理、ACL、獨立 30 秒密碼顯示、metadata CSV／批刪、頂部導覽、中英文及主題／時區偏好。最新驗證為後端一般套件 206 項、官方 RustDesk relay 整合 2 項、前端 41 項及完整管理／認證 subpath E2E 72 項通過；本機驗收紀錄見 `docs/M3A_ACCEPTANCE.md`、`docs/M2C_ACCEPTANCE.md` 與 `docs/M2_ACCEPTANCE.md`。
+提供帳密／TOTP／備援碼登入、JWT／refresh 輪替、強制 MFA、使用者管理與 bootstrap。前端已有 Login／Security、伺服器／目標管理、ACL、獨立 30 秒密碼顯示、metadata CSV／批刪、頂部導覽、中英文及主題／時區偏好。最新驗證為後端一般套件 227 項、官方 relay 整合 2 項、前端 60 項、原 subpath E2E 72 項，以及真正瀏覽器加密登入 12 項通過；本機驗收紀錄見 `docs/M3B1_ACCEPTANCE.md`。
 
 ## 時間與時區
 
@@ -220,6 +220,15 @@ Probe 只做 TCP 可達性及公鑰格式檢查，回 `check=tcp_socket`、`prot
 - `rdweb.ready` 帶 saved `transport`：TCP 轉送 BytesCodec byte stream，WS 保留 binary message／fragment 邊界。`transport=ws` 使用保存的實際 WS listener `host:port` 根路徑，不自動 +2 或推導 TLS／proxy path。
 - 全站最多五條，兩方向各有 16 × 16 KiB bounded queue，背壓無進展 30 秒斷線；結束／取消歸還 `conn:*`，稽核只含 target UUID、固定分類、時長與流量。
 - 此階段只交付 opaque relay。瀏覽器 RustDesk 加密登入、Vault login-assist、影像解碼、輸入／剪貼簿與 50 次連線成功率驗收接續於 M3-B。
+
+## M3-B1 瀏覽器安全登入
+
+- 在目標列表依 `can_connect` 點「連線」，開新分頁 `{BASE}/console/{targetId}`。B1 真正收到加密 `LoginResponse.PeerInfo` 後顯示安全摘要並結束驗證連線；影像與操作接續 B2／B3。
+- 專用 Worker 持有 WS、NaCl 對稱金鑰與 nonce，主執行緒保留 AuthSession／HTTP；簽章或 MAC 不符即中止，不降級登入。
+- Ready 的 `peer_signing_key` 來自 hbbs 驗證過的 IdPk。Ticket 與活躍 `connection_id` 綁定 user／target／登入 family、安全版本及 MFA；登出後舊 ticket 不可取用。
+- `POST {BASE}/api/v1/targets/{id}/login-assist` 使用完整 JWT／Origin、當次 connection_id、salt／challenge，重驗 `can_connect`；每連線一次、每 user／IP 五次／分鐘。只有最終 32-byte proof 傳給 Worker，Vault 密碼與第一層 hash 留後端。
+- 前端使用 pinned schema 靜態生成 codec、TweetNaCl，維持 CSP；取消、離頁或身分變更清除 HTTP／Worker／key，舊回應不得復活。
+- `bash deploy/dev/test-m3b1-login.sh` 執行六組 prefix／proxy 模式 × TCP／WS，共 12 個官方瀏覽器登入案例，每案亦測新分頁與 deep reload。Runner 的額外 Docker network 僅供隔離測試；fixture password 只經正式 admin API 送到 backend Vault，不傳 browser 或存檔。
 
 計畫、決策、版本矩陣與驗收結果位於本機 `docs/`，依使用者既有 `.gitignore` 保留在本機。
 可追蹤的第三方來源與授權摘要見 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)；CI 產出完整依賴授權清單。

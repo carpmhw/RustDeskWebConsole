@@ -1,5 +1,23 @@
 export const messages = {
   'zh-TW': {
+    consoleUI: {
+      title: '安全登入驗證',
+      connect: '連線',
+      retry: '重新驗證',
+      failure: '安全登入失敗。請檢查目標、權限或設定後重新驗證。',
+      displays: '{count} 個螢幕',
+      phases: {
+        connecting: '正在建立連線…',
+        awaiting_ready: '正在等待配對…',
+        verifying_identity: '正在驗證受控端身分…',
+        awaiting_hash: '加密通道已建立，等待登入挑戰…',
+        assisting: '正在驗證登入資訊…',
+        awaiting_login: '正在等待受控端登入結果…',
+        verified: '安全登入驗證成功，連線已結束。',
+        failed: '驗證失敗',
+        closed: '連線已取消／關閉',
+      },
+    },
     targets: '目標主機',
     targetUI: {
       listHint: '只列出你可見的目標與有效權限。',
@@ -183,6 +201,24 @@ export const messages = {
     },
   },
   en: {
+    consoleUI: {
+      title: 'Secure login verification',
+      connect: 'Connect',
+      retry: 'Verify again',
+      failure: 'Secure login failed. Check target, permissions or settings and try again.',
+      displays: '{count} displays',
+      phases: {
+        connecting: 'Connecting…',
+        awaiting_ready: 'Waiting for relay pairing…',
+        verifying_identity: 'Verifying peer identity…',
+        awaiting_hash: 'Encrypted channel ready, awaiting challenge…',
+        assisting: 'Verifying login information…',
+        awaiting_login: 'Awaiting peer login response…',
+        verified: 'Secure login verified. Connection ended.',
+        failed: 'Verification failed',
+        closed: 'Connection cancelled / closed',
+      },
+    },
     targets: 'Targets',
     targetUI: {
       listHint: 'Only visible targets and effective permissions are shown.',

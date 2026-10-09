@@ -65,6 +65,8 @@ jobs:
           node tools/test-proxy-log-redaction.mjs --start
       - name: Pinned RustDesk TCP and WebSocket relay
         run: bash deploy/dev/test-m3a-relay.sh
+      - name: Official browser secure login matrix
+        run: bash deploy/dev/test-m3b1-login.sh
       - name: Cleanup spike containers
         if: always()
         run: |

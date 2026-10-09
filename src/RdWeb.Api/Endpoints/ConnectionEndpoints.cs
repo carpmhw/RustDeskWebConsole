@@ -13,9 +13,14 @@ public static class ConnectionEndpoints
     {
         var group = app.MapGroup("/api/v1/targets").AddEndpointFilter<AuthApiFilter>().RequireAuthorization().RequireRateLimiting("auth-work");
         group.MapPost("/{id:guid}/connect-ticket", IssueTicketAsync);
+        group.MapPost("/{id:guid}/login-assist", AssistAsync);
         // WS票證授權與JWT group分離，避免把長連線綁在auth-work名額。
         app.MapGet("/api/v1/targets/{id:guid}/connect", ConnectAsync);
     }
+    // 只回當次最終proof，密碼與中間hash不得進DTO或audit。
+    private static async Task<IResult> AssistAsync(Guid id, LoginAssistRequest request, ClaimsPrincipal principal,
+        HttpContext http, LoginAssistService service, CancellationToken ct)
+        => Results.Ok(await service.AssistAsync(principal, id, request, MfaEndpoints.Ip(http), ct));
 
     // Origin先於TakeOnce檢查；只協商固定rdweb.v1，不echo敏感票證subprotocol。
     private static async Task ConnectAsync(Guid id, HttpContext http, AppOptions options, ConnectionTicketService tickets,

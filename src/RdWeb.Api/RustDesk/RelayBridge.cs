@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
+using RdWeb.Api.Endpoints;
 
 namespace RdWeb.Api.RustDesk;
 
@@ -23,7 +24,7 @@ public sealed class RelayBridge
 
     // 兩方向各自bounded producer/consumer；任何方向終止均取消另一方向。
     public async Task<RelayTotals> RunAsync(WebSocket browser, IRustDeskUpstreamSession upstream,
-        CancellationToken cancellationToken, RelayProgress? progress = null)
+        CancellationToken cancellationToken, RelayProgress? progress = null, RelayReady? ready = null)
     {
         progress ??= new RelayProgress();
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -31,8 +32,8 @@ public sealed class RelayBridge
         var toTarget = CreateQueue();
         var readTarget = ProduceAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toBrowser.Writer, true, upstream.Transport, lifetime.Token);
         var readBrowser = ProduceAsync(null, browser, toTarget.Writer, false, upstream.Transport, lifetime.Token);
-        var sendBrowser = ConsumeAsync(null, browser, toBrowser.Reader, true, upstream.Transport, progress, lifetime.Token);
-        var sendTarget = ConsumeAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toTarget.Reader, false, upstream.Transport, progress, lifetime.Token);
+        var sendBrowser = ConsumeAsync(null, browser, toBrowser.Reader, true, upstream.Transport, progress, lifetime.Token, ready);
+        var sendTarget = ConsumeAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toTarget.Reader, false, upstream.Transport, progress, lifetime.Token, ready);
         var consumers = new[] { sendBrowser, sendTarget };
         try
         {
@@ -136,7 +137,7 @@ public sealed class RelayBridge
 
     // 消費queue時才計數成功交付；ready固定先於首個peer binary chunk。
     private static async Task ConsumeAsync(Stream? stream, WebSocket? socket, ChannelReader<Chunk> input,
-        bool browser, string transport, RelayProgress progress, CancellationToken cancellationToken)
+        bool browser, string transport, RelayProgress progress, CancellationToken cancellationToken, RelayReady? metadata)
     {
         var ready = false;
         await foreach (var chunk in input.ReadAllAsync(cancellationToken))
@@ -147,7 +148,18 @@ public sealed class RelayBridge
             {
                 if (browser && !ready && chunk.Count > 0)
                 {
-                    var control = JsonSerializer.SerializeToUtf8Bytes(new { type = "rdweb.ready", protocol = "rustdesk/1.4.2", transport });
+                    var control = metadata == null
+                        ? JsonSerializer.SerializeToUtf8Bytes(new { type = "rdweb.ready", protocol = "rustdesk/1.4.2", transport })
+                        : JsonSerializer.SerializeToUtf8Bytes(new
+                        {
+                            type = "rdweb.ready",
+                            protocol = "rustdesk/1.4.2",
+                            transport,
+                            connection_id = metadata.ConnectionId,
+                            target_id = metadata.TargetId,
+                            rustdesk_id = metadata.Peer.RustDeskId,
+                            peer_signing_key = metadata.Peer.SigningKey
+                        });
                     await socket!.SendAsync(control.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
                     ready = true;
                 }

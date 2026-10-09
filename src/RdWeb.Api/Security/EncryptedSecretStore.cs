@@ -8,6 +8,18 @@ namespace RdWeb.Api.Security;
 
 public sealed class EncryptedSecretStore(AppDbContext database, Vault vault)
 {
+    // Login-assist只讀UUID/AAD正確的短命password bytes，caller必須finally清除。
+    public async Task<byte[]?> GetPasswordBytesAsync(Guid targetId, Guid? secretId, CancellationToken ct)
+    {
+        if (secretId == null) return null;
+        var row = await database.EncryptedSecrets.AsNoTracking().SingleOrDefaultAsync(secret => secret.Id == secretId
+            && secret.ObjectType == "target" && secret.ObjectId == targetId, ct);
+        if (row == null) throw new CryptographicException("Target secret binding rejected.");
+        var bytes = vault.Decrypt(new(row.Ciphertext, row.Nonce, row.KeyVersion), Aad(targetId));
+        if (bytes.Length is < 1 or > 4096) { CryptographicOperations.ZeroMemory(bytes); throw new CryptographicException("Target secret size rejected."); }
+        return bytes;
+    }
+
     // 目標密碼只以AAD綁定的AES-GCM envelope保存，明文bytes立即清除。
     public async Task SetAsync(Guid targetId, string password, CancellationToken cancellationToken = default)
     {

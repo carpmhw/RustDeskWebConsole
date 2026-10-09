@@ -69,6 +69,10 @@ public sealed class ConnectionEndpointsTests
         {
             Assert.Equal("rdweb.ready", json.RootElement.GetProperty("type").GetString());
             Assert.Equal("tcp", json.RootElement.GetProperty("transport").GetString());
+            Assert.Equal(setup.Grant.TargetId, json.RootElement.GetProperty("target_id").GetGuid());
+            Assert.Equal("123456789", json.RootElement.GetProperty("rustdesk_id").GetString());
+            Assert.True(json.RootElement.GetProperty("connection_id").GetGuid() != Guid.Empty);
+            Assert.True(json.RootElement.GetProperty("peer_signing_key").GetString() == Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray()));
         }
 
         var binary = await ReceiveFrameAsync(socket, timeout.Token);
@@ -80,6 +84,8 @@ public sealed class ConnectionEndpointsTests
         // 流程真正結束後counter歸還，稽核只含固定分類與流量。
         var store = factory.Services.GetRequiredService<IKvStore>();
         while (await store.GetAsync("conn:all") != "0") await Task.Delay(10, timeout.Token);
+        Assert.Equal("0", await store.GetAsync("conn:" + setup.Grant.UserId));
+        Assert.Equal(0, factory.Services.GetRequiredService<RdWeb.Api.RustDesk.ActiveConnectionRegistry>().Count);
         await factory.Services.GetRequiredService<AuditWriter>().StopAsync(timeout.Token);
         await using var db = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
         var logs = await db.AuditLogs.Where(log => log.ObjectId == setup.Grant.TargetId).ToListAsync();

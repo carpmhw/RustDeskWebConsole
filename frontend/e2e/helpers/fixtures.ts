@@ -26,9 +26,19 @@ export function resetStack(): void {
   if (password.length < 12 || !process.env.RDWEB_E2E_USERNAME)
     throw new Error('Use test-subpaths.sh to provide runtime E2E credentials')
   try {
+    const args = ['compose', '-f', compose]
+    if (
+      process.env.RDWEB_E2E_COMPOSE_OVERRIDE === 'deploy/dev/docker-compose.browser-login-test.yml'
+    )
+      args.push(
+        '-f',
+        fileURLToPath(
+          new URL('../../../deploy/dev/docker-compose.browser-login-test.yml', import.meta.url),
+        ),
+      )
     execFileSync(
       'docker',
-      ['compose', '-f', compose, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '60'],
+      [...args, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '60'],
       { stdio: 'pipe', env: process.env },
     )
   } catch {

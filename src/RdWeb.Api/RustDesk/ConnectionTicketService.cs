@@ -10,7 +10,7 @@ using RdWeb.Api.Targets;
 
 namespace RdWeb.Api.RustDesk;
 
-public sealed class ConnectionTicketService(AppDbContext database, SessionValidator sessions, TargetPolicy policy, IKvStore store)
+public sealed class ConnectionTicketService(SessionValidator sessions, TargetPolicy policy, IKvStore store)
 {
     private static readonly TimeSpan TicketLifetime = TimeSpan.FromSeconds(30);
 
@@ -22,7 +22,9 @@ public sealed class ConnectionTicketService(AppDbContext database, SessionValida
         if (!(await policy.RightsAsync(actor, target, cancellationToken)).CanConnect)
             throw new AuthException("forbidden", StatusCodes.Status403Forbidden);
 
-        var binding = JsonSerializer.Serialize(new TicketBinding(actor.Id, target.Id));
+        var session = new ConnectionSessionBinding(Guid.Parse(principal.FindFirstValue("sid")!),
+            actor.AuthVersion, actor.Role, principal.FindFirstValue("mfa") == "1");
+        var binding = JsonSerializer.Serialize(new TicketBinding(actor.Id, target.Id, session));
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var bytes = RandomNumberGenerator.GetBytes(32);
@@ -61,15 +63,14 @@ public sealed class ConnectionTicketService(AppDbContext database, SessionValida
                 throw new AuthException("unauthorized");
             }
 
-            if (binding == null || binding.UserId == Guid.Empty || binding.TargetId != routeTargetId)
+            if (binding == null || binding.UserId == Guid.Empty || binding.TargetId != routeTargetId || binding.Session == null)
                 throw new AuthException("unauthorized");
-            var actor = await database.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == binding.UserId, cancellationToken);
-            if (actor == null || !actor.IsActive) throw new AuthException("unauthorized");
+            var actor = await sessions.RequireAsync(binding.Session.ToPrincipal(binding.UserId), cancellationToken: cancellationToken);
 
             var target = await policy.FindVisibleAsync(actor, binding.TargetId, cancellationToken);
             if (!(await policy.RightsAsync(actor, target, cancellationToken)).CanConnect)
                 throw new AuthException("forbidden", StatusCodes.Status403Forbidden);
-            return new ConnectionGrant(actor.Id, target.Id);
+            return new ConnectionGrant(actor.Id, target.Id, binding.Session);
         }
         finally
         {
@@ -110,5 +111,5 @@ public sealed class ConnectionTicketService(AppDbContext database, SessionValida
         }
     }
 
-    private sealed record TicketBinding(Guid UserId, Guid TargetId);
+    private sealed record TicketBinding(Guid UserId, Guid TargetId, ConnectionSessionBinding? Session);
 }
