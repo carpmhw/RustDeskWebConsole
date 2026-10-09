@@ -36,6 +36,9 @@ function changeLocale(event: Event): void {
           t('overview')
         }}</RouterLink>
         <RouterLink :to="{ name: 'security' }">{{ t('security') }}</RouterLink>
+        <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'targets' }">{{
+          t('targets')
+        }}</RouterLink>
         <RouterLink
           v-if="!auth.user?.mfa_enrollment_required && auth.user?.role === 'admin'"
           :to="{ name: 'servers' }"

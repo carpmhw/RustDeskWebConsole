@@ -1,9 +1,17 @@
 import type { AuthState } from '../api/types'
 
-export type AppRoute = 'overview' | 'security' | 'preferences' | 'servers' | 'login' | 'not-found'
+export type AppRoute =
+  'overview' | 'security' | 'preferences' | 'servers' | 'targets' | 'login' | 'not-found'
 // 只接受已知站內路由名稱，不把任意query當作redirect URL。
-export function safeNext(value: unknown): 'overview' | 'security' | 'preferences' | 'servers' {
-  return value === 'security' || value === 'preferences' || value === 'servers' ? value : 'overview'
+export function safeNext(
+  value: unknown,
+): 'overview' | 'security' | 'preferences' | 'servers' | 'targets' {
+  return value === 'security' ||
+    value === 'preferences' ||
+    value === 'servers' ||
+    value === 'targets'
+    ? value
+    : 'overview'
 }
 // 集中匿名／restricted／已登入導向，unknown由router先等restore。
 export function routeDecision(

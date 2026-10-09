@@ -624,6 +624,84 @@ summary {
 .management-editor {
   margin-bottom: 22px;
 }
+.management-dialog {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: calc(100% - 30px);
+  max-width: 760px;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 25px;
+}
+.management-dialog::backdrop {
+  background: #0008;
+}
+.management-dialog > h2 {
+  margin-bottom: 15px;
+}
+.grant-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 15px 0;
+  padding: 15px;
+}
+.grant-row legend {
+  color: var(--muted);
+  font-size: 13px;
+}
+.target-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 15px;
+}
+.target-filters > div {
+  flex: 1;
+  min-width: 180px;
+}
+.target-filters label {
+  margin-top: 0;
+}
+.target-filters > button {
+  margin: 0;
+}
+.transfer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 23px 20px;
+}
+.file-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+.file-label input {
+  width: auto;
+  max-width: 280px;
+  font-size: 12px;
+  padding: 5px;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding: 15px;
+  font-size: 13px;
+}
+.management-table input[type='checkbox'] {
+  width: 18px;
+  min-height: 18px;
+}
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

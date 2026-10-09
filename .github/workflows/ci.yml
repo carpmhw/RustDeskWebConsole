@@ -33,7 +33,7 @@ jobs:
       - name: Backend checks
         run: |
           dotnet build RdWeb.sln -c Release --no-restore
-          dotnet test RdWeb.sln -c Release --no-build
+          dotnet test RdWeb.sln -c Release --no-build --filter "Category!=RustDeskReal"
           dotnet format RdWeb.sln --verify-no-changes --no-restore
           dotnet list RdWeb.sln package --vulnerable --include-transitive
       - name: Frontend checks
@@ -63,9 +63,13 @@ jobs:
       - name: Proxy failure must not log request contents
         run: |
           node tools/test-proxy-log-redaction.mjs --start
+      - name: Pinned RustDesk TCP and WebSocket relay
+        run: bash deploy/dev/test-m3a-relay.sh
       - name: Cleanup spike containers
         if: always()
-        run: docker compose -f deploy/dev/docker-compose.spikes.yml down
+        run: |
+          docker compose -f deploy/dev/docker-compose.spikes.yml down
+          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml down
   rustdesk-desktop:
     runs-on: ubuntu-latest
     steps:

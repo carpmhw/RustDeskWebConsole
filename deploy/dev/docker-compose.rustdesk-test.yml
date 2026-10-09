@@ -13,6 +13,7 @@ services:
       - 127.0.0.1:21115:21115
       - 127.0.0.1:21116:21116
       - 127.0.0.1:21116:21116/udp
+      - 127.0.0.1:${RDWEB_TEST_ID_WS_PORT:-31118}:21118
     logging:
       driver: none
     healthcheck:
@@ -29,6 +30,7 @@ services:
       - relay-data:/data
     ports:
       - 127.0.0.1:21117:21117
+      - 127.0.0.1:${RDWEB_TEST_RELAY_WS_PORT:-31119}:21119
     logging:
       driver: none
     healthcheck:

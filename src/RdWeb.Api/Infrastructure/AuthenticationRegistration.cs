@@ -21,6 +21,10 @@ public static class AuthenticationRegistration
         services.AddScoped<AdminService>();
         services.AddSingleton<RdWeb.Api.RustDesk.IHostResolver, RdWeb.Api.RustDesk.NativeHostResolver>();
         services.AddSingleton<RdWeb.Api.RustDesk.ApprovedHostResolver>();
+        services.AddSingleton<RdWeb.Api.RustDesk.RendezvousTransport>();
+        services.AddScoped<RdWeb.Api.RustDesk.ConnectionCoordinator>();
+        services.AddSingleton<RdWeb.Api.RustDesk.ConnectionSlots>();
+        services.AddSingleton<RdWeb.Api.RustDesk.RelayBridge>();
         services.AddSingleton<RdWeb.Api.RustDesk.ConnectionProbe>();
         services.AddSingleton<RdWeb.Api.RustDesk.ProbeSlots>();
         services.AddScoped<RdWeb.Api.RustDesk.ServerService>();
@@ -29,6 +33,7 @@ public static class AuthenticationRegistration
         services.AddScoped<RdWeb.Api.Targets.TargetService>();
         services.AddScoped<RdWeb.Api.Targets.TargetSecretsService>();
         services.AddScoped<RdWeb.Api.Targets.TargetTransferService>();
+        services.AddScoped<RdWeb.Api.RustDesk.ConnectionTicketService>();
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme).Configure<TokenService>((options, tokens) =>
         {

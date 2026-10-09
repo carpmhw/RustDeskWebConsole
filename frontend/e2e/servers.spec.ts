@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { base, createFixture, fillPrivate, loginUi, resetStack } from './helpers/fixtures'
 
-// 此批只驗真正server UI，尚未執行完整M2管理matrix。
+// 管理矩陣中的真正server UI，沿用隔離DB／KV與正式權限。
 test.beforeEach(() => resetStack())
 
 // 真正表單CRUD／Version／probe及刪除，沒有mock登入或API。

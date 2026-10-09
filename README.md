@@ -2,9 +2,9 @@
 
 依 C#／ASP.NET Core v0.2 計畫開發的自架瀏覽器遠端主控台，採 AGPL-3.0-or-later。
 
-目前階段為 **M2-B：後端目標、權限與 CSV**。M0、完整 M1、M2-A 已完成本機驗收；原生加密／protobuf 與真實 RustDesk 測試桌面持續保留。
+目前階段為 **M3-A：單次 ticket 與後端 relay bridge 已完成本機驗收**。M0、完整 M1、M2-A／B／C 與 M3-A 均已通過；下一工作單元為 M3-B 瀏覽器主控台。
 
-提供帳密／TOTP／備援碼登入、JWT／refresh 輪替、強制 MFA、使用者管理與 bootstrap。前端已有 Login／Security、QR／備援碼下載列印、頂部導覽、中英文、主題與時區偏好；真正登入 E2E 驗證六組 subpath。M2-A 提供伺服器 API、位址政策、TCP 探測與金鑰輪替；M2-B 提供目標／ACL／reveal／CSV／批刪 API，管理 UI 與 30 秒遮蔽在 M2-C 接續。
+提供帳密／TOTP／備援碼登入、JWT／refresh 輪替、強制 MFA、使用者管理與 bootstrap。前端已有 Login／Security、伺服器／目標管理、ACL、獨立 30 秒密碼顯示、metadata CSV／批刪、頂部導覽、中英文及主題／時區偏好。最新驗證為後端一般套件 206 項、官方 RustDesk relay 整合 2 項、前端 41 項及完整管理／認證 subpath E2E 72 項通過；本機驗收紀錄見 `docs/M3A_ACCEPTANCE.md`、`docs/M2C_ACCEPTANCE.md` 與 `docs/M2_ACCEPTANCE.md`。
 
 ## 時間與時區
 
@@ -51,7 +51,7 @@ dotnet tool restore
 dotnet restore RdWeb.sln --locked-mode
 docker compose -f deploy/dev/docker-compose.redis-test.yml up -d --wait
 dotnet build RdWeb.sln -c Release
-TEST_REDIS_URL=redis://127.0.0.1:16379 dotnet test RdWeb.sln -c Release
+TEST_REDIS_URL=redis://127.0.0.1:16379 dotnet test RdWeb.sln -c Release --filter "Category!=RustDeskReal"
 dotnet format RdWeb.sln --verify-no-changes
 dotnet list RdWeb.sln package --vulnerable --include-transitive
 corepack pnpm --dir frontend install --frozen-lockfile
@@ -65,6 +65,8 @@ frontend/node_modules/.bin/eslint tools
 docker compose -f deploy/dev/docker-compose.redis-test.yml down
 ```
 
+Pinned 官方 RustDesk relay 整合須另外執行 `bash deploy/dev/test-m3a-relay.sh`。Runner 使用 hbbs／hbbr 1.1.14 及受控端 1.4.2，驗證 TCP／WS 兩條 Stage A 路徑；只清理自己啟動的容器、保留測試 volumes。WS 宿主映射預設為 31118／31119，可用 `RDWEB_TEST_ID_WS_PORT`／`RDWEB_TEST_RELAY_WS_PORT` 覆寫，容器內仍是 21118／21119。缺少 runtime fixture 的 `RustDeskReal` 測試會明確失敗，不會冒稱通過。
+
 首次 build 會從固定 RustDesk `1.4.2` 對應的 hbb_common commit 下載完整 proto 到 `obj`，驗證 SHA-256 後由 Grpc.Tools 產生 C#。
 來源與離線快取方式見 [`UPSTREAM.md`](src/RdWeb.Api/RustDesk/Protos/UPSTREAM.md)。
 
@@ -75,7 +77,7 @@ corepack pnpm --dir frontend exec playwright install chromium
 bash deploy/dev/test-subpaths.sh
 ```
 
-Subpath 腳本驗證 `/`、`/rdweb`、`/a/b/c` × 保留／剝除前綴，每組包含真實登入、TOTP／備援碼、強制 MFA、reload／雙分頁／logout、主題／語言／時區及代理 WebSocket，共 48 個 Playwright 案例，結束時清理測試容器。外層 nginx／Traefik／Caddy 全矩陣於 M4 擴充。
+Subpath 腳本驗證 `/`、`/rdweb`、`/a/b/c` × 保留／剝除前綴，每組包含真實登入、TOTP／備援碼、強制 MFA、reload／雙分頁／logout、主題／語言／時區及代理 WebSocket，另含 server CRUD／probe、operator target CRUD／CSV／批刪、admin ACL／viewer、版本衝突與密碼顯示清除，共 6 × 12＝72 個 Playwright 案例，結束時清理測試容器。外層 nginx／Traefik／Caddy 全矩陣於 M4 擴充。
 
 E2E 的管理員密碼與金鑰在程序環境隨機產生；auth 每案例重建隔離 stack，不調低正式配額。測試停用 trace／screenshot／video、下載保存及 Playwright 自動 AI 頁面快照，避免認證資訊進入 report。直接執行 `pnpm e2e` 需要 runner 的 E2E 環境，建議使用上述 subpath 腳本。
 
@@ -170,7 +172,7 @@ Redis URL 可含 ACL 使用者／密碼（需要時 URL encode）；只由環境
 
 Probe 只做 TCP 可達性及公鑰格式檢查，回 `check=tcp_socket`、`protocol_verified=false`，ws 設定也只測底層 TCP。真正 RustDesk 協定與簽章握手於 M3 驗證。
 
-`EncryptedSecretStore` 目前只供內部使用，沒有 HTTP 密碼讀取端點。Target 密碼以 AES-GCM、AAD `target:{uuid}:password` 保存；TOTP 與目標祕密都支援原子輪替。
+`EncryptedSecretStore` 只供內部使用，不直接提供 store 讀取端點；目標密碼僅透過 M2-B 的權限與二次驗證 reveal API 顯示。Target 密碼以 AES-GCM、AAD `target:{uuid}:password` 保存；TOTP 與目標祕密都支援原子輪替。
 
 ### 維護期間輪替 Vault key
 
@@ -193,14 +195,31 @@ Probe 只做 TCP 可達性及公鑰格式檢查，回 `check=tcp_socket`、`prot
 
 - admin全權且獨占ACL管理；operator預設管理自己建立的目標，額外目標由明確user／role grant授權；viewer只看明確授權metadata，不能因flag升權。
 - `/{id}/permissions` GET／PUT使用TargetVersion，完整替換grants；group_name僅分類，沒有群組繼承或operator轉授權。
-- `/{id}/password/reveal` POST需can_view_password及當次password／TOTP二次驗證，先權限後proof；回password與expires_in=30，no-store與稽核。M2-C才實作真正前端自動遮蔽。
+- `/{id}/password/reveal` POST需can_view_password及當次password／TOTP二次驗證，先權限後proof；回password與expires_in=30，no-store與稽核。前端真正 30 秒自動遮蔽、Esc／離頁／背景事件／跨分頁登出清除，以及晚到回應不復活，均已通過完整矩陣。
 - `/bulk-delete` POST最多100項UUID／Version，全部權限與版本成功才整批交易；清除metadata、ACL及secret。
 - `/import` POST接JSON csv，最多10000chars／50資料列；維持16KiB body上限，僅新增metadata、不匯入密碼或ACL。
 - `/export` GET最多1000可見目標，CSV attachment，沒有密碼欄，RFC4180 quoting及formula防護。
 - CSV固定server_id,name,rustdesk_id,group_name,tags,notes；tags為JSON array。拒絕unknown／duplicate／password headers、損壞quotes，任何列失敗全部回滾。匯出防formula的apostrophe在重新匯入時作literal保留。
 - `/servers/available` 只提供enabled UUID／name，operator／viewer不可藉此取得內部hostname或公鑰；server被target使用時不能刪除。
 
-詳細契約與證據位於本機 `docs/superpowers/specs/2026-10-09-m2b-targets-design.md`、`docs/M2B_ACCEPTANCE.md`。本階段沒有新增管理前端或外部相依。
+詳細契約與後端證據位於本機 `docs/superpowers/specs/2026-10-09-m2b-targets-design.md`、`docs/M2B_ACCEPTANCE.md`；管理前端驗收見下一節。
+
+## M2-C 管理前端
+
+- 完整登入後可使用 `{BASE}/targets`；`{BASE}/servers` 僅 admin 可進入，網址直接存取同樣受角色與 MFA 限制。
+- 目標列表依有效權限顯示編輯、二次驗證密碼與刪除入口；viewer 僅可看明確授權的 metadata，ACL 管理只提供給 admin。
+- 密碼表單只保存短命 RAM，編輯時保持／替換／清除三種語意，不預填顯示過的明文。獨立顯示 dialog 使用實際 deadline，關閉／離頁／登出／頁面背景立即清除並取消請求。
+- 匯入／匯出僅 metadata；批刪使用選取 UUID／Version。版本衝突不自動重送；批刪失敗會刷新列表、清除選取並保留錯誤提示。
+- 六組真實代理矩陣使用正式權限與限流，驗證真正 30 秒期限、CSP／base／390px 頁寬。背景清除以標準 DOM visibility 事件驗證，延遲回應以真正後端 response 延後交付驗證，沒有 mock 認證。
+
+## M3-A Ticket 與後端橋接
+
+- 完整登入且有 `can_connect` 權限者呼叫 `POST {BASE}/api/v1/targets/{id}/connect-ticket`（JSON `{}`），取得 `ticket`／`expires_in=30`；KV 僅存 ticket digest 與 user／target binding。
+- `GET {BASE}/api/v1/targets/{id}/connect` WebSocket 握手必須提出 `rdweb.v1` 與 `rdweb.ticket.{ticket}`，精確同源 Origin 驗證後原子取用票證、重驗有效權限。回應只協商 `rdweb.v1`，不把票證放 URL。
+- 後端只連 admin-saved hbbs／hbbr，重新解析並驗證所有 DNS IP。強制 relay 的 signed IdPk／target ID／UUID 必須有效才連 hbbr；300 ms 等待後送 RequestRelay，送出結果不明時不重放 UUID。
+- `rdweb.ready` 帶 saved `transport`：TCP 轉送 BytesCodec byte stream，WS 保留 binary message／fragment 邊界。`transport=ws` 使用保存的實際 WS listener `host:port` 根路徑，不自動 +2 或推導 TLS／proxy path。
+- 全站最多五條，兩方向各有 16 × 16 KiB bounded queue，背壓無進展 30 秒斷線；結束／取消歸還 `conn:*`，稽核只含 target UUID、固定分類、時長與流量。
+- 此階段只交付 opaque relay。瀏覽器 RustDesk 加密登入、Vault login-assist、影像解碼、輸入／剪貼簿與 50 次連線成功率驗收接續於 M3-B。
 
 計畫、決策、版本矩陣與驗收結果位於本機 `docs/`，依使用者既有 `.gitignore` 保留在本機。
 可追蹤的第三方來源與授權摘要見 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)；CI 產出完整依賴授權清單。

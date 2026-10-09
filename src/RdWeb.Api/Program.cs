@@ -50,6 +50,7 @@ public partial class Program
         SettingsEndpoints.Map(app);
         ServerEndpoints.Map(app);
         TargetEndpoints.Map(app);
+        ConnectionEndpoints.Map(app);
         if (app.Environment.IsDevelopment())
         {
             SpikeEndpoints.Map(app);
