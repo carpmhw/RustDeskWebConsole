@@ -4,6 +4,82 @@ import { LoginProtocol } from './protocol'
 import { encodeIdentity, encodeMessage, decodeMessage, hbb } from './codec'
 import { nonce } from './crypto'
 import type { Callbacks, Ready } from './types'
+const capabilities = { profiles: { vp9: ['vp09.00.10.08'] } }
+
+// 登入後的15秒影像期限由media唯一管理，不能被握手timer搶成connection_timeout。
+it('hands the authenticated first-video deadline to the media pipeline', async () => {
+  vi.useFakeTimers()
+  const value = peerFixture(async () => new Uint8Array(32))
+  try {
+    value.receive({ hash: { salt: 's', challenge: 'c' } }, 1n)
+    await Promise.resolve()
+    value.receive(
+      {
+        loginResponse: {
+          peerInfo: {
+            platform: 'Linux',
+            version: '1.4.2',
+            displays: [{ width: 320, height: 240 }],
+          },
+        },
+      },
+      2n,
+    )
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(value.errors).toEqual([])
+  } finally {
+    value.protocol.dispose()
+    vi.useRealTimers()
+  }
+})
+
+// 官方display_service送部分PeerInfo，current_display=0僅相容欄位不能切換已選螢幕。
+it('accepts authenticated display-only PeerInfo without replacing the selected display', async () => {
+  const value = peerFixture(async () => new Uint8Array(32))
+  try {
+    value.receive({ hash: { salt: 's', challenge: 'c' } }, 1n)
+    await Promise.resolve()
+    value.receive(
+      {
+        loginResponse: {
+          peerInfo: {
+            platform: 'Linux',
+            version: '1.4.2',
+            currentDisplay: 1,
+            displays: [
+              { width: 320, height: 240 },
+              { width: 320, height: 240 },
+            ],
+          },
+        },
+      },
+      2n,
+    )
+    value.receive(
+      {
+        peerInfo: {
+          displays: [
+            { width: 320, height: 240 },
+            { width: 640, height: 480 },
+          ],
+          currentDisplay: 0,
+        },
+      },
+      3n,
+    )
+    expect(value.errors).toEqual([])
+    expect(value.verified).toHaveBeenLastCalledWith({
+      platform: 'Linux',
+      version: '1.4.2',
+      display: 1,
+      width: 640,
+      height: 480,
+      displayCount: 2,
+    })
+  } finally {
+    value.protocol.dispose()
+  }
+})
 
 // 每個契約測試建立新NaCl peer，保留公開事件並用獨立peer端解封session key。
 function peerFixture(assist: Callbacks['assist']) {
@@ -12,6 +88,7 @@ function peerFixture(assist: Callbacks['assist']) {
   const sends: Uint8Array[] = []
   const errors: string[] = []
   const verified = vi.fn()
+  const video = vi.fn()
   const protocol = new LoginProtocol(
     {
       type: 'rdweb.ready',
@@ -28,7 +105,10 @@ function peerFixture(assist: Callbacks['assist']) {
       phase: () => {},
       failure: (code) => errors.push(code),
       verified,
+      video,
+      display: vi.fn(),
     },
+    capabilities,
   )
   protocol.receive(
     encodeMessage({
@@ -48,8 +128,37 @@ function peerFixture(assist: Callbacks['assist']) {
   const receive = (message: hbb.IMessage, counter: bigint): void => {
     protocol.receive(nacl.secretbox(encodeMessage(message), nonce(counter), key))
   }
-  return { protocol, sends, errors, verified, receive, key }
+  return { protocol, sends, errors, verified, video, receive, key }
 }
+
+// PeerInfo後保留同一cipher session，後續影像仍須依序驗MAC才派送。
+it('keeps encrypted media active after authenticated PeerInfo', async () => {
+  const peer = peerFixture(async () => new Uint8Array(32))
+  try {
+    peer.receive({ hash: { salt: 's', challenge: 'c' } }, 1n)
+    await Promise.resolve()
+    peer.receive(
+      {
+        loginResponse: {
+          peerInfo: {
+            platform: 'Linux',
+            version: '1.4.2',
+            displays: [{ width: 320, height: 240 }],
+          },
+        },
+      },
+      2n,
+    )
+    peer.receive(
+      { videoFrame: { vp9s: { frames: [{ data: new Uint8Array([1, 2]), key: true, pts: 1 }] } } },
+      3n,
+    )
+    expect(peer.video).toHaveBeenCalledOnce()
+    expect(peer.errors).toEqual([])
+  } finally {
+    peer.protocol.dispose()
+  }
+})
 
 // HTTP proof尚未完成時仍需處理加密delay／permission，TX和RX不能重排。
 it('maintains nonce order while login assist is pending', async () => {
@@ -72,7 +181,18 @@ it('maintains nonce order while login assist is pending', async () => {
     expect(decodeMessage(nacl.secretbox.open(peer.sends[2]!, nonce(2n), peer.key)!).union).toBe(
       'loginRequest',
     )
-    peer.receive({ loginResponse: { peerInfo: { platform: 'Linux', version: '1.4.2' } } }, 4n)
+    peer.receive(
+      {
+        loginResponse: {
+          peerInfo: {
+            platform: 'Linux',
+            version: '1.4.2',
+            displays: [{ width: 320, height: 240 }],
+          },
+        },
+      },
+      4n,
+    )
     expect(peer.errors).toEqual([])
     expect(peer.verified).toHaveBeenCalledOnce()
   } finally {
@@ -89,6 +209,19 @@ it.each(['Wrong Password', '2FA required'])('rejects remote login errors: %s', a
     peer.receive({ loginResponse: { error } }, 2n)
     expect(peer.errors).toEqual(['remote_login_failed'])
     expect(peer.verified).not.toHaveBeenCalled()
+  } finally {
+    peer.protocol.dispose()
+  }
+})
+
+// 冷啟動桌面失敗只映射固定分類，不回顯遠端任意字串。
+it('classifies an unavailable desktop without returning the peer message', async () => {
+  const peer = peerFixture(async () => new Uint8Array(32))
+  try {
+    peer.receive({ hash: { salt: 's', challenge: 'c' } }, 1n)
+    await Promise.resolve()
+    peer.receive({ loginResponse: { error: 'Desktop session not ready' } }, 2n)
+    expect(peer.errors).toEqual(['remote_desktop_unavailable'])
   } finally {
     peer.protocol.dispose()
   }
@@ -133,15 +266,21 @@ it('authenticates through NaCl and requires an encrypted PeerInfo', async () => 
   const sends: Uint8Array[] = []
   const errors: string[] = []
   let verified = false
-  const protocol = new LoginProtocol(ready, {
-    send: (bytes) => sends.push(bytes),
-    assist: async () => new Uint8Array(32),
-    phase: () => {},
-    failure: (code) => errors.push(code),
-    verified: () => {
-      verified = true
+  const protocol = new LoginProtocol(
+    ready,
+    {
+      send: (bytes) => sends.push(bytes),
+      assist: async () => new Uint8Array(32),
+      phase: () => {},
+      failure: (code) => errors.push(code),
+      verified: () => {
+        verified = true
+      },
+      video: vi.fn(),
+      display: vi.fn(),
     },
-  })
+    capabilities,
+  )
   protocol.receive(
     encodeMessage({
       signedId: {
@@ -187,6 +326,7 @@ it('authenticates through NaCl and requires an encrypted PeerInfo', async () => 
   )
   expect(verified).toBe(true)
   expect(errors).toEqual([])
+  protocol.dispose()
   protocol.receive(new Uint8Array([2, 3]))
   expect(errors).toEqual([])
 })
@@ -215,7 +355,10 @@ it('ignores late assist results after disposal', async () => {
       phase: () => {},
       verified: () => {},
       failure: () => {},
+      video: vi.fn(),
+      display: vi.fn(),
     },
+    capabilities,
   )
   protocol.receive(
     encodeMessage({

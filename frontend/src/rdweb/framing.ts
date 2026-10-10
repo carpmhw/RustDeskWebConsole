@@ -17,11 +17,17 @@ export class WireFramer {
   #payload: Uint8Array | null = null
   #offset = 0
   // 建立固定transport的增量reader。
-  constructor(private readonly transport: Transport) {}
+  constructor(
+    private readonly transport: Transport,
+    private readonly maxFrame = LIMIT,
+  ) {}
   // TCP逐片複製至受限frame，WS直接交付；單一event至多16個message。
   push(bytes: Uint8Array): Uint8Array[] {
     if (bytes.length > LIMIT) throw new Error('protocol_error')
-    if (this.transport === 'ws') return [bytes]
+    if (this.transport === 'ws') {
+      if (bytes.length > this.maxFrame) throw new Error('protocol_error')
+      return [bytes]
+    }
     const values: Uint8Array[] = []
     let buffered = this.#payload?.length ?? 0
     let index = 0
@@ -32,7 +38,7 @@ export class WireFramer {
         let length = 0
         for (let i = 0; i < this.#head; i++) length += this.#header[i]! * 2 ** (8 * i)
         length = Math.floor(length / 4)
-        if (length + buffered > LIMIT) {
+        if (length > this.maxFrame || length + buffered > LIMIT) {
           this.clear()
           throw new Error('protocol_error')
         }

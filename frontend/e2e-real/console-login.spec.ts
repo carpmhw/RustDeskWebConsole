@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { api, base, createFixture, loginUi, resetStack } from '../e2e/helpers/fixtures'
+import { waitForClock } from './fixtures'
 
 // 每個正式crypto case重建隔離DB/KV，維持原限流而非test bypass。
 test.beforeEach(() => resetStack())
@@ -54,6 +55,7 @@ for (const transport of ['tcp', 'ws']) {
       })
       try {
         await expect(console.getByTestId('console-verified')).toBeVisible({ timeout: 45000 })
+        await waitForClock(console)
       } catch {
         const code = await console
           .getByRole('alert')
@@ -61,15 +63,12 @@ for (const transport of ['tcp', 'ws']) {
           .catch(() => null)
         throw new Error('Official browser login failed: ' + (code ?? 'no-result'))
       }
-      await expect(console.getByTestId('console-phase')).toHaveText(
-        '安全登入驗證成功，連線已結束。',
-      )
-      // Verified已關閉第一條連線；深層重新整理必須新ticket／key並再次真正登入。
+      await expect(console.getByTestId('console-phase')).toHaveText('畫面已連線。')
+      // B2保留已登入連線；深層重新整理必須新ticket／key並再次真正登入及呈現。
       await console.reload()
       await expect(console.getByTestId('console-verified')).toBeVisible({ timeout: 45000 })
-      await expect(console.getByTestId('console-phase')).toHaveText(
-        '安全登入驗證成功，連線已結束。',
-      )
+      await waitForClock(console)
+      await expect(console.getByTestId('console-phase')).toHaveText('畫面已連線。')
       expect(wrong.length).toBe(0)
       // Keys/proofs不在storage，斷言只欄名或布林，不回顯值。
       expect(
@@ -80,6 +79,8 @@ for (const transport of ['tcp', 'ws']) {
             ) && sessionStorage.length === 0,
         ),
       ).toBe(true)
+      await console.getByTestId('console-end').click()
+      await expect(console.getByTestId('console-phase')).toHaveText('連線已取消／關閉')
       await console.close()
     } finally {
       await fixture.context.dispose()

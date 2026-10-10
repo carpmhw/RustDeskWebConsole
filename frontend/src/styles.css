@@ -783,3 +783,29 @@ textarea {
     min-width: 650px;
   }
 }
+.console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 16px 0;
+}
+.console-toolbar label {
+  display: grid;
+  gap: 6px;
+}
+.console-viewport {
+  width: 100%;
+  height: min(70vh, 720px);
+  overflow: auto;
+  background: #000;
+}
+.console-viewport canvas {
+  display: block;
+  margin: 0 auto;
+  max-width: none;
+}
+.console-viewport:fullscreen {
+  width: 100vw;
+  height: 100vh;
+}

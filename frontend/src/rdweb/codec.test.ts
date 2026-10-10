@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { encodeMessage, decodeMessage, encodeIdentity } from './codec'
+import { encodeMessage, decodeMessage, encodeIdentity, hbb } from './codec'
 
 // Google.Protobuf生成的pinned Message.Hash欄位9需與browser codec完全一致。
 it('matches the pinned public Hash wire fixture', () => {
@@ -18,4 +18,13 @@ it('rejects contradictory oneof messages', () => {
   expect(() => encodeMessage({ hash: { salt: 's' }, signedId: { id: new Uint8Array() } })).toThrow(
     'protocol_error',
   )
+})
+
+// C#獨立生成的能力／ACK／畫質bytes必須與static browser schema相符。
+it('matches independent capability, ACK and quality fields', () => {
+  expect([...hbb.SupportedDecoding.encode({ abilityVp9: 1, prefer: 1 }).finish()]).toEqual([
+    8, 1, 32, 1,
+  ])
+  expect([...hbb.Misc.encode({ videoReceived: true }).finish()]).toEqual([96, 1])
+  expect([...hbb.OptionMessage.encode({ imageQuality: 3 }).finish()]).toEqual([8, 3])
 })

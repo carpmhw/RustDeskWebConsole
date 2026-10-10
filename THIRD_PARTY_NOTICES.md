@@ -64,6 +64,26 @@ SOFTWARE.
 
 TweetNaCl 1.0.3（Unlicense）為總計畫內瀏覽器加密套件。使用者另核准 protobufjs 8.8.0 minimal runtime 與 protobufjs-cli 2.7.0 建置工具（BSD-3-Clause），依鎖檔追蹤間接相依；CLI／reflection compiler 不加入browser runtime。靜態生成輸入來自上列pinned RustDesk／hbb_common，生成結果的來源標頭與AGPL授權保留。
 
+## M3-B2 公開影像測試素材
+
+WebCodecs 測試使用 web-platform-tests/wpt commit `521d168d63dbd206ea7fbe0b74ddd5760e6e668e` 的 `webcodecs/vp8.webm`、`vp9.mp4`、`av1.mp4`、`h264.annexb` 公開素材，依固定 SHA256／offset 切出 key／delta。只使用素材及 schema／offset 事實，不複製上游測試程式。完整來源、hash 與生成方式見 `frontend/src/rdweb/__fixtures__/CODEC_FIXTURES.md`；正式 app 不匯入素材或測試 harness。未新增 npm／NuGet／WASM 相依。
+
+來源：https://github.com/web-platform-tests/wpt/blob/521d168d63dbd206ea7fbe0b74ddd5760e6e668e/LICENSE.md 。以下保留原始條款。
+
+```text
+The 3-Clause BSD License
+
+Copyright © web-platform-tests contributors
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 ### TweetNaCl 原始 LICENSE
 
 ```text

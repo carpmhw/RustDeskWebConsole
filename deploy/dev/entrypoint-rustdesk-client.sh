@@ -42,8 +42,8 @@ for attempt in $(seq 1 30); do
 done
 mkdir -p "$HOME/.fluxbox"
 printf 'session.screen0.rootCommand: xsetroot -solid black\n' > "$HOME/.fluxbox/init"
-fluxbox > /dev/null 2>&1 &
 if [ "${CLIENT_ROLE:-target}" = target ]; then
+  # 公開clock不需視窗管理器，避免桌布警告遮擋它並暫停X11更新。
   xclock -digital -update 1 -geometry 700x120+200+250 -bg '#1a668f' -fg white > /dev/null 2>&1 &
   dbus-run-session -- rustdesk --server > /dev/null 2>&1 &
   SERVER_PID=$!
@@ -63,6 +63,8 @@ if [ "${CLIENT_ROLE:-target}" = target ]; then
   [ -s /test-state/target-id ]
   wait "$SERVER_PID"
 else
+  # 官方控制端仍需視窗管理器管理遠端桌面視窗。
+  fluxbox > /dev/null 2>&1 &
   # 啟動官方桌面客戶端；必須由實際畫面確認配對，不把 port 檢查當成驗收。
   PASSWORD=$(tr -d '\r\n' < /test-state/password)
   TARGET_ID=$(tr -d '\r\n' < /test-state/target-id)

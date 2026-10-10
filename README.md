@@ -2,9 +2,9 @@
 
 依 C#／ASP.NET Core v0.2 計畫開發的自架瀏覽器遠端主控台，採 AGPL-3.0-or-later。
 
-目前階段為 **M3-B1：瀏覽器安全握手與登入已完成本機驗收**。M0、完整 M1、M2 與 M3-A／B1 均已通過；下一工作單元為 M3-B2 影像主控台。
+目前階段為 **M3-B2：瀏覽器影像主控台已完成本機驗收**。M0、完整 M1、M2 與 M3-A／B1／B2 均已通過；下一工作單元為 M3-B3 鍵鼠／文字剪貼簿／重連及成功率驗收。
 
-提供帳密／TOTP／備援碼登入、JWT／refresh 輪替、強制 MFA、使用者管理與 bootstrap。前端已有 Login／Security、伺服器／目標管理、ACL、獨立 30 秒密碼顯示、metadata CSV／批刪、頂部導覽、中英文及主題／時區偏好。最新驗證為後端一般套件 227 項、官方 relay 整合 2 項、前端 60 項、原 subpath E2E 72 項，以及真正瀏覽器加密登入 12 項通過；本機驗收紀錄見 `docs/M3B1_ACCEPTANCE.md`。
+提供帳密／TOTP／備援碼登入、JWT／refresh 輪替、強制 MFA、使用者管理與 bootstrap。前端已有 Login／Security、伺服器／目標管理、ACL、獨立 30 秒密碼顯示、metadata CSV／批刪、頂部導覽、中英文及主題／時區偏好；主控台已有真即時影像、縮放、全螢幕與畫質。最新本機驗證為後端一般 231 項、官方 relay 2 項、前端 106 項、管理 subpath E2E 72 項、登入回歸 12 項、官方影像／停頓 24 項，以及公開 native codec 8 項全部通過；另有 Edge 官方影像單組 4 項通過。詳細紀錄見 `docs/M3B2_ACCEPTANCE.md`。
 
 ## 時間與時區
 
@@ -88,7 +88,7 @@ nginx 請求層錯誤日誌也停用，避免 upstream 失敗時附帶 query 中
 
 ## 真實 RustDesk 桌面驗收
 
-官方 server `1.1.14` 與桌面 client `1.4.2` 已固定版本／digest。測試受控端使用獨立 Xvfb／Fluxbox 桌面，為 `linux/amd64`；不掛載或修改宿主機現有 RustDesk 設定。
+官方 server `1.1.14` 與桌面 client `1.4.2` 已固定版本／digest。測試受控端使用獨立 Xvfb 公開時鐘桌面，官方控制端使用 Fluxbox，為 `linux/amd64`；不掛載或修改宿主機現有 RustDesk 設定。
 
 ```sh
 docker compose -f deploy/dev/docker-compose.rustdesk-test.yml build
@@ -223,12 +223,32 @@ Probe 只做 TCP 可達性及公鑰格式檢查，回 `check=tcp_socket`、`prot
 
 ## M3-B1 瀏覽器安全登入
 
-- 在目標列表依 `can_connect` 點「連線」，開新分頁 `{BASE}/console/{targetId}`。B1 真正收到加密 `LoginResponse.PeerInfo` 後顯示安全摘要並結束驗證連線；影像與操作接續 B2／B3。
+- 在目標列表依 `can_connect` 點「連線」，開新分頁 `{BASE}/console/{targetId}`。B1 交付加密 `LoginResponse.PeerInfo` 與安全摘要；B2 保留同一加密連線，只有真影像成功呈現才顯示「畫面已連線」。
 - 專用 Worker 持有 WS、NaCl 對稱金鑰與 nonce，主執行緒保留 AuthSession／HTTP；簽章或 MAC 不符即中止，不降級登入。
 - Ready 的 `peer_signing_key` 來自 hbbs 驗證過的 IdPk。Ticket 與活躍 `connection_id` 綁定 user／target／登入 family、安全版本及 MFA；登出後舊 ticket 不可取用。
 - `POST {BASE}/api/v1/targets/{id}/login-assist` 使用完整 JWT／Origin、當次 connection_id、salt／challenge，重驗 `can_connect`；每連線一次、每 user／IP 五次／分鐘。只有最終 32-byte proof 傳給 Worker，Vault 密碼與第一層 hash 留後端。
 - 前端使用 pinned schema 靜態生成 codec、TweetNaCl，維持 CSP；取消、離頁或身分變更清除 HTTP／Worker／key，舊回應不得復活。
 - `bash deploy/dev/test-m3b1-login.sh` 執行六組 prefix／proxy 模式 × TCP／WS，共 12 個官方瀏覽器登入案例，每案亦測新分頁與 deep reload。Runner 的額外 Docker network 僅供隔離測試；fixture password 只經正式 admin API 送到 backend Vault，不傳 browser 或存檔。
+
+## M3-B2 影像主控台
+
+- 取 ticket 前探測 secure context、Worker WebCodecs、VideoFrame 往返移交與 Canvas；僅廣告實測支援的 VP9／VP8／AV1／H.264 8-bit profile。Firefox／Safari 使用相同能力探測，能力不足明確拒絕。
+- Protocol Worker 獨佔 WS、加密及 decoder；Main 只持 AuthSession 與一張在途影格。控制明文最多 64 KiB、影像最多 8 MiB／16 chunks，待解碼最多 16 chunks／16 MiB、native queue 最多 8、Worker 只保留一張最新待送影格。
+- 首影像／重配期限 15 秒；Main 單張在途 30 秒未呈現即結束並清空 Canvas。ACK 是同一加密連線中的 boolean 容量訊號，不能取代本機限額；無 pending 的靜止桌面不視為故障。
+- 提供 fit／原始／50–200% 本機縮放、使用者點擊全螢幕、低／平衡／高畫質，以及 codec／解析度／實際呈現 FPS。全螢幕拒絕有可恢復提示；結束、離頁或身分變動清資源，明確重試使用新 ticket／Worker／key。
+
+```sh
+node frontend/scripts/prepare-codec-fixtures.mjs
+node tools/test-codec-fixture-integrity.mjs
+RDWEB_CODEC_CHANNELS=chromium,msedge corepack pnpm --dir frontend exec playwright test --config playwright.codecs.config.ts
+bash deploy/dev/test-m3b2-video.sh
+```
+
+公開 codec harness 使用固定 WPT key／delta 素材及同源 bundled Worker，與正式 app 分開建置。`RDWEB_CODEC_CHANNELS` 接受 chromium／msedge／chrome；指定不存在的 channel 會啟動失敗。本機實跑 Chromium 156.0.8078.4 與 Edge 151.0.4129.107，四種素材都真正解碼並呈現兩張不同影像；正式 Chrome、Firefox／Safari 尚未在本輪實跑。
+
+B2 runner 預設 `/`、`/rdweb`、`/a/b/c` × preserve／strip，每組 TCP／WS 正常操作及停頓，共 24 案。`RDWEB_B2_BASES`／`RDWEB_B2_MODES`／`RDWEB_B2_GREP` 可縮小診斷範圍，`RDWEB_VIDEO_CHANNEL=msedge` 可選正式 Edge；單組診斷不可當作完整矩陣。案例檢查公開時鐘像素及至少兩次更新、縮放幾何、畫質、全螢幕／拒絕、reload／重試、prefix、Worker 結束與 Canvas 清空，停頓期間僅記安全 Main JS heap 數字，未量測 native／GPU 總記憶體。
+
+CI 已接入公開 codec 與官方 B2 runner；本輪驗收是本機結果。完整 M3 的鍵鼠、Ctrl+Alt+Del、文字剪貼簿、自動重連及 50 次成功率仍由 B3 接續。
 
 計畫、決策、版本矩陣與驗收結果位於本機 `docs/`，依使用者既有 `.gitignore` 保留在本機。
 可追蹤的第三方來源與授權摘要見 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)；CI 產出完整依賴授權清單。

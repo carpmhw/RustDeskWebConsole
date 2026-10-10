@@ -1,4 +1,5 @@
 import { hbb } from './generated/message.js'
+import { admitEnvelope } from './wire-admission'
 export { hbb }
 export const CONTROL_LIMIT = 65536
 // 生成codec負責schema，wrapper只驗型別、oneof與控制大小，不回原始錯誤。
@@ -15,11 +16,12 @@ export function encodeMessage(value: hbb.IMessage): Uint8Array {
 // 每個控制envelope必須有唯一oneof，損壞protobuf不泄漏payload。
 export function decodeMessage(bytes: Uint8Array): hbb.Message {
   try {
-    if (bytes.length > CONTROL_LIMIT) throw new Error()
+    admitEnvelope(bytes)
     const value = hbb.Message.decode(bytes)
     if (hbb.Message.verify(value) || !value.union) throw new Error()
     return value
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'codec_unsupported') throw error
     throw new Error('protocol_error')
   }
 }

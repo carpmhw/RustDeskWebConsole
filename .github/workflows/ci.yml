@@ -38,6 +38,8 @@ jobs:
           dotnet list RdWeb.sln package --vulnerable --include-transitive
       - name: Frontend checks
         run: |
+          node frontend/scripts/prepare-codec-fixtures.mjs
+          node tools/test-codec-fixture-integrity.mjs
           node tools/test-url-lint.mjs
           corepack pnpm --dir frontend lint
           corepack pnpm --dir frontend test
@@ -67,6 +69,10 @@ jobs:
         run: bash deploy/dev/test-m3a-relay.sh
       - name: Official browser secure login matrix
         run: bash deploy/dev/test-m3b1-login.sh
+      - name: Native WebCodecs public fixture matrix
+        run: corepack pnpm --dir frontend exec playwright test --config playwright.codecs.config.ts
+      - name: Official browser video and bounded presentation matrix
+        run: bash deploy/dev/test-m3b2-video.sh
       - name: Cleanup spike containers
         if: always()
         run: |
