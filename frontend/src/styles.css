@@ -795,6 +795,7 @@ textarea {
   gap: 6px;
 }
 .console-viewport {
+  position: relative;
   width: 100%;
   height: min(70vh, 720px);
   overflow: auto;
@@ -808,4 +809,21 @@ textarea {
 .console-viewport:fullscreen {
   width: 100vw;
   height: 100vh;
+}
+.console-ime {
+  position: absolute;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+}
+.console-viewport:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.console-toolbar input[type='checkbox'] {
+  width: auto;
 }

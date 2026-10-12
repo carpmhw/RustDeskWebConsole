@@ -15,6 +15,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "fzstd": "0.1.1",
     "pinia": "4.0.3",
     "protobufjs": "8.8.0",
     "qrcode": "1.5.4",

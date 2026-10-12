@@ -19,6 +19,46 @@ for (const transport of ['tcp', 'ws'] as const) {
       await waitForClock(consolePage)
       await expect(consolePage.getByTestId('console-streaming')).toBeVisible()
       expect(await clockChanges(consolePage)).toBe(true)
+      // Task12主控台接線回歸：真正MAC／Canvas之後才接管native DOM輸入。
+      await expect(consolePage.getByTestId('console-auto-reconnect')).toBeChecked()
+      await expect(consolePage.getByTestId('console-cad')).toHaveCount(0)
+      await consolePage.getByTestId('console-canvas').click({ position: { x: 10, y: 10 } })
+      await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
+      await consolePage.getByTestId('console-zoom').focus()
+      await expect(consolePage.getByTestId('console-input-active')).toHaveCount(0)
+      // 只在test端模擬browser拒絕native read，auth／WS／crypto沿正式API。
+      await consolePage.evaluate(() => {
+        navigator.clipboard.readText = async () => {
+          throw new Error('public-native-denial')
+        }
+      })
+      await consolePage.getByTestId('console-clipboard-send').click()
+      await expect(consolePage.getByTestId('console-clipboard-dialog')).toBeVisible()
+      await expect(consolePage.getByTestId('console-clipboard-waiting')).toHaveCount(0)
+      await consolePage.getByTestId('console-clipboard-text').fill('Public transient fallback')
+      await consolePage.getByTestId('console-clipboard-close').click()
+      expect(
+        await consolePage
+          .getByTestId('console-clipboard-text')
+          .evaluate(
+            /* 不把DOM內容帶到report。 */ (element) =>
+              (element as HTMLTextAreaElement).value === '',
+          ),
+      ).toBe(true)
+      await consolePage.getByTestId('console-clipboard-send').click()
+      await expect(consolePage.getByTestId('console-clipboard-dialog')).toBeVisible()
+      await consolePage.getByTestId('console-clipboard-text').fill('Public expiring fallback')
+      await expect(consolePage.getByTestId('console-clipboard-dialog')).not.toBeVisible({
+        timeout: 35000,
+      })
+      expect(
+        await consolePage
+          .getByTestId('console-clipboard-text')
+          .evaluate(
+            /* 30秒清除只回布林。 */ (element) => (element as HTMLTextAreaElement).value === '',
+          ),
+      ).toBe(true)
+      expect(await clockChanges(consolePage)).toBe(true)
       for (const value of ['fit', 'original', '0.5', '1', '1.5', '2']) {
         await consolePage.getByTestId('console-zoom').selectOption(value)
         expect(

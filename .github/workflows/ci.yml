@@ -40,7 +40,10 @@ jobs:
         run: |
           node frontend/scripts/prepare-codec-fixtures.mjs
           node tools/test-codec-fixture-integrity.mjs
+          node tools/test-clipboard-fixture-integrity.mjs
+          node tools/test-fzstd-patch.mjs
           node tools/test-url-lint.mjs
+          node tools/test-target-password-init.mjs
           corepack pnpm --dir frontend lint
           corepack pnpm --dir frontend test
           corepack pnpm --dir frontend build

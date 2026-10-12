@@ -4,11 +4,16 @@ import { base64Bytes, type Callbacks, type Ready, type Phase } from './types'
 import type { CodecCapabilities, DisplayGeometry, PeerVideo, VideoPacket } from './video-types'
 import { supportedDecoding } from './capabilities'
 import { checkDisplay } from './video-limits'
+import { PeerInputMetadataCache } from './peer-input'
+import { TransportFault } from './terminal'
+import type { RemotePermissions, TerminalCause } from './interaction-types'
 export class LoginProtocol {
   #crypto = new PeerCrypto()
   #state: Phase = 'verifying_identity'
   #closed = false
   #peer: PeerVideo | null = null
+  #inputPeer = new PeerInputMetadataCache()
+  #permissions: RemotePermissions = { keyboard: true, clipboard: true }
   #timer: ReturnType<typeof setTimeout> | null = null
   // 握手只信任server驗證過的ready peer key，不從SignedId自行取trust root。
   constructor(
@@ -40,16 +45,28 @@ export class LoginProtocol {
       const message = decodeMessage(plaintext)
       if (message.testDelay) {
         this.send({ testDelay: { time: message.testDelay.time, fromClient: false } })
+        this.callbacks.activity()
         return
       }
-      if (message.misc?.permissionInfo) return
+      if (message.misc?.permissionInfo) {
+        this.acceptPermission(message.misc.permissionInfo)
+        this.callbacks.activity()
+        return
+      }
       if (message.hash && this.#state === 'awaiting_hash') {
         if (!message.hash.salt || !message.hash.challenge) throw new Error('protocol_error')
         this.phase('assisting')
         void this.callbacks
           .assist(this.ready.connection_id, message.hash.salt, message.hash.challenge)
           .then((proof) => this.login(proof))
-          .catch(() => this.fail('login_assist_failed'))
+          .catch(
+            /* 只有本機typed故障可具有transport分類。 */ (error) => {
+              if (error instanceof TransportFault)
+                this.fail(error.terminal.code, error.terminal.cause)
+              else this.fail('login_assist_failed')
+            },
+          )
+        this.callbacks.activity()
         return
       }
       if (message.loginResponse && this.#state === 'awaiting_login') {
@@ -68,9 +85,13 @@ export class LoginProtocol {
         )
           throw new Error('remote_login_failed')
         const peer = this.peer(info)
+        const input = this.#inputPeer.accept(info, true)
         this.#peer = peer
         this.phase('awaiting_video')
+        this.callbacks.inputPeer(input)
+        this.callbacks.permission({ ...this.#permissions })
         this.callbacks.verified(peer)
+        this.callbacks.activity()
         return
       }
       if (this.#state === 'awaiting_video' || this.#state === 'streaming') {
@@ -93,10 +114,12 @@ export class LoginProtocol {
             })),
           }
           this.callbacks.video(packet)
+          this.callbacks.activity()
           return
         }
         if (message.peerInfo) {
           if (!this.#peer) throw new Error('protocol_error')
+          const input = this.#inputPeer.accept(message.peerInfo, false)
           // Pinned display_service僅傳displays；相容current_display=0不是新選擇。
           this.#peer = this.peer({
             ...message.peerInfo,
@@ -104,12 +127,15 @@ export class LoginProtocol {
             version: message.peerInfo.version || this.#peer.version,
             currentDisplay: this.#peer.display,
           })
+          this.callbacks.inputPeer(input)
           this.callbacks.verified(this.#peer)
+          this.callbacks.activity()
           return
         }
         const misc = message.misc
         if (misc?.switchDisplay) {
           const value = misc.switchDisplay
+          const input = this.#inputPeer.switchDisplay(value)
           const geometry: DisplayGeometry = {
             display: value.display ?? 0,
             width: value.width ?? 0,
@@ -119,7 +145,14 @@ export class LoginProtocol {
           if (!this.#peer || geometry.display >= this.#peer.displayCount)
             throw new Error('protocol_error')
           this.#peer = { ...this.#peer, ...geometry }
+          this.callbacks.inputPeer(input)
           this.callbacks.display(geometry)
+          this.callbacks.activity()
+          return
+        }
+        if (message.clipboard || message.multiClipboards) {
+          this.callbacks.clipboard(message)
+          this.callbacks.activity()
           return
         }
         if (
@@ -132,8 +165,10 @@ export class LoginProtocol {
             'foregroundWindowElevated',
             'audioFormat',
           ].includes(misc.union ?? '')
-        )
+        ) {
+          this.callbacks.activity()
           return
+        }
         if (misc && ['closeReason', 'stopService'].includes(misc.union ?? '')) {
           this.fail('connection_failed')
           return
@@ -144,8 +179,6 @@ export class LoginProtocol {
             'cursorPosition',
             'cursorId',
             'audioFrame',
-            'clipboard',
-            'multiClipboards',
             'cliprdr',
             'fileAction',
             'fileResponse',
@@ -155,11 +188,17 @@ export class LoginProtocol {
             'terminalAction',
             'terminalResponse',
           ].includes(message.union ?? '')
-        )
+        ) {
+          this.callbacks.activity()
           return
+        }
       }
       throw new Error('protocol_error')
     } catch (error) {
+      if (error instanceof TransportFault) {
+        this.fail(error.terminal.code, error.terminal.cause)
+        return
+      }
       this.fail(
         error instanceof Error &&
           [
@@ -168,6 +207,9 @@ export class LoginProtocol {
             'remote_desktop_unavailable',
             'peer_display_invalid',
             'codec_unsupported',
+            'video_backpressure',
+            'input_backpressure',
+            'connection_failed',
           ].includes(error.message)
           ? error.message
           : 'protocol_error',
@@ -195,7 +237,7 @@ export class LoginProtocol {
           option: {
             disableAudio: hbb.OptionMessage.BoolOption.Yes,
             disableClipboard: hbb.OptionMessage.BoolOption.Yes,
-            disableKeyboard: hbb.OptionMessage.BoolOption.Yes,
+            disableKeyboard: hbb.OptionMessage.BoolOption.No,
             disableCamera: hbb.OptionMessage.BoolOption.Yes,
             imageQuality: hbb.ImageQuality.Balanced,
             customFps: 30,
@@ -203,8 +245,9 @@ export class LoginProtocol {
           },
         },
       })
-    } catch {
-      this.fail('protocol_error')
+    } catch (error) {
+      if (error instanceof TransportFault) this.fail(error.terminal.code, error.terminal.cause)
+      else this.fail('protocol_error')
     } finally {
       proof.fill(0)
     }
@@ -237,7 +280,18 @@ export class LoginProtocol {
   }
   // ACK／畫質／refresh皆走同一secretbox TX排序。
   sendControl(message: hbb.IMessage): void {
-    if (!this.#closed) this.send(message)
+    if (this.#closed || !['awaiting_video', 'streaming'].includes(this.#state))
+      throw new Error('protocol_error')
+    this.send(message)
+  }
+  // keyboard=0／clipboard=2，握手中的明確否定也保存，不由metadata升權。
+  private acceptPermission(info: hbb.IPermissionInfo): void {
+    const kind = info.permission ?? hbb.PermissionInfo.Permission.Keyboard
+    if (kind === hbb.PermissionInfo.Permission.Keyboard)
+      this.#permissions.keyboard = info.enabled ?? false
+    else if (kind === hbb.PermissionInfo.Permission.Clipboard)
+      this.#permissions.clipboard = info.enabled ?? false
+    this.callbacks.permission({ ...this.#permissions })
   }
   // 首張真Main presented後才streaming；media重新配置可回awaiting_video。
   videoPhase(value: 'awaiting_video' | 'streaming'): void {
@@ -250,20 +304,26 @@ export class LoginProtocol {
     this.#timer =
       value === 'awaiting_video' || value === 'streaming'
         ? null
-        : setTimeout(() => this.fail('connection_timeout'), 15000)
+        : setTimeout(
+            /* 等待上游逾時只能消耗既有retry cycle。 */ () =>
+              this.fail('connection_timeout', 'temporary'),
+            15000,
+          )
     this.callbacks.phase(value)
   }
   // 失敗只送固定分類，先銷毀key才通知host關閉WS。
-  private fail(code: string): void {
+  private fail(code: string, cause: TerminalCause = 'fatal'): void {
     if (!this.#closed) {
       this.dispose()
-      this.callbacks.failure(code)
+      this.callbacks.failure(code, cause)
     }
   }
   // 取消或終止時清除對稱key、counter與timer，不再接收舊訊息。
   dispose(): void {
     this.#closed = true
     this.#peer = null
+    this.#inputPeer = new PeerInputMetadataCache()
+    this.#permissions = { keyboard: false, clipboard: false }
     this.#crypto.dispose()
     if (this.#timer) clearTimeout(this.#timer)
     this.#timer = null

@@ -23,10 +23,9 @@ if [ "${CLIENT_ROLE:-target}" = target ]; then
   if [ ! -s /test-state/password ]; then
     od -An -N24 -tx1 /dev/urandom | tr -d ' \n' > /test-state/password
   fi
-  PASSWORD=$(tr -d '\r\n' < /test-state/password)
-  if [ ! -s "$XDG_CONFIG_HOME/rustdesk/RustDesk.toml" ]; then
-    printf "password = '%s'\n" "$PASSWORD" > "$XDG_CONFIG_HOME/rustdesk/RustDesk.toml"
-  fi
+  # Config整檔存在但credential缺失時仍需補齊；不覆寫非空storage或其它身分欄位。
+  . /initialize-target-password.sh
+  initialize_target_password "$XDG_CONFIG_HOME/rustdesk/RustDesk.toml" /test-state/password
 fi
 
 # 僅清理此容器固定測試顯示的殘留檔，確保 docker restart 可重新建立 Xvfb。
@@ -45,6 +44,13 @@ printf 'session.screen0.rootCommand: xsetroot -solid black\n' > "$HOME/.fluxbox/
 if [ "${CLIENT_ROLE:-target}" = target ]; then
   # 公開clock不需視窗管理器，避免桌布警告遮擋它並暫停X11更新。
   xclock -digital -update 1 -geometry 700x120+200+250 -bg '#1a668f' -fg white > /dev/null 2>&1 &
+  # 公開editor專用UTF8 locale；具名resource覆寫Xedit預設快捷鍵，不改RustDesk設定。
+  LANG=C.UTF-8 xedit -geometry 700x220+100+410 -xrm '*international: True' \
+    -xrm '*editWindow.translations: #override\n<Btn1Down>: xedit-focus() select-start()\nCtrl<Key>a: select-all()\nCtrl<Key>c: select-save(CLIPBOARD)\nCtrl<Key>v: insert-selection(CLIPBOARD)\nCtrl<Key>z: undo()' \
+    > /dev/null 2>&1 &
+  # xev只觀測其公開fixture視窗，事件不輸出至容器日誌或驗收report。
+  LANG=C.UTF-8 xev -geometry 240x220+1000+410 -event mouse -event keyboard \
+    > /test-state/public-input-events 2>/dev/null &
   dbus-run-session -- rustdesk --server > /dev/null 2>&1 &
   SERVER_PID=$!
   LAST_ID=''

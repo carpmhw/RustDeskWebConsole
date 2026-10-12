@@ -53,3 +53,35 @@ it('rejects conflicting login response members', () => {
   }).finish()
   expect(() => admitEnvelope(bytes)).toThrow('protocol_error')
 })
+
+// Clipboard scalar 不能重複或用錯 wire，nested 長度也必須完整驗明。
+it('bounds nested clipboard shape before generated decoding', () => {
+  expect(admitEnvelope(new Uint8Array([0xe2, 1, 5, 10, 3, 18, 1, 65]))).toBe('control')
+  expect(() => admitEnvelope(new Uint8Array([0x82, 1, 4, 8, 1, 8, 0]))).toThrow('protocol_error')
+  expect(() => admitEnvelope(new Uint8Array([0x82, 1, 2, 8, 2]))).toThrow('protocol_error')
+  expect(() => admitEnvelope(new Uint8Array([0x82, 1, 2, 16, 1]))).toThrow('protocol_error')
+  expect(() => admitEnvelope(new Uint8Array([0xe2, 1, 4, 10, 2, 18, 2]))).toThrow('protocol_error')
+  expect(() =>
+    admitEnvelope(
+      hbb.Message.encode({
+        multiClipboards: { clipboards: Array.from({ length: 9 }, () => ({})) },
+      }).finish(),
+    ),
+  ).toThrow('protocol_error')
+  expect(() =>
+    admitEnvelope(hbb.Message.encode({ clipboard: { content: new Uint8Array(65536) } }).finish()),
+  ).toThrow('protocol_error')
+})
+// PeerInfo displays 的上限在 generated repeated allocation 之前檢查。
+it('bounds peer displays in both login response and root updates', () => {
+  const peerInfo = { displays: Array.from({ length: 33 }, () => ({ width: 1, height: 1 })) }
+  expect(() => admitEnvelope(hbb.Message.encode({ peerInfo }).finish())).toThrow('protocol_error')
+  expect(() => admitEnvelope(hbb.Message.encode({ loginResponse: { peerInfo } }).finish())).toThrow(
+    'protocol_error',
+  )
+  expect(
+    admitEnvelope(
+      hbb.Message.encode({ peerInfo: { displays: peerInfo.displays.slice(0, 32) } }).finish(),
+    ),
+  ).toBe('control')
+})

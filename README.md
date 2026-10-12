@@ -65,7 +65,7 @@ frontend/node_modules/.bin/eslint tools
 docker compose -f deploy/dev/docker-compose.redis-test.yml down
 ```
 
-Pinned 官方 RustDesk relay 整合須另外執行 `bash deploy/dev/test-m3a-relay.sh`。Runner 使用 hbbs／hbbr 1.1.14 及受控端 1.4.2，驗證 TCP／WS 兩條 Stage A 路徑；只清理自己啟動的容器、保留測試 volumes。WS 宿主映射預設為 31118／31119，可用 `RDWEB_TEST_ID_WS_PORT`／`RDWEB_TEST_RELAY_WS_PORT` 覆寫，容器內仍是 21118／21119。缺少 runtime fixture 的 `RustDeskReal` 測試會明確失敗，不會冒稱通過。
+Pinned 官方 RustDesk relay 整合須另外執行 `bash deploy/dev/test-m3a-relay.sh`。Runner 使用 hbbs／hbbr 1.1.14 及目前固定的受控端 1.5.0，驗證 TCP／WS 兩條 Stage A 路徑（歷史 1.4.2 結果不追溯改號）；只清理自己啟動的容器、保留測試 volumes。WS 宿主映射預設為 31118／31119，可用 `RDWEB_TEST_ID_WS_PORT`／`RDWEB_TEST_RELAY_WS_PORT` 覆寫，容器內仍是 21118／21119。缺少 runtime fixture 的 `RustDeskReal` 測試會明確失敗，不會冒稱通過。
 
 首次 build 會從固定 RustDesk `1.4.2` 對應的 hbb_common commit 下載完整 proto 到 `obj`，驗證 SHA-256 後由 Grpc.Tools 產生 C#。
 來源與離線快取方式見 [`UPSTREAM.md`](src/RdWeb.Api/RustDesk/Protos/UPSTREAM.md)。
@@ -88,7 +88,7 @@ nginx 請求層錯誤日誌也停用，避免 upstream 失敗時附帶 query 中
 
 ## 真實 RustDesk 桌面驗收
 
-官方 server `1.1.14` 與桌面 client `1.4.2` 已固定版本／digest。測試受控端使用獨立 Xvfb 公開時鐘桌面，官方控制端使用 Fluxbox，為 `linux/amd64`；不掛載或修改宿主機現有 RustDesk 設定。
+官方 server `1.1.14` 與目前桌面 client `1.5.0` 已固定版本／digest。2026-10-11 使用者核准 Windows／Linux Client 皆以 1.5.0 驗收；原 pinned schema／控制側能力自報不跟著改號，不代表新增 key-exchange v1 已支援。歷史 1.4.2 證據保留；完整 M3-B3 仍未驗收。測試受控端使用獨立 Xvfb 公開時鐘桌面，官方控制端使用 Fluxbox，為 `linux/amd64`；不掛載或修改宿主機現有 RustDesk 設定。
 
 ```sh
 docker compose -f deploy/dev/docker-compose.rustdesk-test.yml build

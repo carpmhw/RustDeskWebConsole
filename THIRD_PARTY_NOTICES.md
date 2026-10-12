@@ -6,6 +6,7 @@ RustDesk／hbb_common／RustDesk Server 由原作者 RustDesk contributors／Pur
 
 - 上游 proto 完整下載、未修改，使用 RustDesk 1.4.2 的 hbb_common commit `334641686c731631fc51524bb2aa2ec2773069ee`；來源及雜湊見 `src/RdWeb.Api/RustDesk/Protos/UPSTREAM.md`。
 - 官方 server 與桌面 client 只作為測試環境，使用固定版本／digest；Dockerfile 保留上游來源 URL。
+- 2026-10-11 使用者核准測試 Client 改為官方 RustDesk 1.5.0（兩平台）；Linux x86_64 deb SHA-256 `4e2b9701d25a7ef373f3d09bda584a37d6902f97a6ab15f2e86d4a5783e2a0ec`，二進位未修改。生成 proto 仍採上列 1.4.2 固定來源，不把受控端驗收版本當成 schema／控制側能力升級；未複製 1.5.0 上游實作，授權仍保留於測試映像。
 - 本輪未讀取、複製或翻譯 jt-ipam 程式碼，只依本機計畫自行實作骨架與 spike。
 - Ed25519 公開測試向量來自 RFC 8032 §7.1；只使用公鑰及簽章，沒有儲存測試私鑰。
 
@@ -67,6 +68,40 @@ TweetNaCl 1.0.3（Unlicense）為總計畫內瀏覽器加密套件。使用者�
 ## M3-B2 公開影像測試素材
 
 WebCodecs 測試使用 web-platform-tests/wpt commit `521d168d63dbd206ea7fbe0b74ddd5760e6e668e` 的 `webcodecs/vp8.webm`、`vp9.mp4`、`av1.mp4`、`h264.annexb` 公開素材，依固定 SHA256／offset 切出 key／delta。只使用素材及 schema／offset 事實，不複製上游測試程式。完整來源、hash 與生成方式見 `frontend/src/rdweb/__fixtures__/CODEC_FIXTURES.md`；正式 app 不匯入素材或測試 harness。未新增 npm／NuGet／WASM 相依。
+
+## M3-B3 Zstandard 解壓套件與公開素材
+
+fzstd 0.1.1（MIT）為已核准的純 JS runtime 相依，沒有 runtime 間接套件；ESM 在本機 bundle，不使用 CDN／WASM。公開剪貼簿素材由宿主既有 libzstd 1.5.5 獨立壓縮／解壓驗證，來源、hash 及重生規則見 `frontend/src/rdweb/__fixtures__/CLIPBOARD_FIXTURES.md`。素材不包含遠端內容，不匯入正式 app。
+
+2026-10-10 使用者核准固定版本修補：`frontend/patches/fzstd@0.1.1.patch` 修改原套件 ESM／CJS 的輸出 bounds／frame count／有效歷史驗證，未替換熵碼演算法。MIT 原文保持；lockfile 同時固定 registry integrity 與 patch SHA-256 `9c9d50d618500248fc39e879549bab302bed146bfb5cc043415c33f3a7ec4899`。此修補僅適用應用實際使用的 ESM／CJS entry points，未使用或發布 UMD／CDN 入口；checksum／dictionary／concat 仍由應用 admission 拒絕。
+
+以下保留實際 fzstd 0.1.1 套件 `LICENSE` 原文：
+
+```text
+MIT License
+
+Copyright (c) 2020 Arjun Barrett
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## M3-B2 公開影像素材原始 LICENSE
 
 來源：https://github.com/web-platform-tests/wpt/blob/521d168d63dbd206ea7fbe0b74ddd5760e6e668e/LICENSE.md 。以下保留原始條款。
 

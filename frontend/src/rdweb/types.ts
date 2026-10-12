@@ -1,4 +1,6 @@
 import type { PeerVideo, DisplayGeometry, VideoPacket } from './video-types'
+import type { hbb } from './codec'
+import type { PeerInputMetadata, RemotePermissions, TerminalCause } from './interaction-types'
 
 export type Phase =
   | 'connecting'
@@ -35,6 +37,10 @@ export const FAILURE_CODES = [
   'video_timeout',
   'connection_failed',
   'connection_timeout',
+  'rate_limited',
+  'reconnect_exhausted',
+  'reconnect_timeout',
+  'input_backpressure',
 ] as const
 export type FailureCode = (typeof FAILURE_CODES)[number]
 // 所有跨執行緒與UI錯誤只能使用固定分類，不傳原生或remote任意字串。
@@ -55,7 +61,15 @@ export interface Callbacks {
   // 官方display更新作廢舊generation並驗新幾何。
   display: (value: DisplayGeometry) => void
   // 固定failure分類由Worker與host共同白名單化。
-  failure: (code: string) => void
+  failure: (code: string, cause?: TerminalCause) => void
+  // 已驗原點只交同 Worker input owner，不擴充 Main summary。
+  inputPeer: (value: PeerInputMetadata) => void
+  // 保存握手期間明確否定，不由 PeerInfo 重設。
+  permission: (value: RemotePermissions) => void
+  // MAC／schema 驗明後同步交 Worker clipboard owner。
+  clipboard: (value: hbb.Message) => void
+  // 只代表有效MAC活動，明文SignedId／heartbeat不算。
+  activity: () => void
 }
 // 嚴格解析public control metadata，防未驗證SignedId自建trust root。
 export function parseReady(raw: unknown, target: string, peer: string): Ready {

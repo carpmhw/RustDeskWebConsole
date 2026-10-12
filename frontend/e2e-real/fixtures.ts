@@ -34,40 +34,56 @@ export function observeConsole(context: BrowserContext) {
 }
 // Runtime password只經正式admin API進Vault，不傳browser或helper回傳資料。
 export async function prepareOfficialTarget(transport: 'tcp' | 'ws'): Promise<OfficialFixture> {
+  return (await prepareOfficialTargets([transport]))[0]!
+}
+// 同一formal使用者／context保存雙transport target，50次驗收不重建使用者來繞quota。
+export async function prepareOfficialTargets(
+  transports: readonly ('tcp' | 'ws')[] = ['tcp', 'ws'],
+): Promise<OfficialFixture[]> {
   if (!process.env.RDWEB_RUSTDESK_PASSWORD || !process.env.RDWEB_RUSTDESK_TARGET_ID)
     throw new Error('Use official RustDesk runner')
   const fixture = await createFixture('admin')
   try {
-    const server = await api<{ id: string }>(
-      fixture.context,
-      'servers',
-      'POST',
-      {
-        name: 'official-fixture',
-        id_server: 'hbbs:' + (transport === 'tcp' ? 21116 : 21118),
-        relay_server: 'hbbr:' + (transport === 'tcp' ? 21117 : 21119),
-        public_key: process.env.RDWEB_RUSTDESK_PUBLIC_KEY,
-        transport,
-        enabled: true,
-        allow_private_network: true,
-        version: 0,
-      },
-      fixture.admin.access_token,
-    )
-    const name = 'official-video-target'
-    const target = await api<{ id: string }>(
-      fixture.context,
-      'targets',
-      'POST',
-      {
+    const targets: OfficialFixture[] = []
+    for (const transport of transports) {
+      const server = await api<{ id: string }>(
+        fixture.context,
+        'servers',
+        'POST',
+        {
+          name: 'official-fixture',
+          id_server: 'hbbs:' + (transport === 'tcp' ? 21116 : 21118),
+          relay_server: 'hbbr:' + (transport === 'tcp' ? 21117 : 21119),
+          public_key: process.env.RDWEB_RUSTDESK_PUBLIC_KEY,
+          transport,
+          enabled: true,
+          allow_private_network: true,
+          version: 0,
+        },
+        fixture.admin.access_token,
+      )
+      const name =
+        transports.length === 1 ? 'official-video-target' : 'official-video-target-' + transport
+      const target = await api<{ id: string }>(
+        fixture.context,
+        'targets',
+        'POST',
+        {
+          name,
+          server_id: server.id,
+          rustdesk_id: process.env.RDWEB_RUSTDESK_TARGET_ID,
+          password: process.env.RDWEB_RUSTDESK_PASSWORD,
+        },
+        fixture.admin.access_token,
+      )
+      targets.push({
+        context: fixture.context,
+        username: fixture.user.username,
+        targetId: target.id,
         name,
-        server_id: server.id,
-        rustdesk_id: process.env.RDWEB_RUSTDESK_TARGET_ID,
-        password: process.env.RDWEB_RUSTDESK_PASSWORD,
-      },
-      fixture.admin.access_token,
-    )
-    return { context: fixture.context, username: fixture.user.username, targetId: target.id, name }
+      })
+    }
+    return targets
   } catch {
     await fixture.context.dispose()
     throw new Error('Official fixture unavailable')

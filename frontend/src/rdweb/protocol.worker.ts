@@ -1,13 +1,13 @@
 import { ProtocolWorkerSession, type SocketPort } from './worker-session'
 import { createNativeDecoder } from './decoder'
 import type { VideoMainEvent, VideoWorkerEvent } from './video-types'
+import { interactionClock } from './interaction-limits'
 
 const scope = self as unknown as {
   postMessage(value: VideoWorkerEvent, transfer?: Transferable[]): void
   onmessage: ((event: MessageEvent<VideoMainEvent>) => void) | null
 }
-const startWall = Date.now()
-const startMono = performance.now()
+const now = interactionClock()
 const session = new ProtocolWorkerSession(
   // Native轉移始終同源，不記錄payload或key。
   (value, transfer) => scope.postMessage(value, transfer),
@@ -18,7 +18,7 @@ const session = new ProtocolWorkerSession(
     // 保存endpoint只能由backend選，browser只連站內bridge。
     socket: (url, protocols) => new WebSocket(url, protocols) as unknown as SocketPort,
     // 防背景／休眠恢復後舊期限被忽略，wall回撥則以monotonic為準。
-    now: () => Math.max(performance.now() - startMono, Date.now() - startWall),
+    now,
     // 公開probe及nativeoutput都必須是真VideoFrame。
     isFrame: (value): value is VideoFrame =>
       typeof VideoFrame !== 'undefined' && value instanceof VideoFrame,

@@ -1,4 +1,5 @@
 import { VIDEO_LIMITS } from './video-limits'
+import { INTERACTION_LIMITS } from './interaction-limits'
 export interface WireField {
   number: number
   wire: number
@@ -116,10 +117,51 @@ function admitLoginResponse(bytes: Uint8Array, budget: ScanBudget): void {
     if (field.number === 3) {
       if (trustedSeen || field.wire !== 0 || field.scalar! > 1n) throw new Error('protocol_error')
       trustedSeen = true
-    } else if (![1, 2].includes(field.number) || field.wire !== 2 || ++count > 1)
-      throw new Error('protocol_error')
+    } else {
+      if (![1, 2].includes(field.number) || field.wire !== 2 || ++count > 1)
+        throw new Error('protocol_error')
+      if (field.number === 2) admitPeerInfo(field.bytes!, budget)
+    }
   })
   if (count !== 1) throw new Error('protocol_error')
+}
+// Clipboard 非 oneof，scalar 可省略但不可重複，bool 只接受零或一。
+function admitClipboard(bytes: Uint8Array, budget: ScanBudget): void {
+  const seen = new Set<number>()
+  // 依固定 schema 驗每筆欄位，不配置遠端宣告大小的 buffer。
+  visitWire(bytes, budget, (f) => {
+    if (
+      seen.has(f.number) ||
+      f.number < 1 ||
+      f.number > 6 ||
+      f.wire !== ([1, 3, 4, 5].includes(f.number) ? 0 : 2)
+    )
+      throw new Error('protocol_error')
+    seen.add(f.number)
+    if (f.number === 1 && f.scalar! > 1n) throw new Error('protocol_error')
+  })
+}
+// MultiClipboards 最多八個 entries，空集合不能冒用上次文字。
+function admitMultiClipboards(bytes: Uint8Array, budget: ScanBudget): void {
+  let count = 0
+  // nested entries 共享原本 field budget，不重設掃描額度。
+  visitWire(bytes, budget, (f) => {
+    if (f.number !== 1 || f.wire !== 2 || ++count > INTERACTION_LIMITS.clipboardEntries)
+      throw new Error('protocol_error')
+    admitClipboard(f.bytes!, budget)
+  })
+}
+// PeerInfo displays 在生成 repeated 物件之前限制到三十二筆。
+function admitPeerInfo(bytes: Uint8Array, budget: ScanBudget): void {
+  let count = 0
+  // Peer 其他 typed 語意仍由 pinned codec 驗明。
+  visitWire(bytes, budget, (f) => {
+    if (f.number === 4) {
+      if (f.wire !== 2 || ++count > 32) throw new Error('protocol_error')
+      // 只驗有界 display nested wire，幾何由 private cache 驗。
+      visitWire(f.bytes!, budget, () => {})
+    }
+  })
 }
 // 每個envelope先作額度／oneof admission，影像不放寬control limit。
 export function admitEnvelope(bytes: Uint8Array): 'video' | 'control' {
@@ -146,5 +188,8 @@ export function admitEnvelope(bytes: Uint8Array): 'video' | 'control' {
   if (bytes.length > VIDEO_LIMITS.control) throw new Error('protocol_error')
   if (field.number === 19) admitMisc(field.bytes!, budget)
   if (field.number === 8) admitLoginResponse(field.bytes!, budget)
+  if (field.number === 16) admitClipboard(field.bytes!, budget)
+  if (field.number === 28) admitMultiClipboards(field.bytes!, budget)
+  if (field.number === 25) admitPeerInfo(field.bytes!, budget)
   return 'control'
 }
