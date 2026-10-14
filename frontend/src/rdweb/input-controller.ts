@@ -1,6 +1,6 @@
 import type { InputChannel } from './input-channel'
 import type { InputState, OperationCode, Modifier } from './interaction-types'
-import { KeyboardInput } from './keyboard-input'
+import { KeyboardInput, type KeyboardEmissionObserver } from './keyboard-input'
 export class InputController {
   private off: Array<() => void> = []
   private alive = true
@@ -20,9 +20,15 @@ export class InputController {
     private readonly issue: (code: OperationCode) => void,
   ) {
     // 非活躍 scope 不得提交晚到組字結果。
-    this.keyboard = new KeyboardInput((intent) => {
-      if (this.focused) this.channel.enqueue(intent)
-    }, issue)
+    this.keyboard = new KeyboardInput(
+      /* 非活躍scope不提交晚到的輸入。 */ (intent) => {
+        if (this.focused) this.channel.enqueue(intent)
+      },
+      issue,
+      // 只有測試init script顯式安裝的被動port才觀察；正式頁面不建立logger或hash。
+      (window as Window & { __rdwebKeyboardEmissionObserver?: KeyboardEmissionObserver })
+        .__rdwebKeyboardEmissionObserver,
+    )
   }
   // 成對註冊與移除，每個原生事件錯誤只發固定提示。
   private listen(

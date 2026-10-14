@@ -13,6 +13,8 @@ import { WorkerInputSender } from './worker-input'
 import { WorkerClipboard } from './worker-clipboard'
 import type { Terminal } from './interaction-types'
 import { closedTerminal, TransportFault } from './terminal'
+import type { EncodedInputObserverSource } from './encoded-input-observer'
+import type { IncomingClipboardObserverSource } from './incoming-clipboard-observer'
 export interface SocketPort {
   readonly readyState: number
   readonly bufferedAmount: number
@@ -31,6 +33,8 @@ export interface WorkerDependencies {
   socket: (url: string, protocols: string[]) => SocketPort
   now: () => number
   isFrame: (value: FrameResource) => value is VideoFrame
+  encodedInputObserver?: EncodedInputObserverSource
+  incomingClipboardObserver?: IncomingClipboardObserverSource
 }
 export class ProtocolWorkerSession {
   #revision = 0
@@ -261,6 +265,7 @@ export class ProtocolWorkerSession {
               },
             },
             this.#caps!,
+            this.dependencies.encodedInputObserver,
           )
         } else {
           if (!this.#protocol || !this.#framer || !(event.data instanceof ArrayBuffer))
@@ -344,6 +349,7 @@ export class ProtocolWorkerSession {
       /* owned bytes transfer失敗交session fatal，不掩飾為文字錯誤。 */ (reply, transfer) =>
         this.post(reply, transfer),
       this.dependencies.now,
+      this.dependencies.incomingClipboardObserver,
     )
     // 唯一ticker驅動media／clip；任何未知程式或protocol錯誤都fatal收尾。
     this.#ticker = setInterval(() => {

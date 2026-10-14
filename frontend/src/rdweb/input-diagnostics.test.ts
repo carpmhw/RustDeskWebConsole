@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { installInputDiagnostics } from '../../e2e-real/input-diagnostics'
+import { installInputDiagnostics, INPUT_DIAGNOSTIC_FIELDS } from '../../e2e-real/input-diagnostics'
+const publicSample = 'Public 中文 RdWeb 00000000-0000-4000-8000-000000000000'
 
 // 假Worker只觀察原訊息轉送與安全摘要，不能冒充Windows原生輸入。
 function fixture(nativePromise = Promise.resolve(), nativeError?: Error) {
@@ -100,9 +101,87 @@ it('detects early matching clipboard delivery without inspecting bytes', () => {
   expect(port.snapshot()).toMatchObject({
     pullSubmitted: true,
     clipboardDelivered: true,
+    clipboardPayloadCompared: false,
+    clipboardPayloadExact: false,
     dataBeforeCopySubmitted: true,
     dataBeforeCopyAccepted: true,
   })
+})
+// capture opt-in只屬本輪matching pull，其他request的payload永遠不讀。
+it('does not inspect a nonmatching clipboard payload in opt-in mode', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, true, true, true)
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  let read = false
+  worker.reply({
+    type: 'clipboard-data',
+    revision: 1,
+    request_id: 8,
+    get bytes() {
+      read = true
+      throw new Error('must_not_read_nonmatching_payload')
+    },
+  })
+  expect(read).toBe(false)
+  expect(port.snapshot()).toMatchObject({
+    clipboardDelivered: false,
+    clipboardPayloadCompared: false,
+    clipboardPayloadExact: false,
+  })
+})
+// 新的payload compare opt-in需再由captureText保護，不能只因一般inspectInput讀bytes。
+it('requires explicit private capture before enabling clipboard payload comparison', () => {
+  const { port } = fixture()
+  expect(() => port.begin(publicSample, false, false, true)).toThrow(
+    'input_clipboard_diagnostics_unavailable',
+  )
+})
+// matching transfer ingress只回exact boolean，並保持原bytes供後續Main handler使用。
+it.each([
+  ['exact', publicSample, true],
+  ['mismatch', 'Public different clipboard value', false],
+  ['preserved BOM mismatch', '\uFEFF' + publicSample, false],
+])('compares a matching Worker clipboard payload at Main ingress: %s', (_name, value, exact) => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, true, true, true)
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  const bytes = new TextEncoder().encode(value)
+  const original = new Uint8Array(bytes)
+  let productBytes: Uint8Array | undefined
+  // 產品事件listener在diagnostic observer後接收同一event。
+  worker.addEventListener('message', (event: Event) => {
+    const message = (event as MessageEvent).data as { type?: string; bytes?: Uint8Array }
+    if (message.type === 'clipboard-data') productBytes = message.bytes
+  })
+  worker.reply({ type: 'clipboard-data', revision: 1, request_id: 7, bytes })
+  expect(port.snapshot()).toMatchObject({
+    clipboardDelivered: true,
+    clipboardPayloadCompared: true,
+    clipboardPayloadExact: exact,
+    overflow: false,
+  })
+  expect(bytes).toEqual(original)
+  // observer先於產品onmessage，後續Main handler仍收到同一bytes引用。
+  expect(productBytes).toBe(bytes)
+})
+// malformed／NUL／oversized transfer不能偽裝為可比較的payload mismatch。
+it.each([
+  ['malformed UTF-8', new Uint8Array([0xff])],
+  ['embedded NUL', new TextEncoder().encode('Public\0invalid')],
+  ['oversized', new Uint8Array(32769)],
+])('refuses %s clipboard payload comparison', (_name, bytes) => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, true, true, true)
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  const original = new Uint8Array(bytes)
+  worker.reply({ type: 'clipboard-data', revision: 1, request_id: 7, bytes })
+  expect(port.snapshot()).toMatchObject({
+    clipboardDelivered: true,
+    clipboardPayloadCompared: false,
+    clipboardPayloadExact: false,
+    overflow: true,
+  })
+  expect(bytes).toEqual(original)
 })
 // 即使回覆晚於C ACK，也只能說Worker提交，不得宣称Windows已複製。
 it('distinguishes clipboard delivery after copy acknowledgment', () => {
@@ -223,7 +302,6 @@ it('recognizes control shortcuts with lock-state modifiers', () => {
   })
 })
 
-const publicSample = 'Public 中文 RdWeb 00000000-0000-4000-8000-000000000000'
 // 本輪public expected只用來比對，不讀bytes；matching資料之後的native參數分辨內容形狀。
 it.each([
   [publicSample, true, false, false, true, true, true],
@@ -401,3 +479,559 @@ it('clears earlier readback on a final native read failure without claiming over
   expect(port.takeReadback()).toEqual({ value: null, source: 'unavailable' })
   expect(port.snapshot().overflow).toBe(false)
 })
+
+// 手列完整primitive chord，省略Control up或翻轉字母up應讓真observer失敗。
+function chord(char: 'a' | 'c') {
+  return [
+    { kind: 'key', key: 'Control', down: true, modifiers: ['Control', 'NumLock'] },
+    { kind: 'shortcut', char, down: true, modifiers: ['Control', 'NumLock'] },
+    { kind: 'shortcut', char, down: false, modifiers: ['Control', 'NumLock'] },
+    { kind: 'key', key: 'Control', down: false, modifiers: ['NumLock'] },
+  ]
+}
+// prefix拆成每edge一batch以驗全部ACK，不把Text ACK當Ctrl放開證據。
+function textPrefix(worker: ReturnType<typeof fixture>['worker']) {
+  for (const [index, event] of [
+    ...chord('a'),
+    { kind: 'text', text: publicSample, modifiers: [] },
+  ].entries()) {
+    worker.postMessage(batch(index + 1, [event]))
+  }
+}
+// 同Worker matching ACK逐batch驗，省略其中一筆就不可accepted。
+function acceptPrefix(worker: ReturnType<typeof fixture>['worker'], rejected = 0) {
+  for (let id = 1; id <= 5; id++)
+    worker.reply({
+      type: 'input-ack',
+      revision: 1,
+      input_generation: 1,
+      batch_id: id,
+      sent: id !== rejected,
+    })
+}
+// 截斷prefix或忽略Control up的ACK會使此案失敗。
+it('accepts text-only prefix only after every matching batch ACK', () => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  textPrefix(worker)
+  expect(port.textOnlySnapshot()).toEqual({
+    prefixSubmitted: true,
+    prefixAccepted: false,
+    postTextInput: false,
+    clipboardObserved: false,
+    scopeInterrupted: false,
+    overflow: false,
+  })
+  acceptPrefix(worker)
+  expect(port.textOnlySnapshot().prefixAccepted).toBe(true)
+  expect(Object.keys(port.snapshot()).sort()).toEqual([...INPUT_DIAGNOSTIC_FIELDS].sort())
+})
+// 少任何edge都不得假稱單筆完整Text前已有正確全選。
+it.each([0, 1, 2, 3])('rejects text-only prefix missing initial edge: %i', (missing) => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  const events: unknown[] = [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]
+  events.splice(missing, 1)
+  worker.postMessage(batch(1, events))
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 1, sent: true })
+  expect(port.textOnlySnapshot().prefixAccepted).toBe(false)
+})
+// 任一batch拒絕即使Text被接受仍須拒絕prefix。
+it('rejects text-only prefix when a control-only batch is refused', () => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  textPrefix(worker)
+  acceptPrefix(worker, 4)
+  expect(port.textOnlySnapshot().prefixAccepted).toBe(false)
+})
+// 文字之後任何event都會干擾隔離，move也不能沿完整oracle默許。
+it.each([
+  { kind: 'move' },
+  { kind: 'button' },
+  chord('a')[0],
+  {
+    kind: 'text',
+    get text(): never {
+      /* 第二筆不讀內容。 */ throw new Error('must_not_read')
+    },
+  },
+  { kind: 'wheel' },
+  { kind: 'sas' },
+])('detects post-text input without reading payload: %#', (event) => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  textPrefix(worker)
+  acceptPrefix(worker)
+  worker.postMessage(batch(6, [event]))
+  expect(port.textOnlySnapshot().postTextInput).toBe(true)
+})
+// 任何clipboard command或data只看type，不讀bytes或觸發native API。
+it.each([
+  'clipboard-pull',
+  'clipboard-send',
+  'clipboard-cancel',
+  'clipboard-data',
+  'clipboard-error',
+])('detects clipboard traffic in text-only observation: %s', (type) => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  textPrefix(worker)
+  worker.postMessage({
+    type,
+    revision: 1,
+    request_id: 7,
+    get bytes(): never {
+      /* payload不可讀。 */ throw new Error('must_not_read')
+    },
+  })
+  expect(port.textOnlySnapshot().clipboardObserved).toBe(true)
+})
+// scope失效或current release中斷，stale release不得污染現行世代。
+it.each(['release', 'generation', 'state', 'terminal'])(
+  'detects text-only scope interruption: %s',
+  (change) => {
+    const { worker, port } = fixture()
+    port.beginTextOnly(publicSample)
+    textPrefix(worker)
+    if (change === 'release') worker.postMessage({ type: 'input-release', revision: 1 })
+    if (change === 'generation') worker.postMessage(batch(6, [{ kind: 'move' }], 1, 2))
+    if (change === 'state')
+      worker.reply({
+        type: 'input-state',
+        revision: 1,
+        input_generation: 1,
+        ready: false,
+        keyboard: false,
+      })
+    if (change === 'terminal') worker.reply({ type: 'error', revision: 1 })
+    expect(port.textOnlySnapshot().scopeInterrupted).toBe(true)
+  },
+)
+// 清text-only模式後不讀文字getter；固定summary全部reset。
+it('clears text-only mode when the original diagnostic begins', () => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  textPrefix(worker)
+  worker.postMessage({ type: 'input-release', revision: 2 })
+  expect(port.textOnlySnapshot().scopeInterrupted).toBe(false)
+  port.begin()
+  worker.postMessage(
+    batch(6, [
+      {
+        kind: 'text',
+        get text(): never {
+          /* 預設不讀文字。 */ throw new Error('must_not_read')
+        },
+      },
+    ]),
+  )
+  expect(
+    Object.values(port.textOnlySnapshot()).every(
+      /* reset不可留綠燈或干擾。 */ (value) => value === false,
+    ),
+  ).toBe(true)
+  expect(port.snapshot().overflow).toBe(false)
+})
+// 使用正式Worker的failure／disposed與權限訊息，不以合成terminal代替。
+it.each([
+  { type: 'failure', revision: 1 },
+  { type: 'disposed', revision: 1 },
+  { type: 'operation-error', revision: 1 },
+  { type: 'activity', revision: 1, open: false },
+  {
+    type: 'input-state',
+    revision: 1,
+    input_generation: 1,
+    ready: true,
+    keyboard: true,
+    clipboard: false,
+    platform: 'windows',
+  },
+])('detects native protocol interruption during text observation: %#', (message) => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  textPrefix(worker)
+  worker.reply(message)
+  expect(port.textOnlySnapshot().scopeInterrupted).toBe(true)
+})
+// Worker原生error不經message，不能讓已壞的scope繼續正常觀察。
+it.each(['error', 'messageerror'])(
+  'detects a native Worker fault during text observation: %s',
+  (name) => {
+    const { worker, port } = fixture()
+    port.beginTextOnly(publicSample)
+    textPrefix(worker)
+    worker.dispatchEvent(new Event(name))
+    expect(port.textOnlySnapshot().scopeInterrupted).toBe(true)
+  },
+)
+// 公開完整序列跨兩個batch；不假造OS執行，ACK由測試按明確tag回覆。
+function completeSequence(
+  worker: ReturnType<typeof fixture>['worker'],
+  text: unknown = publicSample,
+) {
+  worker.postMessage(batch(1, [...chord('a'), { kind: 'text', text, modifiers: ['NumLock'] }]))
+  worker.postMessage({ type: 'input-release', revision: 1 })
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(2, [...chord('a'), ...chord('c')]))
+}
+// 真observer比對單筆全文與兩次全選／完整copy；Main提交和Worker接受不能混成OS成功。
+it('inspects the exact full input sequence without claiming worker acceptance before ACK', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  completeSequence(worker)
+  expect(port.snapshot()).toMatchObject({
+    textExactSubmitted: true,
+    textSingleSubmitted: true,
+    initialSelectChordSubmitted: true,
+    receiveSelectChordSubmitted: true,
+    receiveCopyChordSubmitted: true,
+    inputSequenceSubmitted: true,
+    inputSequenceAccepted: false,
+    sequenceInvalid: false,
+  })
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 2, sent: true })
+  expect(port.snapshot().inputSequenceAccepted).toBe(false)
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 1, sent: true })
+  expect(port.snapshot().inputSequenceAccepted).toBe(true)
+  expect(Object.keys(port.snapshot()).sort()).toEqual([...INPUT_DIAGNOSTIC_FIELDS].sort())
+})
+// HR的public copy-return pipeline取native write及原oracle最後讀值，不送outbound clipboard。
+it('captures a remote input return record without an outbound clipboard send', async () => {
+  const returned = 'Public remote return 中文'
+  const { worker, port, nativeWrites } = fixture()
+  port.begin(publicSample, true, true)
+  completeSequence(worker)
+  for (const batch_id of [1, 2])
+    worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id, sent: true })
+  worker.reply({ type: 'clipboard-data', revision: 1, request_id: 7 })
+  await navigator.clipboard.writeText(returned)
+  port.observeReadback('Public local sentinel', 'native')
+  port.observeReadback(returned, 'native')
+  const readback = port.takeReadback()
+  const record = {
+    expected: publicSample,
+    nativeWrite: port.takeText(),
+    readback: readback.value,
+    source: readback.source,
+  }
+  expect(record).toEqual({
+    expected: publicSample,
+    nativeWrite: returned,
+    readback: returned,
+    source: 'native',
+  })
+  expect(port.snapshot().inputSequenceAccepted).toBe(true)
+  expect(nativeWrites).toEqual([returned])
+  expect(
+    worker.sent.some(
+      /* 單向remote_input回讀不得額外send clipboard。 */ (entry) =>
+        Array.isArray(entry) && (entry[0] as { type?: string }).type === 'clipboard-send',
+    ),
+  ).toBe(false)
+})
+// 缺字、字序、非string及超額均不能因Text kind存在而宣稱完整相等。
+it.each(['Public 中文', publicSample.slice(16) + ' Public 中文 RdWeb ', 123, '中'.repeat(10923)])(
+  'rejects non-exact submitted public text without reflecting payload: %#',
+  (text) => {
+    const { worker, port } = fixture()
+    port.begin(publicSample, false, true)
+    completeSequence(worker, text)
+    expect(port.snapshot()).toMatchObject({
+      textExactSubmitted: false,
+      textSingleSubmitted: true,
+      sequenceInvalid: true,
+      inputSequenceSubmitted: false,
+    })
+    expect(
+      Object.values(port.snapshot()).every(
+        /* 摘要沒有text或tag。 */ (value) => typeof value === 'boolean',
+      ),
+    ).toBe(true)
+  },
+)
+// 完整序列後再收到第二筆Text不能保留先前的single／exact綠燈。
+it('invalidates duplicate text instead of accepting the last matching fragment', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  completeSequence(worker)
+  worker.postMessage(batch(3, [{ kind: 'text', text: publicSample, modifiers: [] }]))
+  expect(port.snapshot()).toMatchObject({
+    textSingleSubmitted: false,
+    textExactSubmitted: false,
+    sequenceInvalid: true,
+    inputSequenceSubmitted: false,
+  })
+})
+// 截掉任何一個down/up都不能將兩次全選混為同一份證據。
+it.each([0, 1, 2, 3, 4, 5, 6, 7])('rejects a missing receive chord edge: %i', (missing) => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]))
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  const events = [...chord('a'), ...chord('c')]
+  events.splice(missing, 1)
+  worker.postMessage(batch(2, events))
+  expect(port.snapshot()).toMatchObject({
+    initialSelectChordSubmitted: true,
+    receiveCopyChordSubmitted: false,
+    inputSequenceSubmitted: false,
+  })
+})
+// copy不能先於接收後的全選；初始Text不能先於初始Control放開。
+it('rejects reordered selection/copy and a text event inside the initial chord', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(
+    batch(1, [...chord('a').slice(0, 3), { kind: 'text', text: publicSample, modifiers: [] }]),
+  )
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(2, [...chord('c'), ...chord('a')]))
+  expect(port.snapshot()).toMatchObject({
+    initialSelectChordSubmitted: false,
+    receiveSelectChordSubmitted: false,
+    receiveCopyChordSubmitted: false,
+    sequenceInvalid: true,
+  })
+})
+// 最後copy up之前資料可能已到，旗標只描述時序、不否定資料或阻擋正常keyup。
+it('keeps inspecting keyup after early clipboard delivery and native expected cleanup', async () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]))
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(2, [...chord('a'), ...chord('c').slice(0, 2)]))
+  worker.reply({ type: 'clipboard-data', revision: 1, request_id: 7 })
+  await navigator.clipboard.writeText(publicSample)
+  expect(port.snapshot()).toMatchObject({
+    dataBeforeCopyChordSubmitted: true,
+    receiveCopyChordSubmitted: false,
+  })
+  worker.postMessage(batch(3, chord('c').slice(2)))
+  expect(port.snapshot()).toMatchObject({
+    receiveCopyChordSubmitted: true,
+    inputSequenceSubmitted: true,
+    sequenceInvalid: false,
+  })
+})
+// chord中release或遠端點擊不可當正常文字後失焦；診斷不阻擋原指令。
+it.each(['release', 'button'])('invalidates an interrupted receive chord: %s', (kind) => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]))
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(2, chord('a').slice(0, 2)))
+  if (kind === 'release') worker.postMessage({ type: 'input-release', revision: 1 })
+  else
+    worker.postMessage(
+      batch(3, [{ kind: 'button', button: 'left', down: true, x: 20, y: 30, modifiers: [] }]),
+    )
+  worker.postMessage(batch(4, [...chord('a').slice(2), ...chord('c')]))
+  expect(port.snapshot()).toMatchObject({ sequenceInvalid: true, inputSequenceSubmitted: false })
+})
+// 完整最後batch不准覆蓋前面某個Control edge被Worker拒絕的事實。
+it('does not accept a full sequence when any relevant batch is rejected or stale', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  completeSequence(worker)
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 2, batch_id: 1, sent: true })
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 2, sent: true })
+  expect(port.snapshot().inputSequenceAccepted).toBe(false)
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 1, sent: false })
+  expect(port.snapshot()).toMatchObject({
+    inputSequenceSubmitted: true,
+    inputSequenceAccepted: false,
+    rejected: true,
+  })
+})
+// begin清除完整序列；預設仍不讀text getter、不接受前一輪ACK補綠。
+it('resets sequence inspection and never reads text by default', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  completeSequence(worker)
+  expect(port.snapshot().inputSequenceSubmitted).toBe(true)
+  port.begin(publicSample)
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 1, sent: true })
+  worker.postMessage(
+    batch(3, [
+      {
+        kind: 'text',
+        /* 預設不得讀私有值。 */ get text(): never {
+          throw new Error('must_not_read')
+        },
+      },
+    ]),
+  )
+  expect(port.snapshot()).toMatchObject({
+    inputSequenceSubmitted: false,
+    inputSequenceAccepted: false,
+    sequenceInvalid: false,
+    overflow: false,
+  })
+})
+// Control edge在自己的batch被拒絕，A／C down的綠燈不能掩蓋它。
+it('tracks acknowledgments for control-only and keyup-only batches', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  let id = 0
+  for (const event of [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }])
+    worker.postMessage(batch(++id, [event]))
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  for (const event of [...chord('a'), ...chord('c')]) worker.postMessage(batch(++id, [event]))
+  for (let tag = 1; tag <= id; tag++) {
+    if (tag === 4) continue
+    worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: tag, sent: true })
+  }
+  expect(port.snapshot()).toMatchObject({
+    inputSequenceSubmitted: true,
+    inputSequenceAccepted: false,
+  })
+  worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id: 4, sent: false })
+  expect(port.snapshot()).toMatchObject({ inputSequenceAccepted: false, rejected: true })
+})
+// mouse move不打斷chord，正常在完整chord外點回遠端亦不被誤判。
+it('allows pointer motion and outside-chord clicks without rewriting the sequence', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(
+    batch(1, [
+      { kind: 'move', x: 20, y: 30 },
+      { kind: 'button', button: 'left', down: true, x: 20, y: 30, modifiers: [] },
+      ...chord('a'),
+      { kind: 'text', text: publicSample, modifiers: [] },
+    ]),
+  )
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(
+    batch(2, [
+      chord('a')[0],
+      { kind: 'move', x: 20, y: 30 },
+      ...chord('a').slice(1),
+      ...chord('c'),
+    ]),
+  )
+  worker.reply({ type: 'clipboard-data', revision: 1, request_id: 7 })
+  expect(port.snapshot()).toMatchObject({
+    inputSequenceSubmitted: true,
+    sequenceInvalid: false,
+    dataBeforeCopyChordSubmitted: false,
+  })
+})
+// 第二個Worker不能補齊或破壞第一個Worker的chord。
+it('keeps the complete sequence scoped to its original worker', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]))
+  const other = new window.Worker('public-other') as unknown as typeof worker
+  other.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  other.postMessage(batch(2, [...chord('a'), ...chord('c')]))
+  expect(port.snapshot()).toMatchObject({
+    inputSequenceSubmitted: false,
+    receiveCopyChordSubmitted: false,
+    sequenceInvalid: false,
+  })
+})
+// 同Worker跨世代／重複batch不准拼出貌似完整的序列。
+it.each(['generation', 'duplicate', 'pull_revision'])('rejects mixed input tags: %s', (change) => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, [...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]))
+  worker.postMessage({
+    type: 'clipboard-pull',
+    revision: change === 'pull_revision' ? 2 : 1,
+    request_id: 7,
+  })
+  worker.postMessage(
+    batch(
+      change === 'duplicate' ? 1 : 2,
+      [...chord('a'), ...chord('c')],
+      1,
+      change === 'generation' ? 2 : 1,
+    ),
+  )
+  expect(port.snapshot()).toMatchObject({ sequenceInvalid: true, inputSequenceSubmitted: false })
+})
+// 診斷亦不能把產品會拒絕的NUL／surrogate或4096-byte超額Text標成exact。
+it.each(['Public \0', 'Public \ud800', 'Public ' + '中'.repeat(1364)])(
+  'rejects invalid input expected before inspection: %#',
+  (text) => {
+    const { port } = fixture()
+    expect(() => port.begin(text, false, true)).toThrow('input_clipboard_diagnostics_unavailable')
+  },
+)
+// inspect必須顯式boolean且有public expected，不能truthy啟用或誤讀私人文字。
+it.each([
+  ['', true],
+  [publicSample, 'yes'],
+] as const)('rejects invalid sequence opt-in: %#', (text, inspect) => {
+  const { port } = fixture()
+  expect(() => port.begin(text, false, inspect as boolean)).toThrow(
+    'input_clipboard_diagnostics_unavailable',
+  )
+})
+// 批次超額不逐一讀payload；fail-closed摘要不影響原postMessage。
+it('bounds inspected batch events and never reports acceptance after diagnostic overflow', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  const event = {
+    kind: 'text',
+    /* 超額時不得碰payload。 */ get text(): never {
+      throw new Error('must_not_read')
+    },
+  }
+  worker.postMessage(batch(1, Array(17).fill(event)))
+  expect(port.snapshot()).toMatchObject({
+    overflow: true,
+    sequenceInvalid: true,
+    inputSequenceAccepted: false,
+  })
+})
+// 不需要再讀第二筆Text的內容，光重複事件就足以否定single／exact。
+it('rejects a duplicate text kind without reading its payload getter', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  completeSequence(worker)
+  worker.postMessage(
+    batch(3, [
+      {
+        kind: 'text',
+        /* 重複時不可多留或讀取文字。 */ get text(): never {
+          throw new Error('must_not_read')
+        },
+      },
+    ]),
+  )
+  expect(port.snapshot()).toMatchObject({
+    sequenceInvalid: true,
+    textSingleSubmitted: false,
+    textExactSubmitted: false,
+    overflow: false,
+  })
+})
+// stale release不得打斷新revision的chord，原legacy release摘要仍只表示有觀察到。
+it('ignores a stale release when inspecting a chord in another revision', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, chord('a').slice(0, 2)))
+  worker.postMessage({ type: 'input-release', revision: 2 })
+  worker.postMessage(
+    batch(2, [...chord('a').slice(2), { kind: 'text', text: publicSample, modifiers: [] }]),
+  )
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(3, [...chord('a'), ...chord('c')]))
+  expect(port.snapshot()).toMatchObject({ inputSequenceSubmitted: true, sequenceInvalid: false })
+})
+// malformed／未知event不可被跳過後還宣稱全文序列有效。
+it.each([null, { kind: 'unknown' }])(
+  'does not skip malformed events in an inspected batch: %#',
+  (event) => {
+    const { worker, port } = fixture()
+    port.begin(publicSample, false, true)
+    worker.postMessage(
+      batch(1, [event, ...chord('a'), { kind: 'text', text: publicSample, modifiers: [] }]),
+    )
+    worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+    worker.postMessage(batch(2, [...chord('a'), ...chord('c')]))
+    expect(port.snapshot()).toMatchObject({ sequenceInvalid: true, inputSequenceSubmitted: false })
+  },
+)

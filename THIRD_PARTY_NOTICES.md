@@ -71,6 +71,8 @@ WebCodecs 測試使用 web-platform-tests/wpt commit `521d168d63dbd206ea7fbe0b74
 
 ## M3-B3 Zstandard 解壓套件與公開素材
 
+2026-10-13 使用者單獨核准新增開發用 `@types/node` **24.19.2**（MIT，DefinitelyTyped／types/node），對齊 Node.js 24 並補 E2E 的正式 Node 宣告；間接 `undici-types` 版本／registry integrity依pnpm鎖檔固定，授權MIT。兩者只有型別宣告，不加入瀏覽器runtime，不使用自製shim或降低strict。來源為npm registry metadata及實際安裝套件的package.json／LICENSE；本輪pnpm audit未發現已知漏洞，完整授權仍由現有metadata工具追蹤。
+
 fzstd 0.1.1（MIT）為已核准的純 JS runtime 相依，沒有 runtime 間接套件；ESM 在本機 bundle，不使用 CDN／WASM。公開剪貼簿素材由宿主既有 libzstd 1.5.5 獨立壓縮／解壓驗證，來源、hash 及重生規則見 `frontend/src/rdweb/__fixtures__/CLIPBOARD_FIXTURES.md`。素材不包含遠端內容，不匯入正式 app。
 
 2026-10-10 使用者核准固定版本修補：`frontend/patches/fzstd@0.1.1.patch` 修改原套件 ESM／CJS 的輸出 bounds／frame count／有效歷史驗證，未替換熵碼演算法。MIT 原文保持；lockfile 同時固定 registry integrity 與 patch SHA-256 `9c9d50d618500248fc39e879549bab302bed146bfb5cc043415c33f3a7ec4899`。此修補僅適用應用實際使用的 ESM／CJS entry points，未使用或發布 UMD／CDN 入口；checksum／dictionary／concat 仍由應用 admission 拒絕。

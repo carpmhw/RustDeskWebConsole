@@ -4,8 +4,11 @@ import type { VideoWorkerEvent } from './video-types'
 import nacl from 'tweetnacl'
 import { hbb, encodeMessage, encodeIdentity, decodeMessage } from './codec'
 import { nonce } from './crypto'
+import samples from './__fixtures__/codec-samples.json'
+import { ptsMicros } from './video-limits'
 // Publicprobe fake只測生命週期，不當作native支持證據。
 class ProbeFrame {
+  timestamp = 0
   codedWidth = 1
   codedHeight = 1
   displayWidth = 1
@@ -74,10 +77,14 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 10; i++) await Promise.resolve()
 }
 // 每案新Signing／Box peer，只在RAM解封當次session key。
-async function encryptedFixture(override?: (m: VideoWorkerEvent, t?: Transferable[]) => void) {
+async function encryptedFixture(
+  override?: (m: VideoWorkerEvent, t?: Transferable[]) => void,
+  dependencies?: Partial<WorkerDependencies>,
+) {
   const value = fixture(),
     socket = new Socket(),
     messages: VideoWorkerEvent[] = []
+  Object.assign(value.deps, dependencies)
   value.deps.socket = /* 只觀察saved bridgeURL，不印ticket或protocols。 */ () => socket
   const session = new ProtocolWorkerSession(
     /* primitive與ownedframe分開觀察。 */ (m, t) => {
@@ -146,6 +153,147 @@ async function encryptedFixture(override?: (m: VideoWorkerEvent, t?: Transferabl
   }
   return { session, socket, messages, key, receive, login }
 }
+// 真Worker session經MAC、影像presented後才送input；接點故障不改sent ACK或wire。
+it('observes incoming clipboard before decoding through a late-installed session provider', async () => {
+  const expected = 'Public 中文 RdWeb'
+  const rows: import('./incoming-clipboard-observer').IncomingClipboardSnapshot[] = []
+  let observer: import('./incoming-clipboard-observer').IncomingClipboardObserver | undefined
+  const p = await encryptedFixture(undefined, {
+    // 建立session時尚未有observer，ready後才由測試安裝。
+    incomingClipboardObserver: () => observer,
+  })
+  try {
+    await p.login()
+    observer = {
+      // 真active pull的本地tag才回公開expected。
+      expected: (tag) => (tag.revision === 1 && tag.request_id === 7 ? expected : null),
+      // 只保存布林及tag，不取得真正wire content或nonce。
+      record: (value) => rows.push({ ...value }),
+      // 正常公開fixture不應有診斷錯誤。
+      unavailable: () => {
+        throw new Error('public_diagnostic_fault')
+      },
+    }
+    p.session.handle({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+    p.receive({ clipboard: { content: new TextEncoder().encode(expected) } })
+    expect(rows).toEqual([
+      {
+        revision: 1,
+        request_id: 7,
+        observed: true,
+        compressed: false,
+        uncompressedCompared: true,
+        uncompressedExact: true,
+        overflow: false,
+        unavailable: false,
+      },
+    ])
+    const reply = p.messages.find(
+      /* 真產品資料仍由原decoder移交。 */ (message) => message.type === 'clipboard-data',
+    )
+    expect(reply?.type).toBe('clipboard-data')
+    if (reply?.type === 'clipboard-data')
+      expect(reply.bytes).toEqual(new TextEncoder().encode(expected))
+  } finally {
+    p.session.dispose()
+    p.key.fill(0)
+  }
+})
+// 真Worker session經MAC、影像presented後才送input；接點故障不改sent ACK或wire。
+it('observes the actual worker input ciphertext without changing credit on observer failure', async () => {
+  const rows: import('./encoded-input-observer').EncodedInputSnapshot[] = []
+  const p = await encryptedFixture(undefined, {
+    encodedInputObserver: {
+      // 只借用public DTO；拋例外不得轉產品fatal。
+      record(value) {
+        rows.push(value)
+        throw new Error('public_diagnostic_fault')
+      },
+      // collector本身也故障時不能擋send。
+      unavailable() {
+        throw new Error('public_diagnostic_unavailable')
+      },
+    },
+    // 只替代native硬體，不替代MAC／codec／Main presented。
+    factory: (callbacks) => ({
+      decodeQueueSize: 0,
+      // public fixture參數已由正式video reader驗證。
+      configure() {},
+      // 假native frame只為跨sessioninput權限狀態，不冒充browser解碼。
+      decode(input) {
+        const frame = new ProbeFrame()
+        Object.assign(frame, {
+          codedWidth: 320,
+          codedHeight: 240,
+          displayWidth: 320,
+          displayHeight: 240,
+          timestamp: ptsMicros(input.pts),
+        })
+        callbacks.output(frame)
+      },
+      // 本案無硬體資源。
+      close() {},
+    }),
+  })
+  try {
+    await p.login()
+    const sample = samples.find(/* 選已核hash的publicVP8。 */ (value) => value.codec === 'vp8')!
+    p.receive({
+      videoFrame: {
+        vp8s: {
+          frames: [
+            {
+              data: Uint8Array.from(
+                atob(sample.frames[0]!.data),
+                /* public base64。 */ (c) => c.charCodeAt(0),
+              ),
+              key: true,
+              pts: 0,
+            },
+          ],
+        },
+      },
+    })
+    await settle()
+    const frame = p.messages.find(
+      /* 真session已發布frame才可presented。 */ (m) => m.type === 'frame',
+    )
+    expect(frame?.type).toBe('frame')
+    if (frame?.type !== 'frame') throw new Error('public_frame_fixture_unavailable')
+    p.session.handle({
+      type: 'presented',
+      revision: 1,
+      generation: frame.generation,
+      frame_id: frame.frame_id,
+      drawn: true,
+    })
+    const state = p.messages
+      .filter(/* 只取已ready的安全inputgeneration。 */ (m) => m.type === 'input-state')
+      .at(-1)
+    if (state?.type !== 'input-state') throw new Error('public_state_fixture_unavailable')
+    expect(state.ready).toBe(true)
+    const before = p.socket.sent.length
+    p.session.handle({
+      type: 'input-batch',
+      revision: 1,
+      input_generation: state.input_generation,
+      batch_id: 1,
+      events: [{ kind: 'text', text: 'Public test', modifiers: [] }],
+    })
+    expect(rows).toHaveLength(1)
+    expect(p.messages.at(-1)).toMatchObject({ type: 'input-ack', sent: true, batch_id: 1 })
+    const plain = nacl.secretbox.open(p.socket.sent[before]!, nonce(BigInt(before)), p.key)!
+    try {
+      expect(decodeMessage(plain).keyEvent?.seq === 'Public test').toBe(true)
+    } finally {
+      plain.fill(0)
+    }
+    expect(p.messages.some(/* 診斷例外不變成正式終態。 */ (m) => m.type === 'failure')).toBe(false)
+  } finally {
+    p.session.dispose()
+    p.key.fill(0)
+  }
+})
 // error先作candidate，真MAC錯誤必須在close前以fatal優先。
 it('gives fatal MAC failure priority over a pending native network error', async () => {
   vi.useFakeTimers()

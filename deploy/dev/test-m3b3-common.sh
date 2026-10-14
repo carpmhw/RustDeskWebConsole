@@ -6,7 +6,7 @@ unset DEBUG PWDEBUG
 # 共用runtime與owner生命週期；不修改外部Windows／RustDesk／防火牆。
 run_b3_suite() (
   local config="$1"
-  case "$config" in playwright.input.config.ts|playwright.reconnect.config.ts|playwright.reliability.config.ts) ;; *) exit 2 ;; esac
+  case "$config" in playwright.input.config.ts|playwright.reconnect.config.ts|playwright.reliability.config.ts|playwright.text-probe.config.ts|playwright.text-return-probe.config.ts) ;; *) exit 2 ;; esac
   local bases="${RDWEB_B3_BASES-/ /rdweb /a/b/c}" modes="${RDWEB_B3_MODES-preserve strip}"
   [[ -n "${bases//[[:space:]]/}" && -n "${modes//[[:space:]]/}" ]] || { echo 'Invalid input prefix matrix' >&2; exit 2; }
   local prefix mode
@@ -16,17 +16,43 @@ run_b3_suite() (
   for mode in $modes; do
     case "$mode" in preserve|strip) ;; *) echo 'Invalid input prefix matrix' >&2; exit 2 ;; esac
   done
+  if [[ "$config" == playwright.text-return-probe.config.ts && ( "$bases" != / || "$modes" != preserve ) ]]; then
+    echo 'Text return probe scope unavailable' >&2
+    exit 2
+  fi
   # 真Node-only reader驗requested平台／憑證，再開始任何Docker或formal API副作用。
-  if ! node --input-type=module <<'JS'
+  if ! RDWEB_B3_SUITE_CONFIG="$config" node --input-type=module <<'JS'
 import { inputPlatforms, readWindowsRuntime } from './frontend/e2e-real/windows-runtime.ts'
 import { createClipboardTextLogger } from './frontend/e2e-real/clipboard-text-log.ts'
+import { readTextProbeRuntime } from './frontend/e2e-real/text-probe-runtime.ts'
+import { assertTextProbeAvailable } from './frontend/e2e-real/text-probe-control.ts'
+import { readHostObservation } from './frontend/e2e-real/host-observation-control.ts'
 try {
+  const textProbe = process.env.RDWEB_B3_SUITE_CONFIG === 'playwright.text-probe.config.ts'
+  const textReturnProbe = process.env.RDWEB_B3_SUITE_CONFIG === 'playwright.text-return-probe.config.ts'
+  if (process.env.RDWEB_WINDOWS_HOST_OBSERVE !== undefined && process.env.RDWEB_WINDOWS_HOST_OBSERVE !== '0') {
+    if (!textReturnProbe) throw new Error()
+    readHostObservation()
+  }
+  if (textProbe) {
+    readTextProbeRuntime()
+    assertTextProbeAvailable()
+  }
   const platforms = inputPlatforms()
+  const channels = (process.env.RDWEB_INPUT_CHANNELS ?? process.env.RDWEB_INPUT_CHANNEL ?? 'chromium').split(',')
+  if (textReturnProbe && (
+    platforms.length !== 1 || platforms[0] !== 'windows' ||
+    channels.length !== 1 || channels[0] !== 'chromium' ||
+    process.env.RDWEB_B3_BASES !== '/' || process.env.RDWEB_B3_MODES !== 'preserve' ||
+    process.env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG !== '1'
+  )) throw new Error()
   if (platforms.includes('windows')) {
     readWindowsRuntime()
-    createClipboardTextLogger(process.env)
+    if (!textProbe) {
+      const logger = createClipboardTextLogger(process.env)
+      if (textReturnProbe && !logger) throw new Error()
+    }
   }
-  const channels = (process.env.RDWEB_INPUT_CHANNELS ?? process.env.RDWEB_INPUT_CHANNEL ?? 'chromium').split(',')
   if (new Set(channels).size !== channels.length || channels.some(/* channel固定白名單，不自動下載瀏覽器。 */ (channel) => !['chromium', 'msedge', 'chrome'].includes(channel))) throw new Error()
 } catch {
   console.error('Input runtime preflight failed')

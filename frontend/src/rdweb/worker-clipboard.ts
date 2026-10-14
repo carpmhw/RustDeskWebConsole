@@ -2,6 +2,10 @@ import { hbb } from './codec'
 import type { ClipboardReply, ClipboardTag, RemotePermissions } from './interaction-types'
 import { decodeTextClipboard, encodeTextClipboard, clipboardError } from './clipboard-codec'
 import { INTERACTION_LIMITS as L } from './interaction-limits'
+import {
+  observeIncomingClipboard,
+  type IncomingClipboardObserverSource,
+} from './incoming-clipboard-observer'
 export class WorkerClipboard {
   private active: (ClipboardTag & { deadline: number }) | null = null
   private permissions: RemotePermissions = { keyboard: true, clipboard: true }
@@ -13,6 +17,7 @@ export class WorkerClipboard {
     private readonly send: (m: hbb.IMessage) => void,
     private readonly reply: (r: ClipboardReply, t?: Transferable[]) => void,
     private readonly now: () => number,
+    private readonly incomingObserver?: IncomingClipboardObserverSource,
   ) {}
   // tag 只含精確安全整數，不能 replay 或覆寫目前的訂閱。
   private admit(tag: ClipboardTag): boolean {
@@ -78,6 +83,8 @@ export class WorkerClipboard {
   receive(message: hbb.Message): void {
     this.tick()
     if (!this.active || this.closed) return
+    // 真active gate後、原文字解碼前；接點預設關閉且不接觸crypto／Main。
+    observeIncomingClipboard(message, this.active, this.incomingObserver)
     let bytes: Uint8Array | null = null
     try {
       try {

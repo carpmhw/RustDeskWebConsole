@@ -7,6 +7,7 @@ import { checkDisplay } from './video-limits'
 import { PeerInputMetadataCache } from './peer-input'
 import { TransportFault } from './terminal'
 import type { RemotePermissions, TerminalCause } from './interaction-types'
+import { observeEncodedInput, type EncodedInputObserverSource } from './encoded-input-observer'
 export class LoginProtocol {
   #crypto = new PeerCrypto()
   #state: Phase = 'verifying_identity'
@@ -20,6 +21,7 @@ export class LoginProtocol {
     private readonly ready: Ready,
     private readonly callbacks: Callbacks,
     private readonly capabilities: CodecCapabilities,
+    private readonly encodedInputObserver?: EncodedInputObserverSource,
   ) {
     this.phase('verifying_identity')
   }
@@ -253,9 +255,20 @@ export class LoginProtocol {
     }
   }
   // 所有handshake後protocol只經secretbox傳送，encode明文立即清除。
-  private send(message: hbb.IMessage): void {
+  private send(message: hbb.IMessage, inspectInput = false): void {
     const bytes = encodeMessage(message)
     try {
+      if (inspectInput && this.encodedInputObserver) {
+        try {
+          const observer =
+            typeof this.encodedInputObserver === 'function'
+              ? this.encodedInputObserver()
+              : this.encodedInputObserver
+          if (observer) observeEncodedInput(bytes, observer)
+        } catch {
+          /* 可選provider故障也不能阻止正式加密／輸入。 */
+        }
+      }
       this.callbacks.send(this.#crypto.encrypt(bytes))
     } finally {
       bytes.fill(0)
@@ -282,7 +295,7 @@ export class LoginProtocol {
   sendControl(message: hbb.IMessage): void {
     if (this.#closed || !['awaiting_video', 'streaming'].includes(this.#state))
       throw new Error('protocol_error')
-    this.send(message)
+    this.send(message, !!message.keyEvent || !!message.mouseEvent)
   }
   // keyboard=0／clipboard=2，握手中的明確否定也保存，不由metadata升權。
   private acceptPermission(info: hbb.IPermissionInfo): void {

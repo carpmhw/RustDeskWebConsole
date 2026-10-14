@@ -48,15 +48,29 @@ export interface KeyLike {
   // 原生來源為 KeyboardEvent，單元只注入安全 lock／AltGraph 狀態。
   getModifierState(name: string): boolean
 }
+export interface KeyboardEmissionSnapshot {
+  eventId: number
+  phase: 'before' | 'after'
+  type: string
+  composing: boolean
+  internalComposing: boolean
+  confirmed: 'null' | 'same_as_data' | 'other'
+}
+export interface KeyboardEmissionObserver {
+  // 原文只借用於同步產生摘要，observer不得改變產品輸入或保存原文。
+  record(snapshot: KeyboardEmissionSnapshot, data: string): void
+}
 export class KeyboardInput {
   private composing = false
   private confirmed: string | null = null
   private held = new Map<string, Extract<InputIntent, { kind: 'key' | 'shortcut' }>>()
   private textModifiers: Modifier[] = []
+  private emissionId = 0
   // 無 DOM 相依，只納入已明確取焦的安全 primitive。
   constructor(
     private readonly emit: (v: InputIntent) => void,
     private readonly issue: (v: OperationCode) => void,
+    private readonly observer?: KeyboardEmissionObserver,
   ) {}
   // 功能鍵與快捷鍵有 down/up，普通文字只走 beforeinput。
   keyDown(e: KeyLike): boolean {
@@ -121,8 +135,40 @@ export class KeyboardInput {
       this.confirmed = null
       return
     }
+    const eventId = ++this.emissionId
+    this.observeEmission('before', eventId, type, data, composing)
     this.confirmed = null
-    this.emitText(data)
+    try {
+      this.emitText(data)
+    } finally {
+      this.observeEmission('after', eventId, type, data, composing)
+    }
+  }
+  // 前後同步取狀態；可選observer故障不得阻斷輸入或變成產品提示。
+  private observeEmission(
+    phase: 'before' | 'after',
+    eventId: number,
+    type: string,
+    data: string,
+    composing: boolean,
+  ): void {
+    if (!this.observer) return
+    try {
+      this.observer.record(
+        {
+          eventId,
+          phase,
+          type,
+          composing,
+          internalComposing: this.composing,
+          confirmed:
+            this.confirmed === null ? 'null' : this.confirmed === data ? 'same_as_data' : 'other',
+        },
+        data,
+      )
+    } catch {
+      /* 被動診斷不改寫輸入結果，也不輸出例外內容。 */
+    }
   }
   // 只有已開始的 composition 才能稍後確認。
   compositionStart(): void {

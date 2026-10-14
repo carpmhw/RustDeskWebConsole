@@ -479,13 +479,13 @@ if (platforms.includes('windows')) {
           const consolePage = await openOfficialConsole(page, fixture)
           await waitForInputVideo(consolePage, fixture)
           await consolePage.evaluate(
-            /* 預設只留RAM；顯式本機log才短命捕捉，操作順序不變。 */ ({
+            /* 首次驗Main→Worker全文／完整chord；顯式本機log才捕捉文字，操作順序不變。 */ ({
               publicExpected,
               capture,
             }) => {
               if (!window.__rdwebInputDiagnostics)
                 throw new Error('input_clipboard_diagnostics_unavailable')
-              window.__rdwebInputDiagnostics.begin(publicExpected, capture)
+              window.__rdwebInputDiagnostics.begin(publicExpected, capture, true)
             },
             { publicExpected: sample, capture: textLogger !== null },
           )

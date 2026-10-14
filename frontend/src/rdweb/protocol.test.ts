@@ -84,7 +84,10 @@ it('accepts authenticated display-only PeerInfo without replacing the selected d
 })
 
 // 每個契約測試建立新NaCl peer，保留公開事件並用獨立peer端解封session key。
-function peerFixture(assist: Callbacks['assist']) {
+function peerFixture(
+  assist: Callbacks['assist'],
+  observer?: import('./encoded-input-observer').EncodedInputObserverSource,
+) {
   const signing = nacl.sign.keyPair()
   const peer = nacl.box.keyPair()
   const sends: Uint8Array[] = []
@@ -130,6 +133,7 @@ function peerFixture(assist: Callbacks['assist']) {
       activity,
     },
     capabilities,
+    observer,
   )
   protocol.receive(
     encodeMessage({
@@ -194,6 +198,115 @@ it('keeps encrypted media active after authenticated PeerInfo', async () => {
     expect(peer.errors).toEqual([])
   } finally {
     peer.protocol.dispose()
+  }
+})
+// 實際加密前觀察必須與獨立NaCl解封相同，非input資訊不得交診斷。
+it('observes encoded input before encryption without observing login or clipboard', async () => {
+  const rows: import('./encoded-input-observer').EncodedInputSnapshot[] = []
+  const p = peerFixture(/* 僅公開proof。 */ async () => new Uint8Array(32), {
+    // DTO mutation不能改原encoded bytes或source。
+    record(value) {
+      rows.push(structuredClone(value))
+      if (value.kind === 'key') value.seq = 'Public changed'
+    },
+    // 正常觀察不應拒絕。
+    unavailable() {
+      throw new Error('unexpected_diagnostic_fault')
+    },
+  })
+  try {
+    p.receive({ hash: { salt: 's', challenge: 'c' } }, 1n)
+    await Promise.resolve()
+    p.receive(
+      {
+        loginResponse: {
+          peerInfo: {
+            platform: 'Windows',
+            version: '1.5.0',
+            displays: [{ width: 320, height: 240 }],
+          },
+        },
+      },
+      2n,
+    )
+    p.protocol.sendControl({ keyEvent: { seq: 'Public 中文', down: true, press: false, mode: 0 } })
+    p.protocol.sendControl({ mouseEvent: { mask: 9, x: 1, y: 2 } })
+    p.protocol.sendControl({ clipboard: { content: new Uint8Array([65]) } })
+    p.protocol.sendControl({ misc: { videoReceived: true } })
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toEqual({
+      kind: 'key',
+      union: 'seq',
+      mode: 0,
+      down: true,
+      press: false,
+      controlKey: 0,
+      chr: 0,
+      seq: 'Public 中文',
+      modifiers: [],
+    })
+    expect(rows[1]).toEqual({ kind: 'mouse', mask: 9 })
+    const plain = nacl.secretbox.open(p.sends[2]!, nonce(2n), p.key)!
+    try {
+      expect(decodeMessage(plain).keyEvent?.seq === 'Public 中文').toBe(true)
+    } finally {
+      plain.fill(0)
+    }
+    expect(p.errors).toEqual([])
+  } finally {
+    p.protocol.dispose()
+    p.key.fill(0)
+  }
+})
+// 原Worker啟動後才安裝的provider也能觀察；缺provider及其故障不改cipher。
+it('supports late observer installation without changing the original ciphertext', async () => {
+  let installed: import('./encoded-input-observer').EncodedInputObserver | undefined
+  let broken = false
+  const rows: import('./encoded-input-observer').EncodedInputSnapshot[] = []
+  const p = peerFixture(
+    /* 公開proof，不呼叫實際Vault。 */ async () => new Uint8Array(32),
+    /* provider只回可選觀察器。 */ () => {
+      if (broken) throw new Error('public_provider_fault')
+      return installed
+    },
+  )
+  try {
+    p.receive({ hash: { salt: 's', challenge: 'c' } }, 1n)
+    await Promise.resolve()
+    p.receive(
+      {
+        loginResponse: {
+          peerInfo: {
+            platform: 'Windows',
+            version: '1.5.0',
+            displays: [{ width: 320, height: 240 }],
+          },
+        },
+      },
+      2n,
+    )
+    p.protocol.sendControl({ keyEvent: { seq: 'Public before', down: true } })
+    installed = {
+      record: /* 僅收集publicfixture。 */ (value) => rows.push(value),
+      unavailable: vi.fn(),
+    }
+    p.protocol.sendControl({ keyEvent: { seq: 'Public after', down: true } })
+    broken = true
+    p.protocol.sendControl({ keyEvent: { seq: 'Public fault', down: true } })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ seq: 'Public after' })
+    for (const [index, text] of ['Public before', 'Public after', 'Public fault'].entries()) {
+      const plain = nacl.secretbox.open(p.sends[index + 2]!, nonce(BigInt(index + 2)), p.key)!
+      try {
+        expect(decodeMessage(plain).keyEvent?.seq === text).toBe(true)
+      } finally {
+        plain.fill(0)
+      }
+    }
+    expect(p.errors).toEqual([])
+  } finally {
+    p.protocol.dispose()
+    p.key.fill(0)
   }
 })
 
