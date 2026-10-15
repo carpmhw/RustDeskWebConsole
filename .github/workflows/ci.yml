@@ -45,11 +45,14 @@ jobs:
           node tools/test-url-lint.mjs
           node tools/test-target-password-init.mjs
           node --test tools/test-windows-host-encoding.mjs
+          node --test tools/test-windows-host-watchdog.mjs
           node --test tools/test-windows-editor-geometry.mjs
           node --test tools/test-windows-uia-calibration.mjs
           node --test tools/test-windows-clipboard-calibration.mjs
           node --test tools/test-windows-clipboard-notification-calibration.mjs
           node --test tools/test-windows-clipboard-busy-calibration.mjs
+          node --test tools/test-windows-clipboard-lease-calibration.mjs
+          node --test tools/test-windows-clipboard-race-calibration.mjs
           corepack pnpm --dir frontend lint
           corepack pnpm --dir frontend test
           corepack pnpm --dir frontend build

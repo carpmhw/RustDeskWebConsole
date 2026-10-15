@@ -21,5 +21,5 @@ charset = utf-8-bom
 csharp_style_namespace_declarations = block_scoped:silent
 
 # Windows PowerShell 5.1對含繁體中文的host腳本必須以BOM識別UTF-8，避免ANSI解碼吞換行。
-[tools/{windows-host-observer,windows-host-observer-supervisor,windows-host-observer-fixture,test-windows-host-observer,test-windows-host-supervisor,measure-windows-editor-geometry,windows-host-editor,calibrate-windows-host-editor,calibrate-windows-clipboard,calibrate-windows-clipboard-notification,calibrate-windows-clipboard-busy}.ps1]
+[tools/{windows-host-observer,windows-host-observer-supervisor,windows-host-observer-fixture,test-windows-host-observer,test-windows-host-supervisor,test-windows-host-lifecycle,measure-windows-editor-geometry,windows-host-editor,windows-host-editor-identity,calibrate-windows-host-editor,calibrate-windows-host-watchdog,calibrate-windows-clipboard,calibrate-windows-clipboard-notification,calibrate-windows-clipboard-busy,calibrate-windows-clipboard-race,calibrate-windows-clipboard-lease}.ps1]
 charset = utf-8-bom

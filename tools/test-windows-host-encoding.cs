@@ -12,7 +12,7 @@ class HostEncodingTest
         {
             if (args.Length!=1) throw new Exception();
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            string[] names={"windows-host-observer.ps1","windows-host-observer-supervisor.ps1","windows-host-observer-fixture.ps1","test-windows-host-observer.ps1","test-windows-host-supervisor.ps1","measure-windows-editor-geometry.ps1","windows-host-editor.ps1","calibrate-windows-host-editor.ps1","calibrate-windows-clipboard.ps1","calibrate-windows-clipboard-notification.ps1","calibrate-windows-clipboard-busy.ps1"};
+            string[] names={"windows-host-observer.ps1","windows-host-observer-supervisor.ps1","windows-host-observer-fixture.ps1","test-windows-host-observer.ps1","test-windows-host-supervisor.ps1","test-windows-host-lifecycle.ps1","measure-windows-editor-geometry.ps1","windows-host-editor.ps1","windows-host-editor-identity.ps1","calibrate-windows-host-editor.ps1","calibrate-windows-host-watchdog.ps1","calibrate-windows-clipboard.ps1","calibrate-windows-clipboard-notification.ps1","calibrate-windows-clipboard-busy.ps1","calibrate-windows-clipboard-race.ps1","calibrate-windows-clipboard-lease.ps1"};
             foreach (string name in names)
             {
                 byte[] bytes=File.ReadAllBytes(Path.Combine(args[0],name));
