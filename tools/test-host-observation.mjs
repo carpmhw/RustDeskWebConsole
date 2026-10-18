@@ -9,9 +9,10 @@ import {
   chmodSync,
   statSync,
   symlinkSync,
+  renameSync,
   rmSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync } from 'node:fs'
 import {
@@ -49,6 +50,318 @@ function directory() {
 // 真測試只清本次自行建立的精確tmp。
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+// 只控制原controller單調clock；測後還原descriptor，不接觸Windows或真case。
+function setupClock(action) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'performance')
+  const time = { now: 1000, calls: 0 }
+  Object.defineProperty(globalThis, 'performance', {
+    configurable: true,
+    value: {
+      now: /* 計數確保診斷沒有新增clock取樣。 */ () => {
+        time.calls++
+        return time.now
+      },
+    },
+  })
+  try {
+    action(time)
+  } finally {
+    Object.defineProperty(globalThis, 'performance', original)
+  }
+}
+// 新export缺失必為真RED，不以module載入失敗掩蓋行為斷言。
+async function diagnosticReader() {
+  const { readHostSetupDiagnostic } =
+    await import('../frontend/e2e-real/host-observation-control.ts')
+  assert.equal(typeof readHostSetupDiagnostic, 'function', 'setup diagnostics unavailable')
+  return readHostSetupDiagnostic
+}
+
+// 新用途factory缺失須以斷言呈現RED，避免匯入錯誤掩蓋真正缺少的能力。
+async function handoffFactory() {
+  const { createHostHandoffObservation } =
+    await import('../frontend/e2e-real/host-observation-control.ts')
+  assert.equal(typeof createHostHandoffObservation, 'function', 'handoff controller unavailable')
+  return createHostHandoffObservation
+}
+// 手寫同輪ready metadata；只讀本測試剛建立的公開manifest／request，不接觸操作者資料。
+function installReady(path) {
+  const m = JSON.parse(readFileSync(join(path, 'manifest.json'), 'utf8'))
+  const r = JSON.parse(readFileSync(join(path, 'start-request.json'), 'utf8'))
+  writeFileSync(
+    join(path, 'ready.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      runId: m.runId,
+      requestId: r.requestId,
+      utc: r.createdUtc,
+      policyAccepted: true,
+      scopeVerified: true,
+      observerReady: true,
+      clockDomain: 'windows_host',
+      frequency: 10000000,
+      origin: 0,
+    }),
+    { mode: 0o600 },
+  )
+}
+
+// 同時存在兩用途controller時，正式60秒與獨立90秒不能互相延長或被未知env覆寫。
+test('handoff 90s budget never changes the formal 60s boundary or revives consumed claims', async () => {
+  const handoff = await handoffFactory(),
+    inspect = await diagnosticReader()
+  for (const elapsed of [59999, 60000, 89999, 90000])
+    setupClock((time) => {
+      const controllers = []
+      const config = { ...env, RDWEB_HOST_SETUP_BUDGET_MS: '180000' }
+      for (const [factory, budget] of [
+        [createHostObservation, 60000],
+        [handoff, 90000],
+      ]) {
+        const path = directory()
+        prepareHostObservation(env, path)
+        const controller = factory(config, path)
+        assert.deepEqual(Object.keys(controller), ['expected', 'start', 'pollReady', 'finish'])
+        controller.start()
+        const request = readFileSync(join(path, 'start-request.json'))
+        controllers.push({ controller, path, budget, request })
+      }
+      time.now = 1000 + elapsed
+      for (const { controller, path, budget, request } of controllers) {
+        installReady(path)
+        if (elapsed < budget) assert.equal(controller.pollReady(), true)
+        else {
+          assert.throws(() => controller.pollReady(), /^Error: host_observation_unavailable$/)
+          assert.deepEqual(inspect(controller), { reason: 'deadline_exceeded', elapsedMs: elapsed })
+          time.now = 1001
+          assert.throws(() => controller.pollReady(), /^Error: host_observation_unavailable$/)
+          assert.deepEqual(inspect(controller), { reason: 'deadline_exceeded', elapsedMs: elapsed })
+          time.now = 1000 + elapsed
+        }
+        assert.throws(() => handoff(env, path), /^Error: host_observation_unavailable$/)
+        assert.throws(
+          () => createHostObservation(env, path),
+          /^Error: host_observation_unavailable$/,
+        )
+        assert.deepEqual(readFileSync(join(path, 'start-request.json')), request)
+      }
+    })
+})
+
+// 新90秒入口仍須完整opt-in與scope，不能把CI／off或其他平台變成校準成功。
+test('handoff factory rejects disabled and unsupported scopes before claiming', async () => {
+  const handoff = await handoffFactory()
+  for (const bad of [
+    { ...env, CI: '1' },
+    { ...env, GITHUB_ACTIONS: '1' },
+    { ...env, RDWEB_WINDOWS_HOST_OBSERVE: '0' },
+    { ...env, RDWEB_INPUT_PLATFORMS: 'linux' },
+    { ...env, RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '0' },
+    { ...env, RDWEB_B3_BASES: '/rdweb' },
+  ]) {
+    const path = directory()
+    prepareHostObservation(env, path)
+    assert.throws(() => handoff(bad, path), /^Error: host_observation_unavailable$/)
+    assert.deepEqual(readdirSync(path), ['manifest.json'])
+  }
+})
+
+// 超過原60秒仍要驗ACL／manifest，不能因獨立放寬期限而略過安全守衛。
+test('handoff factory retains identity and manifest guards during the extra 30 seconds', async () => {
+  const handoff = await handoffFactory(),
+    inspect = await diagnosticReader()
+  for (const reason of ['identity_rejected', 'manifest_rejected'])
+    setupClock((time) => {
+      const path = directory()
+      prepareHostObservation(env, path)
+      const controller = handoff(env, path)
+      controller.start()
+      time.now = 61000
+      if (reason === 'identity_rejected') chmodSync(path, 0o755)
+      else chmodSync(join(path, 'manifest.json'), 0o644)
+      assert.throws(() => controller.pollReady(), /^Error: host_observation_unavailable$/)
+      assert.deepEqual(inspect(controller), { reason, elapsedMs: 60000 })
+    })
+})
+
+// 缺路徑／正式default拒絕只在複製模組的scratch中驗證，絕不探測真正正式current。
+test('handoff factory requires explicit calibration directory and preserves the formal default', async () => {
+  await handoffFactory()
+  const cwd = directory()
+  mkdirSync(cwd, { recursive: true, mode: 0o700 })
+  for (const name of [
+    'frontend/e2e-real/host-observation-control.ts',
+    'frontend/e2e-real/host-observation-schema.ts',
+  ]) {
+    const target = join(cwd, name)
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+    copyFileSync(name, target)
+  }
+  const script = `
+    import assert from 'node:assert/strict';
+    import { readdirSync } from 'node:fs';
+    import { resolve } from 'node:path';
+    import { prepareHostObservation, createHostHandoffObservation } from './frontend/e2e-real/host-observation-control.ts';
+    const env = ${JSON.stringify(env)};
+    prepareHostObservation(env);
+    const path = resolve('frontend/.cache/windows-host-observer/current');
+    for (const value of [undefined, null, '', 90000, path]) {
+      // 只驗固定錯誤與無claim副作用，不回顯任何參數或資料。
+      assert.throws(() => createHostHandoffObservation(env, value), /^Error: host_observation_unavailable$/);
+    }
+    assert.deepEqual(readdirSync(path), ['manifest.json']);
+    console.log('host_handoff_scope_rejected,formalClaimPreserved=True');
+  `
+  const checked = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd,
+    env: {},
+    encoding: 'utf8',
+    timeout: 5000,
+  })
+  assert.equal(checked.status, 0)
+  assert.equal(checked.stderr, '')
+  assert.equal(checked.stdout, 'host_handoff_scope_rejected,formalClaimPreserved=True\n')
+})
+
+// 外部偽造物件／Proxy／getter不能替controller的私有來源分類或執行未知程式。
+test('setup diagnostics ignore forged metadata and return immutable unknown snapshots', async () => {
+  const inspect = await diagnosticReader()
+  let calls = 0
+  const denied = new Proxy(
+    {},
+    {
+      get: /* 任何未知屬性讀取都會使本案失敗。 */ () => {
+        calls++
+        throw new Error('Public denied getter')
+      },
+    },
+  )
+  for (const value of [
+    null,
+    undefined,
+    1,
+    'Public denied',
+    denied,
+    { reason: 'deadline_exceeded', elapsedMs: 60000 },
+  ]) {
+    const snapshot = inspect(value)
+    assert.deepEqual(snapshot, { reason: 'unknown', elapsedMs: null })
+    assert.equal(Object.isFrozen(snapshot), true)
+    assert.throws(
+      /* 不可把回傳snapshot變成額外公開狀態。 */ () => {
+        snapshot.reason = 'Public denied'
+      },
+      TypeError,
+    )
+  }
+  assert.equal(calls, 0)
+})
+
+// 真檔案guard決定分類，原short-circuit順序／固定錯誤及poison後首證據均不得改變。
+test('setup diagnostics identify actual guards without replacing codes or reviving poisoned setup', async () => {
+  const inspect = await diagnosticReader()
+  for (const [kind, now, reason, elapsedMs] of [
+    ['deadline', 61000, 'deadline_exceeded', 60000],
+    ['nonfinite', NaN, 'clock_invalid', null],
+    ['regressed', 999, 'clock_regressed', null],
+    ['overflow', 2147484648, 'deadline_exceeded', null],
+    ['identity_mode', 61000, 'identity_rejected', 60000],
+    ['identity_inode', 1012, 'identity_rejected', 12],
+    ['manifest_changed', 1012, 'manifest_rejected', 12],
+    ['manifest_permissions', 1012, 'manifest_rejected', 12],
+    ['manifest_extra', 1012, 'manifest_rejected', 12],
+    ['manifest_expired', 1012, 'manifest_rejected', 12],
+    ['ready', 1012, 'ready_rejected', 12],
+  ])
+    setupClock(
+      /* 全部資料僅此測試自建public fixture。 */ (time) => {
+        const path = directory()
+        prepareHostObservation(env, path)
+        const controller = createHostObservation(env, path)
+        assert.deepEqual(Object.keys(controller), ['expected', 'start', 'pollReady', 'finish'])
+        controller.start()
+        if (kind === 'identity_mode') chmodSync(path, 0o755)
+        if (kind === 'identity_inode') {
+          renameSync(path, path + '-old')
+          mkdirSync(path, { mode: 0o700 })
+          copyFileSync(join(path + '-old', 'manifest.json'), join(path, 'manifest.json'))
+        }
+        const file = join(path, 'manifest.json')
+        if (kind.startsWith('manifest_')) {
+          const m = JSON.parse(readFileSync(file, 'utf8'))
+          if (kind === 'manifest_changed') m.runId = '00000000-0000-4000-8000-000000000009'
+          if (kind === 'manifest_extra') m.text = 'Public denied metadata'
+          if (kind === 'manifest_expired') {
+            m.createdUtc = new Date(Date.now() - 3600000).toISOString()
+            m.expiresUtc = new Date(Date.now() - 1800000).toISOString()
+          }
+          writeFileSync(file, JSON.stringify(m))
+          if (kind === 'manifest_permissions') chmodSync(file, 0o644)
+        }
+        if (kind === 'ready')
+          writeFileSync(join(path, 'ready.json'), '{"text":"Public denied metadata"}', {
+            mode: 0o600,
+          })
+        time.now = now
+        assert.throws(
+          /* 沿原正式拒絕路徑取得來源分類。 */ () => controller.pollReady(),
+          /^Error: host_observation_unavailable$/,
+        )
+        const snapshot = inspect(controller)
+        assert.deepEqual(snapshot, { reason, elapsedMs })
+        assert.equal(Object.isFrozen(snapshot), true)
+        assert.equal(JSON.stringify(snapshot).includes('Public denied'), false)
+        if (kind !== 'ready') {
+          time.now = 1001
+          assert.throws(
+            /* poison後不重建clock或覆寫第一次拒絕。 */ () => controller.pollReady(),
+            /^Error: host_observation_unavailable$/,
+          )
+          assert.deepEqual(inspect(controller), snapshot)
+        }
+      },
+    )
+})
+
+// 未start／已finish仍拒絕，診斷不加clockread，不改原可用介面或建立額外檔案。
+test('setup diagnostics preserve request and closed guards without additional clock reads', async () => {
+  const inspect = await diagnosticReader()
+  setupClock(
+    /* 原guard與本測試同一clock。 */ (time) => {
+      const path = directory()
+      prepareHostObservation(env, path)
+      const controller = createHostObservation(env, path)
+      assert.throws(
+        /* start前的拒絕仍是原固定code。 */ () => controller.pollReady(),
+        /^Error: host_observation_unavailable$/,
+      )
+      assert.deepEqual(inspect(controller), { reason: 'request_rejected', elapsedMs: null })
+      const before = time.calls
+      controller.start()
+      assert.equal(time.calls, before + 2)
+      assert.deepEqual(inspect(controller), { reason: 'unknown', elapsedMs: 0 })
+      assert.equal(time.calls, before + 2)
+      time.now = 1005
+      assert.equal(controller.pollReady(), false)
+      assert.deepEqual(inspect(controller), { reason: 'unknown', elapsedMs: 5 })
+      assert.equal(time.calls, before + 3)
+      assert.deepEqual(readdirSync(path).sort(), [
+        'claim.json',
+        'manifest.json',
+        'start-request.json',
+      ])
+      controller.finish(
+        { clockDomain: 'browser_main', events: [], overflow: false, unavailable: false },
+        'host_setup_failed',
+      )
+      assert.throws(
+        /* 已close不能因診斷getter回來而放行。 */ () => controller.pollReady(),
+        /^Error: host_observation_unavailable$/,
+      )
+      assert.deepEqual(inspect(controller), { reason: 'closed', elapsedMs: 5 })
+    },
+  )
 })
 // 公開固定schema可校準驗證器，不重用被測builder生成兩側oracle。
 function manifest() {

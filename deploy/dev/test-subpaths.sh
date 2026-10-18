@@ -1,6 +1,22 @@
 #!/bin/sh
 set -eu
 
+# 精選僅縮小本機UI回歸範圍；未指定時保留原六組，未知值先安全拒絕。
+case "${RDWEB_E2E_MATRIX:-full}" in
+  full)
+    prefixes='/ /rdweb /a/b/c'
+    modes='preserve strip'
+    ;;
+  ui-targeted)
+    prefixes='/a/b/c'
+    modes='preserve'
+    ;;
+  *)
+    echo 'Unsupported E2E matrix' >&2
+    exit 2
+    ;;
+esac
+
 # 測試金鑰只存在目前程序環境，不寫檔、不輸出、不放進映像。
 SECRET_KEY=${SECRET_KEY:-$(node -p "require('node:crypto').randomBytes(32).toString('base64')")}
 VAULT_KEY=${VAULT_KEY:-$(node -p "require('node:crypto').randomBytes(32).toString('base64')")}
@@ -19,10 +35,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 docker compose -f deploy/dev/docker-compose.spikes.yml build
-for APP_BASE_PATH in / /rdweb /a/b/c; do
-  for PREFIX_MODE in preserve strip; do
+for APP_BASE_PATH in $prefixes; do
+  for PREFIX_MODE in $modes; do
     export APP_BASE_PATH PREFIX_MODE
     docker compose -f deploy/dev/docker-compose.spikes.yml up -d --wait --wait-timeout 60
-    corepack pnpm --dir frontend e2e
+    corepack pnpm --dir frontend e2e "$@"
   done
 done

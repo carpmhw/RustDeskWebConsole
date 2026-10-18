@@ -257,7 +257,7 @@ onBeforeUnmount(() => {
           {{ t('manage.refresh') }}
         </button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll" tabindex="0" role="region" :aria-label="t('servers')">
         <table class="management-table">
           <thead>
             <tr>
@@ -275,18 +275,27 @@ onBeforeUnmount(() => {
               </td>
               <td>{{ row.id_server }}</td>
               <td>{{ row.relay_server }}</td>
-              <td>{{ row.enabled ? '✓' : '—' }}</td>
+              <td>
+                <span class="status-pill status-pill--neutral">{{
+                  t(row.enabled ? 'enabled' : 'disabled')
+                }}</span>
+              </td>
               <td>
                 <div class="row-actions">
                   <button type="button" :disabled="busy" @click="edit(row)">
                     {{ t('manage.edit') }}</button
                   ><button type="button" :disabled="busy || !row.enabled" @click="probe(row)">
                     {{ t('manage.probe') }}</button
-                  ><button type="button" :disabled="busy" @click="remove(row)">
+                  ><button type="button" class="danger" :disabled="busy" @click="remove(row)">
                     {{ t('manage.remove') }}
                   </button>
                 </div>
-                <p v-if="probes[row.id]" class="probe-result" data-testid="probe-result">
+                <p
+                  v-if="probes[row.id]"
+                  class="probe-result"
+                  role="status"
+                  data-testid="probe-result"
+                >
                   ID: {{ status(probes[row.id]!.id_server.status) }} · Relay:
                   {{ status(probes[row.id]!.relay_server.status) }}
                 </p>

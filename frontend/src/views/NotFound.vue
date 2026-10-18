@@ -4,9 +4,9 @@ const { t } = useI18n()
 </script>
 <template>
   <main class="app-main">
-    <section class="card card-body">
+    <section class="card card-body empty-state">
       <h1>{{ t('notFound') }}</h1>
-      <RouterLink :to="{ name: 'overview' }">{{ t('goHome') }}</RouterLink>
+      <RouterLink class="primary" :to="{ name: 'overview' }">{{ t('goHome') }}</RouterLink>
     </section>
   </main>
 </template>

@@ -22,6 +22,34 @@ import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 type Environment = Readonly<Record<string, string | undefined>>
+type HostSetupFailureReason =
+  | 'unknown'
+  | 'closed'
+  | 'clock_invalid'
+  | 'clock_regressed'
+  | 'identity_rejected'
+  | 'deadline_exceeded'
+  | 'manifest_rejected'
+  | 'request_rejected'
+  | 'ready_rejected'
+type HostSetupDiagnostic = { reason: HostSetupFailureReason; elapsedMs: number | null }
+type HostObservationController = {
+  expected: string
+  start(): void
+  pollReady(): boolean
+  finish(timeline: HostMainTimeline, code: string): void
+}
+const setupDiagnostics = new WeakMap<object, HostSetupDiagnostic>()
+
+// 只認真正controller的私有來源，不讀未知物件或例外屬性；快照不能反向修改guard。
+export function readHostSetupDiagnostic(controller: unknown): Readonly<HostSetupDiagnostic> {
+  const value =
+    typeof controller === 'object' && controller !== null
+      ? setupDiagnostics.get(controller)
+      : undefined
+  return Object.freeze({ reason: value?.reason ?? 'unknown', elapsedMs: value?.elapsedMs ?? null })
+}
+
 const defaultDirectory = fileURLToPath(
   new URL('../.cache/windows-host-observer/current/', import.meta.url),
 )
@@ -173,12 +201,29 @@ export function prepareHostObservation(
 export function createHostObservation(
   env: Environment = process.env,
   directory = defaultDirectory,
-): {
-  expected: string
-  start(): void
-  pollReady(): boolean
-  finish(timeline: HostMainTimeline, code: string): void
-} {
+): HostObservationController {
+  return createObservationController(env, directory, 60000)
+}
+// 獨立SFTP校準才用固定90秒；必須明確私有目錄，不能漏參數誤用正式current。
+export function createHostHandoffObservation(
+  env: Environment,
+  directory: string,
+): HostObservationController {
+  if (
+    !env ||
+    typeof directory !== 'string' ||
+    directory.length === 0 ||
+    resolve(directory) === resolve(defaultDirectory)
+  )
+    return hostUnavailable()
+  return createObservationController(env, directory, 90000)
+}
+// 兩個固定用途共用原guard／clock／poison，不提供外部可調deadline或重試入口。
+function createObservationController(
+  env: Environment,
+  directory: string,
+  setupBudgetMs: 60000 | 90000,
+): HostObservationController {
   try {
     const m = readHostObservation(env, directory)
     if (!m) hostUnavailable()
@@ -189,46 +234,88 @@ export function createHostObservation(
       invalid = false,
       deadline = 0,
       last = 0
+    let startedAt: number | null = null
+    const diagnostic: HostSetupDiagnostic = { reason: 'unknown', elapsedMs: null }
     let request: ReturnType<typeof validateHostRequest> | undefined
+    // 沿原clock樣本計算，未開始／倒退／非有限或超額皆unknown，不新增clockread。
+    function sample(now: number): void {
+      diagnostic.elapsedMs = null
+      if (
+        startedAt === null ||
+        !Number.isFinite(startedAt) ||
+        !Number.isFinite(now) ||
+        now < last ||
+        now < startedAt
+      )
+        return
+      const elapsed = Math.floor(now - startedAt)
+      if (Number.isSafeInteger(elapsed) && elapsed <= 2147483647) diagnostic.elapsedMs = elapsed
+    }
+    // 僅實際命中的既有拒絕分支可記白名單；原固定錯誤與poison行為不變。
+    function reject(reason: HostSetupFailureReason): never {
+      if (diagnostic.reason === 'unknown') diagnostic.reason = reason
+      return hostUnavailable()
+    }
     // 重驗identity／manifest及單調期限，失效即永久停用setup，clock回退不能恢復。
     function active(): void {
+      if (!invalid) {
+        diagnostic.reason = 'unknown'
+        diagnostic.elapsedMs = null
+      }
       const now = performance.now()
+      if (!invalid) sample(now)
       try {
-        if (
-          closed ||
-          invalid ||
-          !Number.isFinite(now) ||
-          identity(path) !== owner ||
-          now < last ||
-          (deadline && now >= deadline) ||
-          JSON.stringify(validateHostManifest(read(join(path, 'manifest.json')))) !==
+        if (closed) reject('closed')
+        if (invalid) hostUnavailable()
+        if (!Number.isFinite(now)) reject('clock_invalid')
+        let sameIdentity = false
+        try {
+          sameIdentity = identity(path) === owner
+        } catch {
+          reject('identity_rejected')
+        }
+        if (!sameIdentity) reject('identity_rejected')
+        if (now < last) reject('clock_regressed')
+        if (deadline && now >= deadline) reject('deadline_exceeded')
+        let sameManifest = false
+        try {
+          sameManifest =
+            JSON.stringify(validateHostManifest(read(join(path, 'manifest.json')))) ===
             JSON.stringify(m)
-        )
-          hostUnavailable()
+        } catch {
+          reject('manifest_rejected')
+        }
+        if (!sameManifest) reject('manifest_rejected')
       } catch {
         invalid = true
         hostUnavailable()
       }
       last = now
     }
-    return {
+    const controller = {
       expected: m.expected,
       // 首click前一次setup，不發任何產品控制消息。
       start(): void {
         try {
           active()
-          if (request) hostUnavailable()
-          request = validateHostRequest(
-            {
-              schemaVersion: 1,
-              runId: m.runId,
-              requestId: randomUUID(),
-              createdUtc: new Date().toISOString(),
-            },
-            m,
-          )
-          write(join(path, 'start-request.json'), request)
-          deadline = performance.now() + 60000
+          if (request) reject('request_rejected')
+          try {
+            request = validateHostRequest(
+              {
+                schemaVersion: 1,
+                runId: m.runId,
+                requestId: randomUUID(),
+                createdUtc: new Date().toISOString(),
+              },
+              m,
+            )
+            write(join(path, 'start-request.json'), request)
+          } catch {
+            reject('request_rejected')
+          }
+          startedAt = performance.now()
+          deadline = startedAt + setupBudgetMs
+          sample(startedAt)
         } catch {
           hostUnavailable()
         }
@@ -237,9 +324,13 @@ export function createHostObservation(
       pollReady(): boolean {
         try {
           active()
-          if (!request) hostUnavailable()
-          if (missing(join(path, 'ready.json'))) return false
-          validateHostReady(read(join(path, 'ready.json')), m, request)
+          if (!request) reject('request_rejected')
+          try {
+            if (missing(join(path, 'ready.json'))) return false
+            validateHostReady(read(join(path, 'ready.json')), m, request)
+          } catch {
+            reject('ready_rejected')
+          }
           deadline = 0
           return true
         } catch {
@@ -277,6 +368,8 @@ export function createHostObservation(
         }
       },
     }
+    setupDiagnostics.set(controller, diagnostic)
+    return controller
   } catch {
     return hostUnavailable()
   }

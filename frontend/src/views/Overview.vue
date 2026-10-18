@@ -17,6 +17,24 @@ const auth = useAuthStore()
         </p>
       </div>
     </div>
-    <HealthPanel />
+    <div class="overview-grid">
+      <section class="card">
+        <div class="card-header">
+          <h2>{{ t('workspace') }}</h2>
+        </div>
+        <div class="card-body">
+          <p class="muted">{{ t('workspaceHint') }}</p>
+          <nav class="workspace-links" :aria-label="t('workspace')">
+            <RouterLink :to="{ name: 'targets' }">{{ t('targets') }}</RouterLink>
+            <RouterLink :to="{ name: 'security' }">{{ t('security') }}</RouterLink>
+            <RouterLink :to="{ name: 'preferences' }">{{ t('preferences') }}</RouterLink>
+            <RouterLink v-if="auth.user?.role === 'admin'" :to="{ name: 'servers' }">{{
+              t('servers')
+            }}</RouterLink>
+          </nav>
+        </div>
+      </section>
+      <HealthPanel />
+    </div>
   </main>
 </template>

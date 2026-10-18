@@ -13,6 +13,33 @@ for (const transport of ['tcp', 'ws'] as const) {
   // 真Canvas時計背景與變化才是成功，不以PeerInfo或streaming文字作唯一oracle。
   test('official video controls and lifecycle over ' + transport, async ({ page, browser }) => {
     const resources = observeConsole(page.context())
+    const operations = { tickets: 0, assists: 0 }
+    let socketsClosed = 0
+    // 只累計真正WS close事件，不保存連線URL或加密payload。
+    page.context().on('page', (opened) => {
+      opened.on('websocket', (socket) => {
+        socket.on('close', () => {
+          socketsClosed++
+        })
+      })
+    })
+    // 只計正式attempt相關HTTP次數，不保存URL、認證headers、票證或proof。
+    page.context().on('request', (request) => {
+      const path = new URL(request.url()).pathname
+      if (path.endsWith('/connect-ticket')) operations.tickets++
+      if (path.endsWith('/login-assist')) operations.assists++
+    })
+    // 在新主控台載入前拒絕所有系統clipboard入口；只測公開fallback取消，絕不交換內容。
+    await page.context().addInitScript(() => {
+      // 每個入口都直接拒絕，不能讀取或覆寫瀏覽器／宿主剪貼簿。
+      const denied = async (): Promise<never> => {
+        throw new Error('public-native-denial')
+      }
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { read: denied, readText: denied, write: denied, writeText: denied },
+      })
+    })
     const fixture = await prepareOfficialTarget(transport)
     try {
       const consolePage = await openOfficialConsole(page, fixture)
@@ -22,6 +49,45 @@ for (const transport of ['tcp', 'ws'] as const) {
       // Task12主控台接線回歸：真正MAC／Canvas之後才接管native DOM輸入。
       await expect(consolePage.getByTestId('console-auto-reconnect')).toBeChecked()
       await expect(consolePage.getByTestId('console-cad')).toHaveCount(0)
+      const canvas = (await consolePage.getByTestId('console-canvas').elementHandle())!
+      const ime = (await consolePage.getByTestId('console-ime').elementHandle())!
+      const beforeFocus = { ...operations, ...resources }
+      const viewportHeight = (await consolePage.getByTestId('console-viewport').boundingBox())!
+        .height
+      await consolePage.getByTestId('console-canvas').click({ position: { x: 10, y: 10 } })
+      await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
+      await consolePage.getByTestId('console-focus-mode').click()
+      await expect(consolePage.getByTestId('console-focus-mode')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(consolePage.locator('.app-header')).not.toBeVisible()
+      await expect(consolePage.getByTestId('console-input-active')).toHaveCount(0)
+      await expect(consolePage.getByTestId('console-ime')).not.toBeFocused()
+      await expect
+        .poll(async () => (await consolePage.getByTestId('console-viewport').boundingBox())!.height)
+        .toBeGreaterThan(viewportHeight)
+      await expect(consolePage.getByTestId('console-end')).toBeVisible()
+      expect(await clockChanges(consolePage)).toBe(true)
+      expect({ ...operations, ...resources }).toEqual(beforeFocus)
+      await consolePage.getByTestId('console-focus-mode').click()
+      await expect(consolePage.getByTestId('console-focus-mode')).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+      await expect(consolePage.locator('.app-header')).toBeVisible()
+      // native節點仍是同一個，不能靠重掛route或Canvas維持看似成功的畫面。
+      expect(
+        await canvas.evaluate(
+          (node) => node === document.querySelector('[data-testid="console-canvas"]'),
+        ),
+      ).toBe(true)
+      expect(
+        await ime.evaluate(
+          (node) => node === document.querySelector('[data-testid="console-ime"]'),
+        ),
+      ).toBe(true)
+      expect({ ...operations, ...resources }).toEqual(beforeFocus)
       await consolePage.getByTestId('console-canvas').click({ position: { x: 10, y: 10 } })
       await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
       await consolePage.getByTestId('console-zoom').focus()
@@ -32,8 +98,12 @@ for (const transport of ['tcp', 'ws'] as const) {
           throw new Error('public-native-denial')
         }
       })
+      await consolePage.getByTestId('console-canvas').click({ position: { x: 10, y: 10 } })
+      await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
       await consolePage.getByTestId('console-clipboard-send').click()
       await expect(consolePage.getByTestId('console-clipboard-dialog')).toBeVisible()
+      await expect(consolePage.getByTestId('console-input-active')).toHaveCount(0)
+      await expect(consolePage.getByTestId('console-ime')).not.toBeFocused()
       await expect(consolePage.getByTestId('console-clipboard-waiting')).toHaveCount(0)
       await consolePage.getByTestId('console-clipboard-text').fill('Public transient fallback')
       await consolePage.getByTestId('console-clipboard-close').click()
@@ -100,6 +170,7 @@ for (const transport of ['tcp', 'ws'] as const) {
       expect(await clockChanges(consolePage)).toBe(true)
       await consolePage.reload()
       await waitForClock(consolePage)
+      const closedBeforeCancel = socketsClosed
       await consolePage.getByTestId('console-end').click()
       await expect(consolePage.getByTestId('console-phase')).toHaveText('連線已取消／關閉')
       expect(
@@ -112,6 +183,8 @@ for (const transport of ['tcp', 'ws'] as const) {
         }),
       ).toBe(true)
       await expect.poll(() => resources.closed).toBe(resources.opened)
+      // reload會銷毀舊Worker的CDP scope；明確取消以當前scope的原生WS close增量驗證。
+      await expect.poll(() => socketsClosed).toBe(closedBeforeCancel + 1)
       await consolePage.getByTestId('console-retry').click()
       await waitForClock(consolePage)
       expect(resources.wrongPrefix).toBe(0)
@@ -136,6 +209,18 @@ for (const transport of ['tcp', 'ws'] as const) {
             ) && sessionStorage.length === 0,
         ),
       ).toBe(true)
+      // 真影像後的離頁必須收回專注外觀並關閉Worker／WS，不留下舊scope。
+      const closedBeforeExit = socketsClosed
+      await consolePage.getByTestId('console-focus-mode').click()
+      await expect(consolePage.locator('.app-header')).not.toBeVisible()
+      await consolePage.getByRole('link', { name: '目標主機', exact: true }).click()
+      await expect(
+        consolePage.getByRole('heading', { name: '目標主機', exact: true }),
+      ).toBeVisible()
+      await expect(consolePage.locator('.app-header')).toBeVisible()
+      await expect(consolePage.getByTestId('console-canvas')).toHaveCount(0)
+      await expect.poll(() => resources.closed).toBe(resources.opened)
+      await expect.poll(() => socketsClosed).toBe(closedBeforeExit + 1)
       await consolePage.close()
     } finally {
       await fixture.context.dispose()

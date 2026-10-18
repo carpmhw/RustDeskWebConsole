@@ -297,11 +297,17 @@ onBeforeUnmount(() => {
             accept=".csv,text/csv"
             :disabled="busy"
             @change="importCsv" /></label
-        ><button v-if="writer" type="button" :disabled="busy || !selected.size" @click="bulkDelete">
+        ><button
+          v-if="writer"
+          type="button"
+          class="danger"
+          :disabled="busy || !selected.size"
+          @click="bulkDelete"
+        >
           {{ t('targetUI.bulkDelete') }}
         </button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll" tabindex="0" role="region" :aria-label="t('targets')">
         <table class="management-table">
           <thead>
             <tr>
@@ -339,6 +345,7 @@ onBeforeUnmount(() => {
                 <div class="row-actions">
                   <RouterLink
                     v-if="canConnect(row)"
+                    class="primary"
                     :to="{ name: 'console', params: { targetId: row.id } }"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -360,7 +367,13 @@ onBeforeUnmount(() => {
                     @click="permissions(row)"
                   >
                     {{ t('targetUI.permissions') }}</button
-                  ><button v-if="canEdit(row)" type="button" :disabled="busy" @click="remove(row)">
+                  ><button
+                    v-if="canEdit(row)"
+                    type="button"
+                    class="danger"
+                    :disabled="busy"
+                    @click="remove(row)"
+                  >
                     {{ t('manage.remove') }}
                   </button>
                 </div>

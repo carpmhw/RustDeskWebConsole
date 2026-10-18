@@ -178,7 +178,11 @@ onBeforeUnmount(() => {
         <h1>{{ t('security') }}</h1>
         <p>{{ t('securityHint') }}</p>
       </div>
-      <span class="status-pill">{{ t(enabled ? 'enabled' : 'disabled') }}</span>
+      <span
+        class="status-pill"
+        :class="enabled ? 'status-pill--success' : 'status-pill--warning'"
+        >{{ t(enabled ? 'enabled' : 'disabled') }}</span
+      >
     </div>
     <div
       v-if="auth.user?.mfa_enrollment_required"
@@ -191,10 +195,14 @@ onBeforeUnmount(() => {
     <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
     <div class="security-grid">
       <aside class="card summary">
-        <div class="summary-icon">✓</div>
+        <div class="summary-icon">MFA</div>
         <h2>{{ t('protection') }}</h2>
         <p>{{ t('protectionHint') }}</p>
-        <span class="status-pill">{{ t(enabled ? 'enabled' : 'disabled') }}</span>
+        <span
+          class="status-pill"
+          :class="enabled ? 'status-pill--success' : 'status-pill--warning'"
+          >{{ t(enabled ? 'enabled' : 'disabled') }}</span
+        >
         <dl class="details">
           <dt>{{ t('user') }}</dt>
           <dd>{{ auth.user?.username }}</dd>
@@ -265,7 +273,7 @@ onBeforeUnmount(() => {
           <div v-else class="card-body">
             <p class="success-message" data-testid="totp-enabled">{{ t('enabled') }}</p>
             <button
-              class="secondary"
+              class="danger"
               type="button"
               :disabled="busy"
               @click="selectOperation('disable')"

@@ -45,6 +45,7 @@ jobs:
           node tools/test-url-lint.mjs
           node tools/test-target-password-init.mjs
           node --test tools/test-windows-host-encoding.mjs
+          node --test tools/test-linux-host-handoff.mjs
           node --test tools/test-windows-host-watchdog.mjs
           node --test tools/test-windows-editor-geometry.mjs
           node --test tools/test-windows-uia-calibration.mjs
@@ -53,6 +54,12 @@ jobs:
           node --test tools/test-windows-clipboard-busy-calibration.mjs
           node --test tools/test-windows-clipboard-lease-calibration.mjs
           node --test tools/test-windows-clipboard-race-calibration.mjs
+          node --test tools/test-windows-clipboard-capacity.mjs
+          node --test tools/test-windows-clipboard-overflow.mjs
+          node --test tools/test-windows-clipboard-invalid-utf16.mjs
+          node --test tools/test-windows-clipboard-read-race.mjs
+          node --test tools/test-windows-clipboard-read-race-diagnostic.mjs
+          node --test tools/test-windows-clipboard-read-open-gap.mjs
           corepack pnpm --dir frontend lint
           corepack pnpm --dir frontend test
           corepack pnpm --dir frontend build

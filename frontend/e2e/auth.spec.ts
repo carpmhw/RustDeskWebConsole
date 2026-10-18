@@ -86,6 +86,9 @@ test('TOTP and recovery code lifecycle uses real authentication', async ({ page 
     await logoutUi(page)
     await loginUi(page, fixture.user.username)
     await expect(page.getByRole('heading', { name: '完成第二步驗證', exact: true })).toBeVisible()
+    await expect(page.getByRole('form', { name: '完成第二步驗證', exact: true })).toBeVisible()
+    await expect(page.locator('.app-nav')).toHaveCount(0)
+    await expect(page.getByTestId('appearance-menu')).toBeVisible()
     await fillPrivate(
       page.getByLabel('驗證碼', { exact: true }),
       totpCode(result.secret, Date.now(), 1),
@@ -180,7 +183,11 @@ test('required MFA redirects and unlocks only after confirmation', async ({ page
     await loginUi(page, target.username)
     await expect(page).toHaveURL(origin + base + '/security')
     await expect(page.getByTestId('mfa-required')).toBeVisible()
+    await expect(page.locator('.app-nav a')).toHaveCount(1)
+    await expect(page.getByTestId('appearance-menu')).toBeVisible()
     await page.goto(base + '/preferences')
+    await expect(page).toHaveURL(origin + base + '/security')
+    await page.goto(base + '/missing-public-route')
     await expect(page).toHaveURL(origin + base + '/security')
     await enrollUi(page)
     await page.getByTestId('codes-saved').click()

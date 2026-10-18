@@ -1,12 +1,18 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const base = (process.env.APP_BASE_PATH ?? '/').replace(/\/$/, '')
+
+// 匿名外觀控制集中在原生disclosure，先以真操作打開再調整同一偏好。
+async function openAppearance(page: Page): Promise<void> {
+  await page.getByTestId('appearance-menu').locator('summary').click()
+}
 
 // 瀏覽器接受的合法別名必須能在下拉選單呈現，不能只在 formatter 中有效。
 test('saved timezone alias remains selected', async ({ page }) => {
   // 在應用啟動前模擬使用者已保存的合法時區別名。
   await page.addInitScript(() => localStorage.setItem('rdweb.displayTimeZone', 'Etc/UTC'))
   await page.goto(`${base}/`)
+  await openAppearance(page)
   await expect(page.getByLabel('頁面時區')).toHaveValue('Etc/UTC')
 })
 
@@ -28,9 +34,11 @@ test('deep route, runtime prefix and timezone preference', async ({ page }) => {
   expect(navigation?.headers()['x-frame-options']).toBe('DENY')
   expect(navigation?.headers()['content-security-policy']).toContain("frame-ancestors 'none'")
   await expect(page.getByTestId('health-status')).toHaveText('服務正常')
+  await openAppearance(page)
   await expect(page.getByLabel('頁面時區')).toHaveValue('Asia/Taipei')
   await page.getByLabel('頁面時區').selectOption('UTC')
   await page.reload()
+  await openAppearance(page)
   await expect(page.getByLabel('頁面時區')).toHaveValue('UTC')
   await expect(page.getByTestId('health-status')).toHaveText('服務正常')
   expect(wrongRequests).toEqual([])

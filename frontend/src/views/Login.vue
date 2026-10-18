@@ -68,14 +68,13 @@ onBeforeUnmount(() => {
 <template>
   <main class="login-main">
     <section class="card login-card">
-      <p class="login-eyebrow">SECURE ACCESS</p>
-      <h1>{{ t(auth.phase === 'mfa' ? 'mfaTitle' : 'login') }}</h1>
+      <h1 id="login-title">{{ t(auth.phase === 'mfa' ? 'mfaTitle' : 'login') }}</h1>
       <p class="intro-copy">{{ t(auth.phase === 'mfa' ? 'mfaHint' : 'loginHint') }}</p>
       <p v-if="route.query.message === 'disabledDone'" class="success-message" role="status">
         {{ t('disabledDone') }}
       </p>
       <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
-      <form @submit.prevent="submit">
+      <form :aria-label="t(auth.phase === 'mfa' ? 'mfaTitle' : 'login')" @submit.prevent="submit">
         <template v-if="auth.phase !== 'mfa'"
           ><label for="username">{{ t('username') }}</label
           ><input
@@ -137,6 +136,6 @@ onBeforeUnmount(() => {
         </button>
       </form>
     </section>
-    <div class="login-health"><HealthPanel /></div>
+    <aside class="login-health" :aria-label="t('healthTitle')"><HealthPanel /></aside>
   </main>
 </template>

@@ -68,13 +68,18 @@ test('reveal clears on close, visibility event, route exit and cross-tab logout'
     await loginUi(page, fixture.user.username)
     await page.goto(base + '/targets')
     await expect(page.locator('tbody tr').filter({ hasText: 'lifecycle-fixture' })).toHaveCount(1)
+    // ACL用Escape取消後不得保留開啟中的dialog或舊副本。
+    await page.getByRole('button', { name: '目標權限', exact: true }).click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await page.keyboard.press('Escape')
+    expect(await page.locator('dialog[open]').count()).toBe(0)
     await show(page)
     await page.keyboard.press('Escape')
     expect(await page.locator('[data-testid=revealed-password]').count()).toBe(0)
     await page.getByRole('link', { name: '概覽', exact: true }).click()
     await expect(page.getByRole('heading', { name: '概覽', exact: true })).toBeVisible()
     expect(await page.locator('dialog[open]').count()).toBe(0)
-    await page.getByRole('link', { name: '目標主機', exact: true }).click()
+    await page.locator('.app-nav').getByRole('link', { name: '目標主機', exact: true }).click()
     await show(page)
     // Headless不保證OS背景tab狀態，僅注入標準DOM事件；認證仍是真正API。
     await page.evaluate(() => {
@@ -90,7 +95,7 @@ test('reveal clears on close, visibility event, route exit and cross-tab logout'
     await page.goBack()
     await expect(page.getByRole('heading', { name: '概覽', exact: true })).toBeVisible()
     expect(await page.locator('dialog[open]').count()).toBe(0)
-    await page.getByRole('link', { name: '目標主機', exact: true }).click()
+    await page.locator('.app-nav').getByRole('link', { name: '目標主機', exact: true }).click()
     // 只延遲真正後端的reveal response；不mock proof／auth，也不輸出payload。
     let release!: () => void
     let received!: (status: number) => void

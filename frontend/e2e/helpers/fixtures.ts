@@ -78,7 +78,7 @@ export async function api<T>(
 
 // Bootstrap只建立管理員，測試使用者透過正式CRUD API建立。
 export async function createFixture(
-  role: 'operator' | 'admin' = 'operator',
+  role: 'viewer' | 'operator' | 'admin' = 'operator',
 ): Promise<{ user: FixtureUser; admin: Grant; context: APIRequestContext }> {
   const context = await request.newContext()
   const admin = await api<Grant>(context, 'auth/login', 'POST', {
@@ -98,6 +98,8 @@ export async function createFixture(
 // 真正操作帳密表單，沒有route mock或直接植入登入狀態。
 export async function loginUi(page: Page, username: string): Promise<void> {
   await page.goto(base + '/login')
+  const appearance = page.getByTestId('appearance-menu')
+  if (await appearance.count()) await appearance.locator('summary').click()
   await page.getByLabel('語言', { exact: true }).selectOption('zh-TW')
   await page.getByLabel('帳號', { exact: true }).fill(username)
   await fillPrivate(page.getByLabel('密碼', { exact: true }), password)

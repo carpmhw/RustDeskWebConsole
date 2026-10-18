@@ -14,7 +14,10 @@ import { InputController } from '../rdweb/input-controller'
 import { ClipboardController } from '../rdweb/clipboard-controller'
 import { ClipboardDialog } from '../rdweb/clipboard-dialog'
 import { interactionClock } from '../rdweb/interaction-limits'
+import ConsoleWorkspace from '../components/ConsoleWorkspace.vue'
 defineOptions({ name: 'ConsoleView' })
+const emit = defineEmits<{ focusModeChange: [value: boolean] }>()
+const focusMode = ref(false)
 const route = useRoute()
 const auth = useAuthStore()
 const { t } = useI18n()
@@ -226,6 +229,14 @@ function resize(): void {
   canvas.value.style.width = summary.value.width * factor + 'px'
   canvas.value.style.height = summary.value.height * factor + 'px'
 }
+// 專注只改本機布局；等待DOM幾何後重算，不重連、重建Worker或自動取焦。
+async function setFocusMode(value: boolean): Promise<void> {
+  if (!alive) return
+  focusMode.value = value
+  emit('focusModeChange', value)
+  await nextTick()
+  if (alive) resize()
+}
 // Direct route照樣驗UUID、latest can_connect／viewer硬上限與secure context。
 function start(): void {
   if (!alive) return
@@ -366,6 +377,13 @@ watch(
 )
 // 新target完全建立新operation。
 watch(() => route.params.targetId, start)
+// 包括目標與query在內的路由變更都取消舊專注外觀，不重放任何輸入。
+watch(
+  () => route.fullPath,
+  () => {
+    void setFocusMode(false)
+  },
+)
 // 幾何與比例變動不改remote pixel，只在DOM更新後重算CSS。
 watch(
   () => [zoom.value, summary.value?.width, summary.value?.height],
@@ -402,6 +420,7 @@ onMounted(() => {
 // 離頁先作廢callback再清所有native／HTTP／DOM排程。
 onBeforeUnmount(() => {
   alive = false
+  emit('focusModeChange', false)
   if (ticker !== null) clearInterval(ticker)
   ticker = null
   dropInput()
@@ -417,53 +436,59 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-  <main class="app-main">
-    <div class="page-intro">
+  <ConsoleWorkspace :focused="focusMode" @update:focused="setFocusMode">
+    <template #heading>
       <div>
         <h1>{{ t('consoleUI.title') }}</h1>
         <p>{{ name }}</p>
       </div>
-    </div>
-    <section class="card">
-      <div class="card-body">
-        <p role="status" data-testid="console-phase">{{ t('consoleUI.phases.' + phase) }}</p>
-        <p v-if="error" class="error-message" role="alert" :data-error-code="error">
-          {{ t('consoleUI.errors.' + error) }}
-        </p>
-        <p
-          v-if="issue || clipboardUi.code"
-          role="status"
-          data-testid="console-operation-error"
-          :data-operation-code="issue || clipboardUi.code"
-        >
-          {{ t('consoleUI.operations.' + (issue || clipboardUi.code)) }}
-        </p>
-        <div v-if="summary" data-testid="console-verified">
-          <p>{{ summary.platform }} · {{ summary.version }}</p>
-        </div>
-        <p v-if="phase === 'streaming'" data-testid="console-streaming">
-          {{ t('consoleUI.connected') }}
-        </p>
-        <p v-if="stats" data-testid="console-stats">
-          {{ stats.codec.toUpperCase() }} · {{ stats.width }}×{{ stats.height }} ·
-          {{ t('consoleUI.fps', { count: stats.fps }) }}
-        </p>
-        <section class="console-toolbar" :aria-label="t('consoleUI.controls')">
-          <button
-            v-if="inputState?.platform === 'windows'"
-            type="button"
-            data-testid="console-cad"
-            :disabled="
-              !socketOpen ||
-              !inputState.ready ||
-              !inputState.keyboard ||
-              !inputState.sas ||
-              inputBusy
-            "
-            @click="sendCad"
-          >
-            {{ t('consoleUI.cad') }}
-          </button>
+    </template>
+    <template #status>
+      <p role="status" data-testid="console-phase">{{ t('consoleUI.phases.' + phase) }}</p>
+      <p v-if="error" class="error-message" role="alert" :data-error-code="error">
+        {{ t('consoleUI.errors.' + error) }}
+      </p>
+      <p
+        v-if="issue || clipboardUi.code"
+        role="status"
+        data-testid="console-operation-error"
+        :data-operation-code="issue || clipboardUi.code"
+      >
+        {{ t('consoleUI.operations.' + (issue || clipboardUi.code)) }}
+      </p>
+      <div v-if="summary" data-testid="console-verified">
+        <p>{{ summary.platform }} · {{ summary.version }}</p>
+      </div>
+      <p v-if="phase === 'streaming'" data-testid="console-streaming">
+        {{ t('consoleUI.connected') }}
+      </p>
+      <p v-if="stats" data-testid="console-stats">
+        {{ stats.codec.toUpperCase() }} · {{ stats.width }}×{{ stats.height }} ·
+        {{ t('consoleUI.fps', { count: stats.fps }) }}
+      </p>
+      <p
+        v-if="
+          retryState.phase === 'waiting' ||
+          (retryState.phase === 'connecting' && retryState.attempt > 0)
+        "
+        data-testid="console-reconnect"
+        role="status"
+      >
+        {{ t('consoleUI.reconnecting', { count: retryState.attempt || 1 }) }}
+      </p>
+      <p v-if="inputFocused" data-testid="console-input-active" role="status">
+        {{ t('consoleUI.inputActive') }}
+      </p>
+      <p v-if="fullscreenUnavailable" role="status" data-testid="console-fullscreen-unavailable">
+        {{ t('consoleUI.fullscreenUnavailable') }}
+      </p>
+      <p v-if="clipboardUi.receiving" role="status" data-testid="console-clipboard-waiting">
+        {{ t('consoleUI.clipboardWaiting') }}
+      </p>
+    </template>
+    <template #toolbar>
+      <section class="console-toolbar" :aria-label="t('consoleUI.controls')">
+        <div class="console-toolgroup" role="group" :aria-label="t('consoleUI.textControls')">
           <button
             type="button"
             data-testid="console-clipboard-send"
@@ -484,17 +509,8 @@ onBeforeUnmount(() => {
           <p id="console-clipboard-help" data-testid="console-clipboard-help">
             {{ t('consoleUI.clipboardHelp') }}
           </p>
-          <p v-if="clipboardUi.receiving" role="status" data-testid="console-clipboard-waiting">
-            {{ t('consoleUI.clipboardWaiting') }}
-          </p>
-          <label
-            ><input
-              type="checkbox"
-              data-testid="console-auto-reconnect"
-              :checked="retryState.enabled"
-              @change="changeReconnect"
-            />{{ t('consoleUI.autoReconnect') }}</label
-          >
+        </div>
+        <div class="console-toolgroup" role="group" :aria-label="t('consoleUI.displayControls')">
           <label
             >{{ t('consoleUI.zoom')
             }}<select v-model="zoom" data-testid="console-zoom">
@@ -522,93 +538,110 @@ onBeforeUnmount(() => {
           <button type="button" data-testid="console-fullscreen" @click="enterFullscreen">
             {{ t('consoleUI.fullscreen') }}
           </button>
-          <button type="button" data-testid="console-end" @click="cancel">
+        </div>
+        <div class="console-toolgroup" role="group" :aria-label="t('consoleUI.connectionControls')">
+          <button
+            v-if="inputState?.platform === 'windows'"
+            type="button"
+            data-testid="console-cad"
+            :disabled="
+              !socketOpen ||
+              !inputState.ready ||
+              !inputState.keyboard ||
+              !inputState.sas ||
+              inputBusy
+            "
+            @click="sendCad"
+          >
+            {{ t('consoleUI.cad') }}
+          </button>
+          <label class="check-label"
+            ><input
+              type="checkbox"
+              data-testid="console-auto-reconnect"
+              :checked="retryState.enabled"
+              @change="changeReconnect"
+            />{{ t('consoleUI.autoReconnect') }}</label
+          >
+          <button type="button" class="danger" data-testid="console-end" @click="cancel">
             {{ t('consoleUI.end') }}
           </button>
-        </section>
-        <p
-          v-if="
-            retryState.phase === 'waiting' ||
-            (retryState.phase === 'connecting' && retryState.attempt > 0)
-          "
-          data-testid="console-reconnect"
-          role="status"
-        >
-          {{ t('consoleUI.reconnecting', { count: retryState.attempt || 1 }) }}
-        </p>
-        <p v-if="inputFocused" data-testid="console-input-active" role="status">
-          {{ t('consoleUI.inputActive') }}
-        </p>
-        <p v-if="fullscreenUnavailable" role="status" data-testid="console-fullscreen-unavailable">
-          {{ t('consoleUI.fullscreenUnavailable') }}
-        </p>
-        <section ref="viewport" class="console-viewport" data-testid="console-viewport">
-          <canvas ref="canvas" data-testid="console-canvas"></canvas>
-          <textarea
-            ref="ime"
-            class="console-ime"
-            :aria-label="t('consoleUI.input')"
-            data-testid="console-ime"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-          ></textarea>
-        </section>
-        <dialog
-          ref="clipboardDialog"
-          data-testid="console-clipboard-dialog"
-          @close="clipboardClosed"
-          @cancel="closeClipboard"
-        >
-          <label
-            >{{ t('consoleUI.clipboardText')
-            }}<textarea
-              ref="clipboardText"
-              data-testid="console-clipboard-text"
-              :readonly="clipboardUi.fallback === 'copy'"
-              :disabled="clipboardUi.busy"
-              autocomplete="off"
-              spellcheck="false"
-              @input="editClipboard"
-            ></textarea>
-          </label>
-          <div class="button-row">
-            <button
-              v-if="clipboardUi.fallback === 'send'"
-              type="button"
-              data-testid="console-clipboard-submit"
-              :disabled="clipboardUi.busy"
-              @click="submitClipboard"
-            >
-              {{ t('consoleUI.clipboardSend') }}
-            </button>
-            <button
-              v-if="clipboardUi.fallback === 'copy'"
-              type="button"
-              data-testid="console-clipboard-retry-copy"
-              :disabled="clipboardUi.busy"
-              @click="retryCopyClipboard"
-            >
-              {{ t('consoleUI.clipboardFallbackCopy') }}
-            </button>
-            <button type="button" data-testid="console-clipboard-close" @click="closeClipboard">
-              {{ t('targetUI.close') }}
-            </button>
-          </div>
-        </dialog>
-        <div class="button-row">
-          <button
-            v-if="phase === 'failed' || phase === 'closed'"
-            type="button"
-            class="primary"
-            data-testid="console-retry"
-            @click="start"
-          >
-            {{ t('consoleUI.retry') }}
-          </button>
-          <RouterLink :to="{ name: 'targets' }">{{ t('targets') }}</RouterLink>
         </div>
-      </div>
+      </section>
+    </template>
+    <section ref="viewport" class="console-viewport" data-testid="console-viewport">
+      <canvas ref="canvas" data-testid="console-canvas"></canvas>
+      <textarea
+        ref="ime"
+        class="console-ime"
+        :aria-label="t('consoleUI.input')"
+        data-testid="console-ime"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+      ></textarea>
     </section>
-  </main>
+    <dialog
+      ref="clipboardDialog"
+      class="management-dialog"
+      :aria-label="
+        t(
+          clipboardUi.fallback === 'copy'
+            ? 'consoleUI.clipboardFallbackCopy'
+            : 'consoleUI.clipboardSend',
+        )
+      "
+      data-testid="console-clipboard-dialog"
+      @close="clipboardClosed"
+      @cancel="closeClipboard"
+    >
+      <label
+        >{{ t('consoleUI.clipboardText')
+        }}<textarea
+          ref="clipboardText"
+          data-testid="console-clipboard-text"
+          :readonly="clipboardUi.fallback === 'copy'"
+          :disabled="clipboardUi.busy"
+          autocomplete="off"
+          spellcheck="false"
+          @input="editClipboard"
+        ></textarea>
+      </label>
+      <div class="button-row">
+        <button
+          v-if="clipboardUi.fallback === 'send'"
+          type="button"
+          data-testid="console-clipboard-submit"
+          :disabled="clipboardUi.busy"
+          @click="submitClipboard"
+        >
+          {{ t('consoleUI.clipboardSend') }}
+        </button>
+        <button
+          v-if="clipboardUi.fallback === 'copy'"
+          type="button"
+          data-testid="console-clipboard-retry-copy"
+          :disabled="clipboardUi.busy"
+          @click="retryCopyClipboard"
+        >
+          {{ t('consoleUI.clipboardFallbackCopy') }}
+        </button>
+        <button type="button" data-testid="console-clipboard-close" @click="closeClipboard">
+          {{ t('targetUI.close') }}
+        </button>
+      </div>
+    </dialog>
+    <div class="button-row">
+      <button
+        v-if="phase === 'failed' || phase === 'closed'"
+        type="button"
+        class="primary"
+        data-testid="console-retry"
+        @click="start"
+      >
+        {{ t('consoleUI.retry') }}
+      </button>
+      <RouterLink :to="{ name: 'targets' }">{{ t('targets') }}</RouterLink>
+    </div>
+  </ConsoleWorkspace>
 </template>

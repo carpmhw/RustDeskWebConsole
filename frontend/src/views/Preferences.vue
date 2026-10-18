@@ -2,6 +2,7 @@
 defineOptions({ name: 'PreferencesView' })
 import { useI18n } from 'vue-i18n'
 import HealthPanel from '../components/HealthPanel.vue'
+import DisplayPreferences from '../components/DisplayPreferences.vue'
 const { t } = useI18n()
 </script>
 <template>
@@ -12,6 +13,14 @@ const { t } = useI18n()
         <p>{{ t('preferencesHint') }}</p>
       </div>
     </div>
-    <HealthPanel />
+    <div class="preferences-grid">
+      <section class="card">
+        <div class="card-header">
+          <h2>{{ t('appearance') }}</h2>
+        </div>
+        <div class="card-body"><DisplayPreferences /></div>
+      </section>
+      <HealthPanel />
+    </div>
   </main>
 </template>
