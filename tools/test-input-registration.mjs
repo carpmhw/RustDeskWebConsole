@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
@@ -30,6 +30,78 @@ const runtime = {
   RDWEB_WINDOWS_EDITOR_WIDTH: '1398',
   RDWEB_WINDOWS_EDITOR_HEIGHT: '894',
 }
+// 真list須恰兩案且不需owner；非法scope不能用預設Linux偷跑。
+test('ingress registers exactly two fixed scenarios', () => {
+  const scope = {
+    RDWEB_INPUT_PLATFORMS: 'linux',
+    RDWEB_INPUT_CHANNELS: 'chromium',
+    RDWEB_B3_BASES: '/rdweb',
+    RDWEB_B3_MODES: 'preserve',
+  }
+  const good = list(scope, 'playwright.reconnect-ingress.config.ts')
+  assert.equal(good.status, 0)
+  assert.equal(good.stdout.includes('Total: 2 tests'), true)
+  for (const transport of ['tcp', 'ws'])
+    assert.equal(
+      good.stdout.includes('official reconnect after owned ingress crash over linux/' + transport),
+      true,
+    )
+  for (const change of [
+    { RDWEB_B3_BASES: '/' },
+    { RDWEB_INPUT_PLATFORMS: 'windows' },
+    { RDWEB_INPUT_CHANNELS: 'chrome' },
+  ])
+    assert.notEqual(
+      list({ ...scope, ...change }, 'playwright.reconnect-ingress.config.ts').status,
+      0,
+    )
+})
+// 直接CLI沒有本輪能力必須先於reset拒絕；Docker只有公開替身，不接daemon。
+test('ingress runtime refuses absent capability before reset', () => {
+  const directory = mkdtempSync('/tmp/opencode/ingress-entry-'),
+    calls = join(directory, 'calls')
+  writeFileSync(calls, '')
+  writeFileSync(
+    join(directory, 'docker'),
+    '#!/usr/bin/env bash\nprintf called >> "$PUBLIC_INGRESS_CALLS"\nexit 99\n',
+    { mode: 0o700 },
+  )
+  try {
+    const value = spawnSync(
+      'corepack',
+      [
+        'pnpm',
+        '--dir',
+        'frontend',
+        'exec',
+        'playwright',
+        'test',
+        '--config',
+        'playwright.reconnect-ingress.config.ts',
+        '--grep',
+        'linux/tcp',
+      ],
+      {
+        env: {
+          PATH: directory + ':' + process.env.PATH,
+          HOME: process.env.HOME,
+          PUBLIC_INGRESS_CALLS: calls,
+          RDWEB_INPUT_PLATFORMS: 'linux',
+          RDWEB_INPUT_CHANNELS: 'chromium',
+          RDWEB_B3_BASES: '/rdweb',
+          RDWEB_B3_MODES: 'preserve',
+        },
+        encoding: 'utf8',
+        timeout: 30000,
+      },
+    )
+    assert.notEqual(value.status, 0)
+    assert.equal((value.stdout + value.stderr).includes('ingress_owner_unavailable'), true)
+    assert.equal(readFileSync(calls, 'utf8'), '')
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
 const probe = {
   ...runtime,
   RDWEB_WINDOWS_TEXT_PROBE: '1',
@@ -49,6 +121,87 @@ const textProbeCurrent = join(
   dirname(fileURLToPath(import.meta.url)),
   '../frontend/.cache/windows-text-probe/current',
 )
+
+// 新長觀察只list，不啟proxy／Docker或native fixture。
+test('longrun registers exactly four fixed Linux scenarios', () => {
+  const scope = {
+    RDWEB_INPUT_PLATFORMS: 'linux',
+    RDWEB_INPUT_CHANNELS: 'chromium',
+    RDWEB_B3_BASES: '/rdweb',
+    RDWEB_B3_MODES: 'preserve',
+  }
+  const good = list(scope, 'playwright.reconnect-longrun.config.ts')
+  assert.equal(good.status, 0)
+  assert.equal(good.stdout.includes('Total: 4 tests'), true)
+  for (const transport of ['tcp', 'ws'])
+    for (const name of ['stable sixty seconds', 'original cycle timeout'])
+      assert.equal(good.stdout.includes(`official reconnect ${name} over linux/${transport}`), true)
+  for (const value of [
+    { RDWEB_B3_BASES: '/' },
+    { RDWEB_B3_MODES: 'strip' },
+    { RDWEB_INPUT_PLATFORMS: 'windows' },
+    { RDWEB_INPUT_CHANNELS: 'chromium,chrome' },
+  ]) {
+    assert.notEqual(
+      list({ ...scope, ...value }, 'playwright.reconnect-longrun.config.ts').status,
+      0,
+    )
+  }
+})
+// 安全五案分開註冊，不能混入基本四案或以Linux冒充Windows。
+test('reconnect security registers five Linux-only scenarios', () => {
+  const value = list({ RDWEB_INPUT_PLATFORMS: 'linux' }, 'playwright.reconnect-security.config.ts')
+  assert.equal(value.status, 0)
+  assert.equal(value.stdout.includes('Total: 5 tests'), true)
+  const wrong = list(
+    { ...runtime, RDWEB_INPUT_PLATFORMS: 'windows' },
+    'playwright.reconnect-security.config.ts',
+  )
+  assert.notEqual(wrong.status, 0)
+})
+
+// Linux重連只註冊TCP／WS各恢復與耗盡兩案，不混入功能、Windows或可靠性case。
+test('reconnect registers exactly four Linux scenarios', () => {
+  const result = list({ RDWEB_INPUT_PLATFORMS: 'linux' }, 'playwright.reconnect.config.ts')
+  assert.equal(result.status, 0)
+  assert.equal(result.stdout.includes('Total: 4 tests'), true)
+  assert.equal(result.stdout.includes('linux/tcp'), true)
+  assert.equal(result.stdout.includes('linux/ws'), true)
+  assert.equal(result.stdout.includes('windows/'), false)
+})
+// Requested Windows必須先有同終端runtime，不能因只列案就忽略安全邊界。
+test('reconnect rejects requested Windows without runtime', () => {
+  const result = list({ RDWEB_INPUT_PLATFORMS: 'windows' }, 'playwright.reconnect.config.ts')
+  assert.notEqual(result.status, 0)
+  assert.equal(result.stdout.includes('Total: 4 tests'), false)
+})
+// 合成runtime僅用--list；平台分列且不可把Linux四案當Windows成功。
+test('reconnect supports separate platform and channel registration', () => {
+  const result = list(
+    { ...runtime, RDWEB_INPUT_PLATFORMS: 'linux,windows' },
+    'playwright.reconnect.config.ts',
+  )
+  assert.equal(result.status, 0)
+  assert.equal(result.stdout.includes('Total: 8 tests'), true)
+  const channels = list(
+    { RDWEB_INPUT_PLATFORMS: 'linux', RDWEB_INPUT_CHANNELS: 'chromium,msedge' },
+    'playwright.reconnect.config.ts',
+  )
+  assert.equal(channels.status, 0)
+  assert.equal(channels.stdout.includes('Total: 8 tests'), true)
+  assert.equal(channels.stdout.includes('[chromium]'), true)
+  assert.equal(channels.stdout.includes('[msedge]'), true)
+})
+// 未安裝channel不由agent下載；未知／空／重複輸入則在註冊前拒絕。
+for (const channels of ['', 'unknown', 'chromium,chromium']) {
+  test('reconnect rejects invalid channels: ' + JSON.stringify(channels), () => {
+    const result = list(
+      { RDWEB_INPUT_PLATFORMS: 'linux', RDWEB_INPUT_CHANNELS: channels },
+      'playwright.reconnect.config.ts',
+    )
+    assert.notEqual(result.status, 0)
+  })
+}
 // 真Playwright只列一個TCP回傳case，不擴到WS或原完整雙向矩陣。
 test('text return probe registers exactly one opted-in TCP case', () => {
   const result = list(textReturnProbe, 'playwright.text-return-probe.config.ts')

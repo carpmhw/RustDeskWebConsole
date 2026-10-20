@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { pageOverflows } from './helpers'
+// 只在Node測試端呼叫公開座標helper，不執行其fixture／API／Docker函數或匯入瀏覽器bundle。
+import { clickRemote } from '../e2e-real/input-fixtures'
 
 const fixture = '/e2e-ui/index.html?scene=console'
 
@@ -23,6 +25,22 @@ async function state(page: Page): Promise<{
 }> {
   return JSON.parse((await page.getByTestId('public-input-state').textContent())!)
 }
+
+// 點擊helper必須先等原生surface穩定才取比例，不能把等待前的rect用於等待後的點擊。
+test('remote click uses settled surface geometry instead of a stale scale', async ({ page }) => {
+  await page.goto(fixture)
+  await page.getByTestId('console-zoom').selectOption('original')
+  await expect(page.getByTestId('console-canvas')).toHaveCSS('width', '320px')
+  // 公開fixture刻意以原生CSS轉場重現actionability等待前後尺寸不同，不改產品動效。
+  await page.addStyleTag({
+    content:
+      '[data-testid="console-canvas"] { transition: width 400ms linear, height 400ms linear; }',
+  })
+  await page.getByTestId('console-zoom').selectOption('2')
+  await clickRemote(page, 80, 120)
+  await expect.poll(async () => (await state(page)).lastPoint).toEqual({ x: 80, y: 120 })
+  expect((await state(page)).points).toBe(1)
+})
 
 // 使用真DOM點擊公開畫面中心，座標預期由固定320×240 fixture獨立手算。
 async function center(page: Page): Promise<void> {

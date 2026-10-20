@@ -112,7 +112,11 @@ function hostChanged(state: ConsoleState): void {
   phase.value = state.phase
   summary.value = state.peer ?? null
   stats.value = state.stats ?? null
-  error.value = state.error ?? null
+  // 可重試原因只是attempt終態，最終提示交RetryState裁決；fatal／未知仍直接顯示。
+  error.value =
+    state.terminal?.cause === 'network' || state.terminal?.cause === 'temporary'
+      ? null
+      : (state.error ?? null)
   inputState.value = state.input ?? null
   name.value = session.targetName
   if (state.phase === 'closed' || state.phase === 'failed') {

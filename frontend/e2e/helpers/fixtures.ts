@@ -27,15 +27,30 @@ export function resetStack(): void {
     throw new Error('Use test-subpaths.sh to provide runtime E2E credentials')
   try {
     const args = ['compose', '-f', compose]
+    const override = process.env.RDWEB_E2E_COMPOSE_OVERRIDE
     if (
-      process.env.RDWEB_E2E_COMPOSE_OVERRIDE === 'deploy/dev/docker-compose.browser-login-test.yml'
+      override !== undefined &&
+      ![
+        'deploy/dev/docker-compose.browser-login-test.yml',
+        'deploy/dev/docker-compose.reconnect-test.yml',
+      ].includes(override)
     )
+      throw new Error()
+    if (override !== undefined)
       args.push(
         '-f',
         fileURLToPath(
           new URL('../../../deploy/dev/docker-compose.browser-login-test.yml', import.meta.url),
         ),
       )
+    if (override === 'deploy/dev/docker-compose.reconnect-test.yml') {
+      args.push(
+        '-f',
+        fileURLToPath(
+          new URL('../../../deploy/dev/docker-compose.reconnect-test.yml', import.meta.url),
+        ),
+      )
+    }
     execFileSync(
       'docker',
       [...args, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '60'],

@@ -21,7 +21,17 @@ function run(overrides = {}, script = 'deploy/dev/test-m3b3-input.sh', stale = f
     `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *spikes.yml* ]]; then scope=console; else scope=official; fi
+if [[ "\${STUB_LOG_DOCKER:-0}" == 1 ]]; then printf '%s\n' 'docker-invoked' >> "$STUB_CALLS"; fi
+if [[ "\${STUB_VERIFY_RECONNECT:-0}" == 1 && "$scope" == console ]]; then
+  [[ "$*" == *browser-login-test.yml* && "$*" == *reconnect-test.yml* ]] || exit 23
+fi
+if [[ "\${STUB_VERIFY_INGRESS:-0}" == 1 ]]; then
+  if [[ "$scope" == console ]]; then [[ "$*" == *'--project-name rdweb-m0'* ]] || exit 23
+  else [[ "$*" == *'--project-name rdweb-rustdesk-test'* ]] || exit 23; fi
+fi
 if [[ "$*" == *' ps '* ]]; then
+  if [[ "$scope" == console && "$*" == *--all* && "\${STUB_DISCOVERY_FAIL:-0}" == 1 ]]; then exit 37; fi
+  if [[ "$scope" == console && "$*" == *--all* && "\${STUB_CONSOLE_STOPPED:-0}" == 1 ]]; then echo public-stopped-container; fi
   if [[ "$scope" == console && "\${STUB_CONSOLE_RUNNING:-0}" == 1 ]]; then echo backend; fi
   if [[ "$scope" == official ]]; then
     case "\${STUB_OFFICIAL:-empty}" in full) printf 'hbbs\\nhbbr\\ntarget\\n';; partial) echo hbbs;; esac
@@ -39,7 +49,21 @@ if [[ "\${STUB_BUILD_FAIL:-0}" == 1 && "$*" == *' build'* ]]; then exit 1; fi
     join(dir, 'node'),
     `#!/usr/bin/env bash
 set -euo pipefail
-if [[ "\${1:-}" == -p ]]; then echo public-random-fixture; exit 0; fi
+if [[ "\${1:-}" == -p ]]; then
+  if [[ "\${2:-}" == *toString*hex* ]]; then printf '%064d\n' 0; else echo public-random-fixture; fi
+  exit 0
+fi
+if [[ "\${1:-}" == tools/run-reconnect-playwright.mjs ]]; then
+  if [[ "$2" == playwright.reconnect-ingress.config.ts ]]; then
+    [[ "\${RDWEB_B3_SUITE_CONFIG:-}" == "$2" && "\${RDWEB_RECONNECT_INGRESS_OWNER:-}" =~ ^[a-f0-9]{64}$ ]] || exit 23
+    printf '%s\n' ingress-owned >> "$STUB_CALLS"
+  else [[ -z "\${RDWEB_RECONNECT_INGRESS_OWNER+x}" ]] || exit 23; fi
+  exec corepack pnpm --dir frontend exec playwright test --config "$2" --max-failures=1
+fi
+if [[ "\${1:-}" == tools/reconnect-preflight.mjs ]]; then
+  [[ "\${STUB_PORTS_BUSY:-0}" != 1 ]] || exit 2
+  exec "$STUB_REAL_NODE" --input-type=module -e 'import { assertReconnectEnvironment } from "./tools/reconnect-preflight.mjs"; try { assertReconnectEnvironment(process.env) } catch { process.exitCode = 2 }'
+fi
 if [[ "\${1:-}" == tools/wait-rustdesk-online.mjs || "\${1:-}" == tools/test-rustdesk-clock.mjs || "\${1:-}" == tools/verify-input-fixture.mjs ]]; then exit 0; fi
 exec "$STUB_REAL_NODE" "$@"
 `,
@@ -51,6 +75,15 @@ exec "$STUB_REAL_NODE" "$@"
 set -euo pipefail
 printf 'playwright:%s/%s\\n' "$APP_BASE_PATH" "$PREFIX_MODE" >> "$STUB_CALLS"
 if [[ "\${STUB_REQUIRE_SAFE_ENV:-0}" == 1 && ( -n "\${DEBUG+x}" || -n "\${PWDEBUG+x}" ) ]]; then exit 23; fi
+if [[ "\${STUB_VERIFY_RECONNECT:-0}" == 1 ]]; then
+  [[ "$RDWEB_DEV_PORT" == 18081 && "$RDWEB_E2E_COMPOSE_OVERRIDE" == deploy/dev/docker-compose.reconnect-test.yml && "$*" == *--max-failures=1* ]] || exit 23
+fi
+if [[ "\${STUB_TERMINATE_OWNER:-0}" == 1 ]]; then
+  trap 'exit 130' TERM INT
+  kill -TERM "$PPID"
+  sleep 0.1
+  exit 130
+fi
 exit "\${STUB_SUITE_EXIT:-0}"
 `,
     { mode: 0o700 },
@@ -100,6 +133,179 @@ const textReturnProbe = {
   RDWEB_B3_BASES: '/',
   RDWEB_B3_MODES: 'preserve',
 }
+
+const longrunScope = {
+  RDWEB_INPUT_PLATFORMS: 'linux',
+  RDWEB_INPUT_CHANNELS: 'chromium',
+  RDWEB_B3_BASES: '/rdweb',
+  RDWEB_B3_MODES: 'preserve',
+}
+// 真runner只啟一個固定ingress suite，私有能力不寫入trace。
+test('ingress runner private capability and first failure gate', () => {
+  const script = 'deploy/dev/test-m3b3-reconnect-ingress.sh'
+  const good = run(
+    { ...longrunScope, STUB_VERIFY_RECONNECT: '1', STUB_VERIFY_INGRESS: '1', STUB_LOG_DOCKER: '1' },
+    script,
+  )
+  assert.equal(good.status, 0)
+  assert.equal(good.calls.split('ingress-owned').length - 1, 1)
+  assert.equal(good.calls.includes('0'.repeat(64)), false)
+  for (const change of [
+    { RDWEB_INPUT_PLATFORMS: 'windows' },
+    { RDWEB_B3_BASES: '/' },
+    { RDWEB_INPUT_CHANNELS: 'chrome' },
+    { RDWEB_RECONNECT_INGRESS_OWNER: '' },
+    { COMPOSE_PROJECT_NAME: 'external' },
+    { RDWEB_WINDOWS_HOST_OBSERVE: '1' },
+  ]) {
+    const blocked = run({ ...longrunScope, ...change, STUB_LOG_DOCKER: '1' }, script)
+    assert.equal(blocked.status, 2)
+    assert.equal(blocked.calls, '')
+  }
+  const stopped = run({ ...longrunScope, STUB_CONSOLE_STOPPED: '1' }, script)
+  assert.equal(stopped.status, 2)
+  assert.equal(stopped.calls.includes(' action:'), false)
+  const unknown = run({ ...longrunScope, STUB_DISCOVERY_FAIL: '1' }, script)
+  assert.equal(unknown.status, 2)
+  assert.equal(unknown.calls.includes(' action:'), false)
+  const failure = run({ ...longrunScope, STUB_SUITE_EXIT: '7' }, script)
+  assert.equal(failure.status, 7)
+  assert.equal(failure.calls.split('playwright:').length - 1, 1)
+  assert.equal(failure.calls.includes(' -v'), false)
+  assert.notEqual(run({ ...longrunScope, STUB_CONSOLE_DOWN_FAIL: '1' }, script).status, 0)
+  const interrupted = run({ ...longrunScope, STUB_TERMINATE_OWNER: '1' }, script)
+  assert.equal(interrupted.status, 130)
+  assert.equal(interrupted.calls.includes('console action:'), true)
+  assert.equal(interrupted.calls.includes(' down'), true)
+})
+// 長觀察只啟一次固定組合並沿原proxy／owned安全收尾。
+test('longrun runner uses proxy wiring and fails closed', () => {
+  const script = 'deploy/dev/test-m3b3-reconnect-longrun.sh'
+  const good = run({ ...longrunScope, STUB_VERIFY_RECONNECT: '1' }, script)
+  assert.equal(good.status, 0)
+  assert.equal(good.calls.split('playwright:/rdweb/preserve').length - 1, 1)
+  for (const value of [
+    { RDWEB_B3_BASES: '/' },
+    { RDWEB_B3_MODES: 'strip' },
+    { RDWEB_INPUT_PLATFORMS: 'windows' },
+    { RDWEB_INPUT_CHANNELS: 'chrome' },
+  ]) {
+    const blocked = run({ ...longrunScope, ...value, STUB_LOG_DOCKER: '1' }, script)
+    assert.equal(blocked.status, 2)
+    assert.equal(blocked.calls, '')
+  }
+  const failed = run({ ...longrunScope, STUB_SUITE_EXIT: '7' }, script)
+  assert.equal(failed.status, 7)
+  assert.equal(failed.calls.split('playwright:').length - 1, 1)
+  assert.equal(failed.calls.includes('console action:'), true)
+  assert.equal(failed.calls.includes(' down'), true)
+  assert.notEqual(run({ ...longrunScope, STUB_CONSOLE_DOWN_FAIL: '1' }, script).status, 0)
+  const external = run({ ...longrunScope, STUB_OFFICIAL: 'full' }, script)
+  assert.equal(external.status, 0)
+  assert.equal(
+    external.calls
+      .split('\n')
+      .some(
+        /* 不關重用的official stack。 */ (line) =>
+          line.startsWith('official action:') && line.endsWith(' down'),
+      ),
+    false,
+  )
+})
+// 真shell必須同時接三檔、80／81分離及首FAIL停止，不只檢查字串存在。
+test('reconnect runner applies proxy compose wiring and fail-fast', () => {
+  const value = run(
+    { RDWEB_INPUT_PLATFORMS: 'linux', STUB_VERIFY_RECONNECT: '1' },
+    'deploy/dev/test-m3b3-reconnect.sh',
+  )
+  assert.equal(value.status, 0)
+  assert.equal(value.calls.includes('reconnect-test.yml'), true)
+})
+// 占用與外來診斷scope必須在任何Docker副作用前拒絕。
+for (const overrides of [
+  { STUB_PORTS_BUSY: '1' },
+  { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
+  { RDWEB_E2E_COMPOSE_OVERRIDE: 'unknown.yml' },
+]) {
+  test('reconnect runner rejects proxy preflight: ' + Object.keys(overrides)[0], () => {
+    const value = run(
+      { RDWEB_INPUT_PLATFORMS: 'linux', ...overrides },
+      'deploy/dev/test-m3b3-reconnect.sh',
+    )
+    assert.equal(value.status, 2)
+    assert.equal(value.calls, '')
+  })
+}
+
+// 真shell控制流程在替身環境中保留六組，不把安全stub的拒絕當runner已接線。
+test('reconnect runner schedules the full six prefix combinations and cleans owned stacks', () => {
+  const result = run(
+    {
+      RDWEB_INPUT_PLATFORMS: 'linux',
+      RDWEB_B3_BASES: '/ /rdweb /a/b/c',
+      RDWEB_B3_MODES: 'preserve strip',
+    },
+    'deploy/dev/test-m3b3-reconnect.sh',
+  )
+  assert.equal(result.status, 0)
+  assert.deepEqual(
+    result.calls.split('\n').filter((line) => line.startsWith('playwright:')),
+    [
+      'playwright://preserve',
+      'playwright://strip',
+      'playwright:/rdweb/preserve',
+      'playwright:/rdweb/strip',
+      'playwright:/a/b/c/preserve',
+      'playwright:/a/b/c/strip',
+    ],
+  )
+  for (const scope of ['console', 'official']) {
+    assert.equal(
+      result.calls
+        .split('\n')
+        .filter((line) => line.startsWith(scope + ' action:') && line.endsWith(' down')).length,
+      1,
+    )
+  }
+  assert.equal(result.calls.includes(' -v'), false)
+})
+// 錯誤suite只執行第一組，仍清本輪owner，不由第二組成功蓋掉FAIL。
+test('reconnect runner stops the matrix on the first suite failure', () => {
+  const result = run(
+    {
+      RDWEB_INPUT_PLATFORMS: 'linux',
+      RDWEB_B3_BASES: '/ /rdweb /a/b/c',
+      RDWEB_B3_MODES: 'preserve strip',
+      STUB_SUITE_EXIT: '1',
+    },
+    'deploy/dev/test-m3b3-reconnect.sh',
+  )
+  assert.equal(result.status, 1)
+  assert.equal(result.calls.split('\n').filter((line) => line.startsWith('playwright:')).length, 1)
+  assert.equal(result.calls.includes('console action:'), true)
+  assert.equal(result.calls.includes('official action:'), true)
+})
+// 不得取得既有手動Console的ownership，reuse官方stack也不擅自down它。
+test('reconnect runner preserves pre-existing resources', () => {
+  const blocked = run(
+    { RDWEB_INPUT_PLATFORMS: 'linux', STUB_CONSOLE_RUNNING: '1' },
+    'deploy/dev/test-m3b3-reconnect.sh',
+  )
+  assert.equal(blocked.status, 2)
+  assert.equal(blocked.calls, '')
+  const reused = run(
+    { RDWEB_INPUT_PLATFORMS: 'linux', STUB_OFFICIAL: 'full' },
+    'deploy/dev/test-m3b3-reconnect.sh',
+  )
+  assert.equal(reused.status, 0)
+  assert.equal(reused.calls.includes('official action:'), false)
+})
+// Requested Windows runtime缺失時，必須在任何Docker或認證建立之前停止。
+test('reconnect runner rejects missing Windows runtime before Docker', () => {
+  const result = run({ RDWEB_INPUT_PLATFORMS: 'windows' }, 'deploy/dev/test-m3b3-reconnect.sh')
+  assert.equal(result.status, 2)
+  assert.equal(result.calls, '')
+})
 // 未開log或scope不合法須在取得任何Docker owner前fail closed。
 for (const override of [
   { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: undefined },

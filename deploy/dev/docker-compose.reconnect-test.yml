@@ -1,0 +1,8 @@
+# 僅reconnect runner把ingress綁18081；browser仍18080，不改正式Origin驗證。
+services:
+  ingress:
+    labels:
+      rdweb.test.reconnect-ingress-owner: ${RDWEB_RECONNECT_INGRESS_OWNER:-}
+  backend:
+    environment:
+      APP_PUBLIC_URL: http://127.0.0.1:18080${APP_BASE_PATH:-/}

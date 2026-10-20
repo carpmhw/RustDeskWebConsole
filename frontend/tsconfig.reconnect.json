@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"], "allowImportingTsExtensions": true },
+  "include": [
+    "src/env.d.ts",
+    "e2e-real/reconnect-proxy*.ts",
+    "e2e-real/reconnect-fixtures.ts",
+    "e2e-real/reconnect-longrun*.ts",
+    "e2e-real/reconnect-ingress*.ts",
+    "e2e-real/console-reconnect*.ts",
+    "e2e-proxy/**/*.ts",
+    "vitest.reconnect-proxy.config.ts",
+    "playwright.reconnect*.config.ts"
+  ]
+}

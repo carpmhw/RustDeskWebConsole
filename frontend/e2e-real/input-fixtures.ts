@@ -159,6 +159,8 @@ export async function waitForInputVideo(page: Page, fixture: InputFixture): Prom
 // client rect包含縮放與scroll；座標來源只有公开fixture幾何。
 export async function clickRemote(page: Page, x: number, y: number): Promise<void> {
   const surface = page.getByTestId('console-canvas')
+  // 先讓Playwright等surface幾何穩定並完成捲動，再取rect，避免click等待後沿用舊比例。
+  await surface.scrollIntoViewIfNeeded()
   const point = await surface.evaluate(
     /* 遠端point只轉為本機mouse座標，不取pixel或remote origin。 */ (element, p) => {
       const c = element as HTMLCanvasElement,
