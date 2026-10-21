@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { textReturnCleanupCode, textReturnLogCode } from '../../e2e-real/text-return-cleanup'
+import { textReturnCleanupCode, textReturnLogCode } from '../../e2e/real/text-return-cleanup'
 // 正常的remote_input結果只有在所有自有資源已收尾時才可保持成功。
 it('returns a fixed cleanup error when an owned resource remains open', () => {
   expect(textReturnCleanupCode(false)).toBe('text_return_cleanup_unavailable')

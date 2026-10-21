@@ -108,7 +108,9 @@ corepack pnpm --dir frontend test
 corepack pnpm --dir frontend build
 ```
 
-真實 relay、瀏覽器登入、影像與輸入驗收使用 `deploy/dev/test-*.sh` 隔離 runner；依測試需求先安裝 Chromium，並使用對應的 Docker／官方 fixture 環境。直接執行 `pnpm e2e` 不會自動準備這些環境。CI 檢查見 [GitHub Actions workflow](.github/workflows/ci.yml)。
+前端 E2E 案例、設定、專用工具與 Docker 環境集中於 [`frontend/e2e/`](frontend/e2e/README.md)。真實 relay、瀏覽器登入、影像與輸入驗收使用 `frontend/e2e/scripts/test-*.sh` 隔離 runner；依測試需求先安裝 Chromium，並使用對應的 Docker／官方 fixture 環境。直接執行 `pnpm e2e` 不會自動準備這些環境。CI 目前涵蓋 M3-A relay、M3-B1 login、M3-B2 video，以及 M3-B3 Linux input／reconnect／50 次；M3-B3 Windows、SAS 與 IME 仍需操作者 runtime，不在 GitHub-hosted CI。CI 檢查見 [GitHub Actions workflow](.github/workflows/ci.yml)。
+
+2026-10-21 本機共享 stack 的 M3-B3 Linux 完整矩陣已通過：codecs 8、subpaths 29×6＝174、B1 12、B2 24、input 102、reconnect 24、M3A real 2、timezones 3 與 proxy redaction；Linux／Windows reliability 各 50 筆原始 first-attempt 報告保留。Windows input／reconnect、SAS／IME 與遠端 CI 尚未完成，M3-B3 與 M3 仍未完成驗收。
 
 ## 專案結構
 
@@ -117,7 +119,8 @@ corepack pnpm --dir frontend build
 | `src/RdWeb.Api/`   | ASP.NET Core API、認證、資料儲存與 RustDesk relay。 |
 | `src/RdWeb.Tests/` | xUnit 單元與整合測試。                              |
 | `frontend/`        | Vue 介面、瀏覽器 API 與 RustDesk Protocol Worker。  |
-| `deploy/dev/`      | 開發／測試 Compose、容器映像與驗收 runner。         |
-| `tools/`           | 測試、診斷與授權檢查工具。                          |
+| `frontend/e2e/`    | E2E 案例、設定、fixture、工具與專用容器環境。       |
+| `deploy/dev/`      | 共用開發 Compose、API／web 映像與 Redis 測試環境。  |
+| `tools/`           | 共用 fixture、回歸與授權檢查工具。                  |
 
 協定來源與雜湊見 [RustDesk 上游來源說明](src/RdWeb.Api/RustDesk/Protos/UPSTREAM.md)；第三方套件與來源資訊見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

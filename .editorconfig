@@ -20,24 +20,24 @@ indent_size = 2
 charset = utf-8-bom
 csharp_style_namespace_declarations = block_scoped:silent
 
-[tools/windows-clipboard-overflow-diagnostic.ps1]
+[frontend/e2e/scripts/windows-clipboard-overflow-diagnostic.ps1]
 charset = utf-8-bom
 
-[tools/windows-clipboard-overflow-open-diagnostic.ps1]
+[frontend/e2e/scripts/windows-clipboard-overflow-open-diagnostic.ps1]
 charset = utf-8-bom
 
-[tools/calibrate-windows-clipboard-invalid-utf16.ps1]
+[frontend/e2e/scripts/calibrate-windows-clipboard-invalid-utf16.ps1]
 charset = utf-8-bom
 
-[tools/calibrate-windows-clipboard-read-race.ps1]
+[frontend/e2e/scripts/calibrate-windows-clipboard-read-race.ps1]
 charset = utf-8-bom
 
-[tools/calibrate-windows-clipboard-read-race-diagnostic.ps1]
+[frontend/e2e/scripts/calibrate-windows-clipboard-read-race-diagnostic.ps1]
 charset = utf-8-bom
 
-[tools/calibrate-windows-clipboard-read-open-gap.ps1]
+[frontend/e2e/scripts/calibrate-windows-clipboard-read-open-gap.ps1]
 charset = utf-8-bom
 
 # Windows PowerShell 5.1對含繁體中文的host腳本必須以BOM識別UTF-8，避免ANSI解碼吞換行。
-[tools/{windows-host-observer,windows-host-observer-supervisor,windows-host-observer-fixture,test-windows-host-observer,test-windows-host-supervisor,test-windows-host-lifecycle,measure-windows-editor-geometry,windows-host-editor,windows-host-editor-identity,calibrate-windows-host-editor,calibrate-windows-host-watchdog,calibrate-windows-clipboard,calibrate-windows-clipboard-notification,calibrate-windows-clipboard-busy,calibrate-windows-clipboard-race,calibrate-windows-clipboard-lease,calibrate-windows-clipboard-capacity,calibrate-windows-clipboard-overflow}.ps1]
+[frontend/e2e/scripts/{windows-host-observer,windows-host-observer-supervisor,windows-host-observer-fixture,test-windows-host-observer,test-windows-host-supervisor,test-windows-host-lifecycle,measure-windows-editor-geometry,windows-host-editor,windows-host-editor-identity,calibrate-windows-host-editor,calibrate-windows-host-watchdog,calibrate-windows-clipboard,calibrate-windows-clipboard-notification,calibrate-windows-clipboard-busy,calibrate-windows-clipboard-race,calibrate-windows-clipboard-lease,calibrate-windows-clipboard-capacity,calibrate-windows-clipboard-overflow}.ps1]
 charset = utf-8-bom

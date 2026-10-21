@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { assertInputPeer } from '../../e2e-real/input-peer'
+import { assertInputPeer } from '../../e2e/real/input-peer'
 
 // 兩平台皆依最新核准基準驗收，不以子字串或版本缺省冒充匹配。
 it.each([

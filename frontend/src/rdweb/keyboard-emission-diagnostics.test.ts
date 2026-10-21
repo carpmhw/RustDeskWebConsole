@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import * as diagnostics from '../../e2e-real/input-diagnostics'
+import * as diagnostics from '../../e2e/real/input-diagnostics'
 import { KeyboardInput } from './keyboard-input'
 
 // 每案僅擁有自建window與crypto替身，不接觸OS剪貼簿。

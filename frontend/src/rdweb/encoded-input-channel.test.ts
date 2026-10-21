@@ -4,7 +4,7 @@ import {
   installWorkerEncodedInputDiagnostics,
   prepareEncodedInputWorker,
   type EncodedWorkerScope,
-} from '../../e2e-real/encoded-input-diagnostics'
+} from '../../e2e/real/encoded-input-diagnostics'
 import { encodeMessage } from './codec'
 import { observeEncodedInput } from './encoded-input-observer'
 const enums = { control: 4, capsLock: 3, numLock: 63, legacy: 0, translate: 2 }

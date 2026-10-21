@@ -86,6 +86,7 @@ public sealed class ConnectionEndpointsTests
         while (await store.GetAsync("conn:all") != "0") await Task.Delay(10, timeout.Token);
         Assert.Equal("0", await store.GetAsync("conn:" + setup.Grant.UserId));
         Assert.Equal(0, factory.Services.GetRequiredService<RdWeb.Api.RustDesk.ActiveConnectionRegistry>().Count);
+        await WaitForAuditAsync(factory, setup.Grant.TargetId, "ConnectionEnded", timeout.Token);
         await factory.Services.GetRequiredService<AuditWriter>().StopAsync(timeout.Token);
         await using var db = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
         var logs = await db.AuditLogs.Where(log => log.ObjectId == setup.Grant.TargetId).ToListAsync();
@@ -94,6 +95,17 @@ public sealed class ConnectionEndpointsTests
         Assert.True(ended.Detail.Contains("bytesReceived", StringComparison.Ordinal));
         Assert.False(ended.Detail.Contains(ticket, StringComparison.Ordinal));
         Assert.False(ended.Detail.Contains(publicKey, StringComparison.Ordinal));
+    }
+
+    // 稽核writer在連線計數釋放後才寫入結束事件；等到事件落盤再停止，避免測試競態。
+    private static async Task WaitForAuditAsync(TestApplicationFactory factory, Guid targetId, string action, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            await using var db = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(cancellationToken);
+            if (await db.AuditLogs.AnyAsync(log => log.ObjectId == targetId && log.Action == action, cancellationToken)) return;
+            await Task.Delay(10, cancellationToken);
+        }
     }
 
     // 無票證、route不符、使用者停用及ACL撤銷皆在upgrade之前拒絕，不能觸及hbbs。

@@ -4,7 +4,7 @@ import {
   clipboardOracleCode,
   type ClipboardOracleStage,
   type ClipboardOracleEvidence,
-} from '../../e2e-real/clipboard-oracle'
+} from '../../e2e/real/clipboard-oracle'
 
 const evidence: ClipboardOracleEvidence = {
   matched: false,

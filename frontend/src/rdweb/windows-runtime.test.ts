@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { inputPlatforms, readWindowsRuntime } from '../../e2e-real/windows-runtime'
+import { inputPlatforms, readWindowsRuntime } from '../../e2e/real/windows-runtime'
 
 // 全部資料皆為公開虛構fixture，不讀取操作者真正的runtime憑證。
 function fixture(): Record<string, string> {

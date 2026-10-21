@@ -1,0 +1,98 @@
+name: rdweb-rustdesk-test
+services:
+  hbbs:
+    image: rdweb-rustdesk-server
+    build:
+      context: ../../..
+      dockerfile: frontend/e2e/docker/Dockerfile.rustdesk-server
+    command: [hbbs, -r, hbbr:21117]
+    volumes:
+      - server-data:/data
+      - public-key:/public-key
+    ports:
+      - 127.0.0.1:21115:21115
+      - 127.0.0.1:21116:21116
+      - 127.0.0.1:21116:21116/udp
+      - 127.0.0.1:${RDWEB_TEST_ID_WS_PORT:-31118}:21118
+    logging:
+      driver: none
+    healthcheck:
+      test: [CMD-SHELL, 'test -s /public-key/id_ed25519.pub && nc -z 127.0.0.1 21116']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  hbbr:
+    image: rdweb-rustdesk-server
+    command: [hbbr]
+    volumes:
+      - relay-data:/data
+    ports:
+      - 127.0.0.1:21117:21117
+      - 127.0.0.1:${RDWEB_TEST_RELAY_WS_PORT:-31119}:21119
+    logging:
+      driver: none
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, '21117']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  target:
+    image: rdweb-rustdesk-client
+    hostname: rdweb-target
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: frontend/e2e/docker/Dockerfile.rustdesk-client
+    volumes:
+      - public-key:/public-key:ro
+      - target-state:/test-state
+      - target-config:/target-config
+    depends_on:
+      hbbs:
+        condition: service_healthy
+      hbbr:
+        condition: service_healthy
+    logging:
+      driver: none
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'test -s /test-state/target-id && xdpyinfo >/dev/null && pgrep -x rustdesk >/dev/null',
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  controller:
+    image: rdweb-rustdesk-client
+    platform: linux/amd64
+    profiles: [acceptance]
+    environment:
+      CLIENT_ROLE: controller
+    volumes:
+      - public-key:/public-key:ro
+      - target-state:/test-state:ro
+    depends_on:
+      target:
+        condition: service_healthy
+    logging:
+      driver: none
+    healthcheck:
+      test: [CMD-SHELL, 'xdpyinfo >/dev/null && pgrep -x rustdesk >/dev/null']
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+volumes:
+  server-data:
+  relay-data:
+  public-key:
+  target-state:
+  target-config:

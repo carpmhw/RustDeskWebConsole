@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { readTextProbeRuntime } from '../../e2e-real/text-probe-runtime'
+import { readTextProbeRuntime } from '../../e2e/real/text-probe-runtime'
 const enabled = {
   RDWEB_WINDOWS_TEXT_PROBE: '1',
   RDWEB_INPUT_PLATFORMS: 'windows',

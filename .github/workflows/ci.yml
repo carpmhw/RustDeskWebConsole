@@ -43,32 +43,35 @@ jobs:
           node tools/test-clipboard-fixture-integrity.mjs
           node tools/test-fzstd-patch.mjs
           node tools/test-url-lint.mjs
-          node tools/test-target-password-init.mjs
-          node --test tools/test-windows-host-encoding.mjs
-          node --test tools/test-linux-host-handoff.mjs
-          node --test tools/test-windows-host-watchdog.mjs
-          node --test tools/test-windows-editor-geometry.mjs
-          node --test tools/test-windows-uia-calibration.mjs
-          node --test tools/test-windows-clipboard-calibration.mjs
-          node --test tools/test-windows-clipboard-notification-calibration.mjs
-          node --test tools/test-windows-clipboard-busy-calibration.mjs
-          node --test tools/test-windows-clipboard-lease-calibration.mjs
-          node --test tools/test-windows-clipboard-race-calibration.mjs
-          node --test tools/test-windows-clipboard-capacity.mjs
-          node --test tools/test-windows-clipboard-overflow.mjs
-          node --test tools/test-windows-clipboard-invalid-utf16.mjs
-          node --test tools/test-windows-clipboard-read-race.mjs
-          node --test tools/test-windows-clipboard-read-race-diagnostic.mjs
-          node --test tools/test-windows-clipboard-read-open-gap.mjs
+          node --test frontend/e2e/scripts/test-e2e-layout.mjs
+          node --test frontend/e2e/scripts/test-e2e-tool-lint.mjs
+          node frontend/e2e/scripts/test-target-password-init.mjs
+          node --test frontend/e2e/scripts/test-windows-host-encoding.mjs
+          node --test frontend/e2e/scripts/test-linux-host-handoff.mjs
+          node --test frontend/e2e/scripts/test-windows-host-watchdog.mjs
+          node --test frontend/e2e/scripts/test-windows-editor-geometry.mjs
+          node --test frontend/e2e/scripts/test-windows-uia-calibration.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-calibration.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-notification-calibration.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-busy-calibration.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-lease-calibration.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-race-calibration.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-capacity.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-overflow.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-invalid-utf16.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-read-race.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-read-race-diagnostic.mjs
+          node --test frontend/e2e/scripts/test-windows-clipboard-read-open-gap.mjs
           corepack pnpm --dir frontend lint
           corepack pnpm --dir frontend test
+          corepack pnpm --dir frontend exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts
           corepack pnpm --dir frontend build
           corepack pnpm --dir frontend typecheck:text-return-probe
           corepack pnpm --dir frontend audit --audit-level high
       - name: Third-party licenses
         run: |
           frontend/node_modules/.bin/eslint tools
-          frontend/node_modules/.bin/prettier --check tools/*.mjs .github/workflows/*.yml deploy/dev/*.yml README.md THIRD_PARTY_NOTICES.md
+          frontend/node_modules/.bin/prettier --check tools/*.mjs .github/workflows/*.yml deploy/dev/*.yml frontend/e2e/docker/*.yml README.md THIRD_PARTY_NOTICES.md
           node tools/licenses.mjs
       - uses: actions/upload-artifact@v4
         with:
@@ -81,23 +84,35 @@ jobs:
       - name: Real authentication and nginx subpath matrix
         run: |
           corepack pnpm --dir frontend exec playwright install --with-deps chromium
-          bash deploy/dev/test-subpaths.sh
+          bash frontend/e2e/scripts/test-subpaths.sh
       - name: Proxy failure must not log request contents
         run: |
-          node tools/test-proxy-log-redaction.mjs --start
+          node frontend/e2e/scripts/test-proxy-log-redaction.mjs --start
       - name: Pinned RustDesk TCP and WebSocket relay
-        run: bash deploy/dev/test-m3a-relay.sh
+        run: bash frontend/e2e/scripts/test-m3a-relay.sh
       - name: Official browser secure login matrix
-        run: bash deploy/dev/test-m3b1-login.sh
+        run: bash frontend/e2e/scripts/test-m3b1-login.sh
       - name: Native WebCodecs public fixture matrix
-        run: corepack pnpm --dir frontend exec playwright test --config playwright.codecs.config.ts
+        run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.codecs.config.ts
       - name: Official browser video and bounded presentation matrix
-        run: bash deploy/dev/test-m3b2-video.sh
+        run: bash frontend/e2e/scripts/test-m3b2-video.sh
+      - name: Official Linux input and clipboard matrix
+        run: RDWEB_INPUT_PLATFORMS=linux bash frontend/e2e/scripts/test-m3b3-input.sh
+      - name: Official Linux finite reconnect matrix
+        run: RDWEB_INPUT_PLATFORMS=linux bash frontend/e2e/scripts/test-m3b3-reconnect.sh
+      - name: Official Linux original fifty attempts
+        run: |
+          RDWEB_RELIABILITY_PLATFORM=linux \
+          RDWEB_INPUT_PLATFORMS=linux \
+          RDWEB_INPUT_CHANNELS=chromium \
+          RDWEB_B3_BASES=/rdweb \
+          RDWEB_B3_MODES=preserve \
+          bash frontend/e2e/scripts/test-m3b3-reliability.sh
       - name: Cleanup spike containers
         if: always()
         run: |
           docker compose -f deploy/dev/docker-compose.spikes.yml down
-          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml down
+          docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml down
   rustdesk-desktop:
     runs-on: ubuntu-latest
     steps:
@@ -107,14 +122,14 @@ jobs:
           node-version: '24'
       - name: Build isolated desktop test environment
         run: |
-          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml build
-          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml up -d --wait --wait-timeout 90
-          node tools/wait-rustdesk-online.mjs
-          docker compose -f deploy/dev/docker-compose.rustdesk-test.yml --profile acceptance up -d --wait --wait-timeout 90
+          docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml build
+          docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml up -d --wait --wait-timeout 90
+          node frontend/e2e/scripts/wait-rustdesk-online.mjs
+          docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml --profile acceptance up -d --wait --wait-timeout 90
       - name: Official desktop receives target clock
         run: |
           mkdir -p artifacts
-          node tools/capture-rustdesk.mjs artifacts/rustdesk-desktop.png --verify
+          node frontend/e2e/scripts/capture-rustdesk.mjs artifacts/rustdesk-desktop.png --verify
       - name: Cleanup test containers
         if: always()
-        run: docker compose -f deploy/dev/docker-compose.rustdesk-test.yml --profile acceptance down
+        run: docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml --profile acceptance down

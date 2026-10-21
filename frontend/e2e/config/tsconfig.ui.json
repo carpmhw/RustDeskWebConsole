@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"] },
+  "include": [
+    "../../src/env.d.ts",
+    "../ui/**/*.ts",
+    "../ui/**/*.vue",
+    "vite.ui.config.ts",
+    "playwright.ui.config.ts"
+  ]
+}

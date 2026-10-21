@@ -1,5 +1,6 @@
 import tseslint from 'typescript-eslint'
 import vue from 'eslint-plugin-vue'
+import nodeToolConfigs from '../eslint.config.mjs'
 
 export default [
   {
@@ -14,6 +15,8 @@ export default [
   },
   ...tseslint.configs.recommended,
   ...vue.configs['flat/essential'],
+  // 搬入 frontend 的 Node 工具沿用根目錄同一份規則與 globals，避免 CI 防護隨位置改變。
+  { ...nodeToolConfigs[0], files: ['e2e/scripts/**/*.mjs'] },
   { files: ['**/*.vue'], languageOptions: { parserOptions: { parser: tseslint.parser } } },
   {
     files: ['src/**/*.{ts,vue}'],

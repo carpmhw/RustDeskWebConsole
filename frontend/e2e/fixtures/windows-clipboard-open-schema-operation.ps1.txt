@@ -1,0 +1,101 @@
+& {
+    $ErrorActionPreference='Stop'
+    $stage='environment';$schemaStarted=$false;$schemaExit=$null
+    try {
+        # 僅接受原有5.1環境；不替操作者修改政策、權限或視窗狀態。
+        if ($env:OS -ne 'Windows_NT' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or $ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage' -or [Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::STA -or (Get-ExecutionPolicy) -ne 'RemoteSigned' -or (Get-ExecutionPolicy -Scope Process) -ne 'RemoteSigned') { throw 'guard' }
+        $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+        try {
+            $sid=$identity.User
+            $principal=[Security.Principal.WindowsPrincipal]::new($identity)
+            if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'guard' }
+        } finally { $identity.Dispose() }
+        $destination=Join-Path $env:LOCALAPPDATA 'RdWebHostCalibration-11'
+        $zip=Join-Path $destination 'clipboard-open-diagnostic-entry-02.zip'
+        $exe=Join-Path $PSHOME 'powershell.exe'
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf -ErrorAction Stop)) { throw 'guard' }
+
+        # 寫入前先驗原來源目錄為本機NTFS、同owner、保護DACL及無reparse祖先。
+        $stage='destination'
+        $full=[IO.Path]::GetFullPath($destination);$root=[IO.Path]::GetPathRoot($full)
+        if ($root.StartsWith('\',[StringComparison]::Ordinal)) { throw 'guard' }
+        $drive=[IO.DriveInfo]::new($root)
+        if ($drive.DriveType -ne [IO.DriveType]::Fixed -or $drive.DriveFormat -cne 'NTFS') { throw 'guard' }
+        $item=Get-Item -LiteralPath $destination -Force -ErrorAction Stop
+        if (-not $item.PSIsContainer) { throw 'guard' }
+        $ancestor=$item
+        while ($null -ne $ancestor) {
+            if (($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'guard' }
+            $ancestor=$ancestor.Parent
+        }
+        $acl=Get-Acl -LiteralPath $destination -ErrorAction Stop
+        if ($acl.GetOwner([Security.Principal.SecurityIdentifier]) -ne $sid -or -not $acl.AreAccessRulesProtected) { throw 'guard' }
+        foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $rule.IdentityReference -ne $sid) { throw 'guard' }
+        }
+
+        # 原五份required來源與舊純診斷module必須已存在，實際ACL仍由CLI逐檔重驗。
+        $stage='required_sources'
+        foreach ($name in @('windows-host-observer-supervisor.ps1','windows-host-observer-native.cs','windows-editor-geometry-native.cs','windows-host-editor-calibration.cs','windows-host-editor.ps1','windows-clipboard-overflow-diagnostic.ps1')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $destination $name) -PathType Leaf -ErrorAction Stop)) { throw 'guard' }
+        }
+        # 共同三檔只讀，逐檔驗普通來源、同owner、原DACL與已核對的公開source hash。
+        $stage='shared_sources'
+        $sharedHashes=[ordered]@{
+            'windows-clipboard-overflow-core-open-diagnostic.cs'='973560337114f4698c439e7a6a137b9acd8b493b4314da8963a82af456ed765b'
+            'windows-clipboard-overflow-fixture-open-diagnostic.cs'='572c67ddaa1a12ad455ff89374a121451fc5dd23a553d09d8d6078f6a8692eee'
+            'windows-clipboard-overflow-open-diagnostic.ps1'='c622d6ad5f3cdf3c62e4b3d8b3517f87b9e3590f9e610a2decf01d9c402e04c4'
+        }
+        foreach ($name in $sharedHashes.Keys) {
+            $sourcePath=Join-Path $destination $name
+            $sourceItem=Get-Item -LiteralPath $sourcePath -Force -ErrorAction Stop
+            if ($sourceItem -isnot [IO.FileInfo] -or ($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'guard' }
+            $sourceAcl=Get-Acl -LiteralPath $sourcePath -ErrorAction Stop
+            if ($sourceAcl.GetOwner([Security.Principal.SecurityIdentifier]) -ne $sid) { throw 'guard' }
+            foreach ($rule in $sourceAcl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+                if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $rule.IdentityReference -ne $sid) { throw 'guard' }
+            }
+            if ((Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256 -ErrorAction Stop).Hash -ine $sharedHashes[$name]) { throw 'guard' }
+        }
+        $stage='archive_hash'
+        $expectedHash='33b336b3e05c5564ad6acb89b19375bacb5c9d9dd1c7f34d3f8a9dfa542b8b2c'
+        if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256 -ErrorAction Stop).Hash -ine $expectedHash) { throw 'guard' }
+
+        # 單入口必須尚不存在，絕不覆寫或改名任何既有檔案。
+        $entryName='calibrate-windows-clipboard-overflow-open-diagnostic-02.ps1'
+        $entryPath=Join-Path $destination $entryName
+        $stage='new_name'
+        if (Test-Path -LiteralPath $entryPath -ErrorAction Stop) { throw 'guard' }
+        $stage='extract'
+        Expand-Archive -LiteralPath $zip -DestinationPath $destination -ErrorAction Stop
+        $stage='entry_hash'
+        $entryItem=Get-Item -LiteralPath $entryPath -Force -ErrorAction Stop
+        if ($entryItem -isnot [IO.FileInfo] -or ($entryItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'guard' }
+        $entryAcl=Get-Acl -LiteralPath $entryPath -ErrorAction Stop
+        if ($entryAcl.GetOwner([Security.Principal.SecurityIdentifier]) -ne $sid) { throw 'guard' }
+        foreach ($rule in $entryAcl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $rule.IdentityReference -ne $sid) { throw 'guard' }
+        }
+        if ((Get-FileHash -LiteralPath $entryPath -Algorithm SHA256 -ErrorAction Stop).Hash -ine '4b700ec56ec0554e3fbc6215dfb6965edf2b89161879d665f83b925514c1abfb') { throw 'guard' }
+
+        # 僅啟動純schema；清空舊退出碼並立即保存本次值，啟動失敗不沿用舊值。
+        $stage='schema';$schemaStarted=$true;$global:LASTEXITCODE=$null
+        $entry=Join-Path $destination 'calibrate-windows-clipboard-overflow-open-diagnostic-02.ps1'
+        $output=@(& $exe -NoProfile -STA -NonInteractive -File $entry -DiagnosticSelfTest -FailureDiagnostic -OpenFailureDiagnostic -X 0 -Y 152 -Width 1075 -Height 508 2>&1)
+        $schemaExit=$global:LASTEXITCODE
+        if ($null -eq $schemaExit) { throw 'guard' }
+        $expected='host_clipboard_overflow_open_diagnostic_schema_observed,liveClipboardQueries=false,clipboardWritten=false'
+        if ($output.Count -ne 1 -or $output[0] -isnot [string]) { throw 'guard' }
+        if ($output[0] -ceq $expected) { [Console]::WriteLine($expected) }
+        elseif ($output[0] -cmatch '^host_clipboard_overflow_open_diagnostic_schema_unavailable,stage=(policy|flags|source|diagnostic_selftest)$') { [Console]::WriteLine($output[0]) }
+        else { throw 'guard' }
+        if ($schemaExit -ne 0 -or $output[0] -cne $expected) { throw 'guard' }
+    } catch {
+        # 只回固定階段，不輸出可能含路徑、身分或未知內容的例外原文。
+        [Console]::WriteLine('host_clipboard_open_schema_handoff_unavailable,stage='+$stage)
+    } finally {
+        if ($null -ne $schemaExit) { [Console]::WriteLine('OverflowOpenDiagnosticSchemaExit='+$schemaExit) }
+        elseif ($schemaStarted) { [Console]::WriteLine('OverflowOpenDiagnosticSchemaExit=not_obtained') }
+        else { [Console]::WriteLine('OverflowOpenDiagnosticSchemaExit=not_started') }
+    }
+}

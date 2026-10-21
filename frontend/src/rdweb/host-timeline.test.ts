@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { installInputDiagnostics } from '../../e2e-real/input-diagnostics'
+import { installInputDiagnostics } from '../../e2e/real/input-diagnostics'
 // 原transport只配送本公開fixture，時間線不得保留原payload或改送出。
 function fixture() {
   class Worker extends EventTarget {

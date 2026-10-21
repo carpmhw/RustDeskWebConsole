@@ -38,9 +38,9 @@
 | `frontend/src/views/`、`components/`、`i18n/`     | 頁面、元件與翻譯                                |
 | `frontend/src/rdweb/`                             | Protocol Worker、加密、影像、輸入、剪貼簿與重連 |
 | `frontend/src/utils/basePath.ts`                  | 執行期 subpath 與 HTTP／WebSocket URL 工具      |
-| `frontend/e2e/`、`frontend/e2e-real/`             | 管理介面與真實 RustDesk Playwright 測試         |
-| `deploy/dev/`                                     | 開發／測試 Compose、映像與驗收 runner           |
-| `tools/`                                          | fixture、診斷、回歸及授權檢查工具               |
+| `frontend/e2e/`                                   | E2E 案例、設定、fixture、runner 與專用容器      |
+| `deploy/dev/`                                     | 共用開發 Compose、API／web 映像及 Redis 測試    |
+| `tools/`                                          | 共用 fixture、回歸及授權檢查工具                |
 | `.github/workflows/ci.yml`                        | 已接入 CI 的檢查與完整測試矩陣                  |
 
 `deploy/dev/` 是開發與驗收環境；正式部署能力須依 M4 計畫與驗收確認。
@@ -131,19 +131,19 @@ node tools/licenses.mjs
 git diff --check
 ```
 
-依變更範圍執行：工具修改跑 ESLint、對應 `tools/test-*.mjs` 與指定檔案的 Prettier；依賴或第三方來源修改跑 audit、授權檢查並更新 `THIRD_PARTY_NOTICES.md`。純 Markdown 修改檢查內容、路徑／指令及 `frontend/node_modules/.bin/prettier --check <修改的檔案>`，無須啟動完整應用測試。
+依變更範圍執行：工具修改跑 ESLint、對應 `tools/test-*.mjs` 或 `frontend/e2e/scripts/test-*.mjs` 與指定檔案的 Prettier；依賴或第三方來源修改跑 audit、授權檢查並更新 `THIRD_PARTY_NOTICES.md`。純 Markdown 修改檢查內容、路徑／指令及 `frontend/node_modules/.bin/prettier --check <修改的檔案>`，無須啟動完整應用測試。
 
 ### 真實整合與瀏覽器驗收
 
 先準備 Chromium：`corepack pnpm --dir frontend exec playwright install chromium`。按影響範圍選用 runner，環境需求詳見 README、腳本與對應本機設計：
 
-| 變更範圍                    | 指令                                 |
-| --------------------------- | ------------------------------------ |
-| 認證、管理頁、subpath／代理 | `bash deploy/dev/test-subpaths.sh`   |
-| RustDesk TCP／WS relay      | `bash deploy/dev/test-m3a-relay.sh`  |
-| 瀏覽器 RustDesk 加密登入    | `bash deploy/dev/test-m3b1-login.sh` |
-| 真實影像與呈現生命週期      | `bash deploy/dev/test-m3b2-video.sh` |
-| M3-B3 輸入／剪貼簿／重連    | `bash deploy/dev/test-m3b3-input.sh` |
+| 變更範圍                    | 指令                                           |
+| --------------------------- | ---------------------------------------------- |
+| 認證、管理頁、subpath／代理 | `bash frontend/e2e/scripts/test-subpaths.sh`   |
+| RustDesk TCP／WS relay      | `bash frontend/e2e/scripts/test-m3a-relay.sh`  |
+| 瀏覽器 RustDesk 加密登入    | `bash frontend/e2e/scripts/test-m3b1-login.sh` |
+| 真實影像與呈現生命週期      | `bash frontend/e2e/scripts/test-m3b2-video.sh` |
+| M3-B3 輸入／剪貼簿／重連    | `bash frontend/e2e/scripts/test-m3b3-input.sh` |
 
 - `Category=RustDeskReal` 需要官方 runtime fixture，由 relay runner 準備；一般後端測試排除此類別不代表真實協定已通過。
 - 管理 E2E 使用隔離 stack 與正式安全限制；直接執行 `pnpm e2e` 不會自動具備 runner 的環境。

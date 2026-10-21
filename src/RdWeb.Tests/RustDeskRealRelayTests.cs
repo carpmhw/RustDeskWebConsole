@@ -18,7 +18,7 @@ public sealed class RustDeskRealRelayTests
     {
         var publicKey = Environment.GetEnvironmentVariable("RDWEB_RUSTDESK_PUBLIC_KEY");
         var peerId = Environment.GetEnvironmentVariable("RDWEB_RUSTDESK_TARGET_ID");
-        Assert.True(!string.IsNullOrEmpty(publicKey) && !string.IsNullOrEmpty(peerId), "Use deploy/dev/test-m3a-relay.sh");
+        Assert.True(!string.IsNullOrEmpty(publicKey) && !string.IsNullOrEmpty(peerId), "Use frontend/e2e/scripts/test-m3a-relay.sh");
         var idPort = transport == "tcp" ? 21116 : int.Parse(Environment.GetEnvironmentVariable("RDWEB_TEST_ID_WS_PORT") ?? "31118");
         var relayPort = transport == "tcp" ? 21117 : int.Parse(Environment.GetEnvironmentVariable("RDWEB_TEST_RELAY_WS_PORT") ?? "31119");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));

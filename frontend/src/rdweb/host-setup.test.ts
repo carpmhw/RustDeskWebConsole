@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { waitHostObservationReady, hostClientCode } from '../../e2e-real/host-observation-setup'
+import { waitHostObservationReady, hostClientCode } from '../../e2e/real/host-observation-setup'
 // 若將setup等待移到input／copy之間或讓late ready延長窗口，此純控制測試會抓到。
 it('waits for setup readiness only within the original 60000ms window', async () => {
   let time = 0,

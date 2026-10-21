@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { installInputDiagnostics, INPUT_DIAGNOSTIC_FIELDS } from '../../e2e-real/input-diagnostics'
+import { installInputDiagnostics, INPUT_DIAGNOSTIC_FIELDS } from '../../e2e/real/input-diagnostics'
 const publicSample = 'Public 中文 RdWeb 00000000-0000-4000-8000-000000000000'
 
 // 假Worker只觀察原訊息轉送與安全摘要，不能冒充Windows原生輸入。

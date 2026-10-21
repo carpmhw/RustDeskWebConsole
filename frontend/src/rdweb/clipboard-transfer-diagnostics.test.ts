@@ -3,7 +3,7 @@ import {
   installWorkerClipboardTransferDiagnostics,
   prepareClipboardTransferWorker,
   type ClipboardTransferWorkerScope,
-} from '../../e2e-real/clipboard-transfer-diagnostics'
+} from '../../e2e/real/clipboard-transfer-diagnostics'
 import type { Page } from '@playwright/test'
 import { WorkerClipboard } from './worker-clipboard'
 import { hbb } from './codec'

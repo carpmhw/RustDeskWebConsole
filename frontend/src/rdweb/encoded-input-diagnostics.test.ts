@@ -6,7 +6,7 @@ import {
   type EncodedWorkerScope,
   type PreEncryptInputEvidence,
   type PreEncryptInputCapture,
-} from '../../e2e-real/encoded-input-diagnostics'
+} from '../../e2e/real/encoded-input-diagnostics'
 
 const enums = { control: 4, capsLock: 3, numLock: 63, legacy: 0, translate: 2 }
 const sample = 'Public 中文 RdWeb'
