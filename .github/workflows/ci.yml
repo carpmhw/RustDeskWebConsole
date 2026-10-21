@@ -25,11 +25,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Verify pinned pnpm version
+        working-directory: frontend
+        run: test "$(corepack pnpm --version)" = "12.14.0"
       - name: Restore locked dependencies
         run: |
           dotnet restore RdWeb.sln --locked-mode
           dotnet tool restore
-          corepack pnpm --dir frontend install --frozen-lockfile
+          (cd frontend && corepack pnpm install --frozen-lockfile)
       - name: Backend checks
         run: |
           dotnet build RdWeb.sln -c Release --no-restore
@@ -62,12 +65,12 @@ jobs:
           node --test frontend/e2e/scripts/test-windows-clipboard-read-race.mjs
           node --test frontend/e2e/scripts/test-windows-clipboard-read-race-diagnostic.mjs
           node --test frontend/e2e/scripts/test-windows-clipboard-read-open-gap.mjs
-          corepack pnpm --dir frontend lint
-          corepack pnpm --dir frontend test
-          corepack pnpm --dir frontend exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts
-          corepack pnpm --dir frontend build
-          corepack pnpm --dir frontend typecheck:text-return-probe
-          corepack pnpm --dir frontend audit --audit-level high
+          (cd frontend && corepack pnpm lint)
+          (cd frontend && corepack pnpm test)
+          (cd frontend && corepack pnpm exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts)
+          (cd frontend && corepack pnpm build)
+          (cd frontend && corepack pnpm typecheck:text-return-probe)
+          (cd frontend && corepack pnpm audit --audit-level high)
       - name: Third-party licenses
         run: |
           frontend/node_modules/.bin/eslint tools
@@ -83,7 +86,7 @@ jobs:
           node tools/test-container-timezones.mjs
       - name: Real authentication and nginx subpath matrix
         run: |
-          corepack pnpm --dir frontend exec playwright install --with-deps chromium
+          (cd frontend && corepack pnpm exec playwright install --with-deps chromium)
           bash frontend/e2e/scripts/test-subpaths.sh
       - name: Proxy failure must not log request contents
         run: |
@@ -93,7 +96,7 @@ jobs:
       - name: Official browser secure login matrix
         run: bash frontend/e2e/scripts/test-m3b1-login.sh
       - name: Native WebCodecs public fixture matrix
-        run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.codecs.config.ts
+        run: (cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.codecs.config.ts)
       - name: Official browser video and bounded presentation matrix
         run: bash frontend/e2e/scripts/test-m3b2-video.sh
       - name: Official Linux input and clipboard matrix
