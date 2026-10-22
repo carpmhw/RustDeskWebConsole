@@ -43,6 +43,6 @@ for APP_BASE_PATH in ${RDWEB_B2_BASES:-/ /rdweb /a/b/c}; do
     export APP_BASE_PATH PREFIX_MODE
     args=(--config e2e/config/playwright.video.config.ts)
     if [[ -n "${RDWEB_B2_GREP:-}" ]]; then args+=(--grep "$RDWEB_B2_GREP"); fi
-    corepack pnpm --dir frontend exec playwright test "${args[@]}"
+    (cd frontend && corepack pnpm exec playwright test "${args[@]}")
   done
 done

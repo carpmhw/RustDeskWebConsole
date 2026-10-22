@@ -98,6 +98,7 @@ exec "$STUB_REAL_NODE" "$@"
     join(dir, 'corepack'),
     `#!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "\${STUB_EXPECT_COREPACK_CWD:-}" && "$PWD" != "$STUB_EXPECT_COREPACK_CWD" ]]; then exit 23; fi
 printf 'playwright:%s/%s\\n' "$APP_BASE_PATH" "$PREFIX_MODE" >> "$STUB_CALLS"
 if [[ "\${STUB_REQUIRE_SAFE_ENV:-0}" == 1 && ( -n "\${DEBUG+x}" || -n "\${PWDEBUG+x}" ) ]]; then exit 23; fi
 if [[ "\${STUB_VERIFY_RECONNECT:-0}" == 1 ]]; then
@@ -165,6 +166,58 @@ const longrunScope = {
   RDWEB_B3_BASES: '/rdweb',
   RDWEB_B3_MODES: 'preserve',
 }
+// 真實runner必須在frontend目錄呼叫Corepack；從repo根目錄使用--dir會先選到根層預設pnpm而與packageManager衝突。
+test('real shell runners invoke corepack from the frontend workspace', () => {
+  const runners = [
+    'frontend/e2e/scripts/test-m3b1-login.sh',
+    'frontend/e2e/scripts/test-m3b2-video.sh',
+    'frontend/e2e/scripts/test-m3b3-common.sh',
+    'frontend/e2e/scripts/test-subpaths.sh',
+  ]
+  for (const runner of runners) {
+    const source = readFileSync(join(repoRoot, runner), 'utf8')
+    assert.doesNotMatch(source, /corepack pnpm --dir frontend/)
+    assert.match(source, /\(cd frontend && corepack pnpm /)
+  }
+})
+
+// 執行真實腳本但替換外部命令；每次 Corepack 呼叫都須位於 frontend，且六組路徑不可因切換目錄而中斷。
+for (const script of [
+  'frontend/e2e/scripts/test-m3b1-login.sh',
+  'frontend/e2e/scripts/test-m3b2-video.sh',
+  'frontend/e2e/scripts/test-m3b3-input.sh',
+  'frontend/e2e/scripts/test-subpaths.sh',
+]) {
+  // 若退回在根目錄呼叫 Corepack，替身先拒絕，不讓 --dir 掩蓋套件管理器的選版錯誤。
+  test('Corepack cwd preserves the full runner matrix: ' + script, () => {
+    const result = run(
+      {
+        STUB_EXPECT_COREPACK_CWD: join(repoRoot, 'frontend'),
+        RDWEB_B3_BASES: '/ /rdweb /a/b/c',
+        RDWEB_B3_MODES: 'preserve strip',
+      },
+      script,
+    )
+    assert.equal(result.status, 0, result.output)
+    assert.deepEqual(
+      result.calls
+        .split('\n')
+        .filter(
+          /* 僅核對實際 suite 呼叫，不將 Docker 替身事件混入矩陣。 */ (line) =>
+            line.startsWith('playwright:'),
+        ),
+      [
+        'playwright://preserve',
+        'playwright://strip',
+        'playwright:/rdweb/preserve',
+        'playwright:/rdweb/strip',
+        'playwright:/a/b/c/preserve',
+        'playwright:/a/b/c/strip',
+      ],
+    )
+  })
+}
+
 // 真runner只啟一個固定ingress suite，私有能力不寫入trace。
 test('ingress runner private capability and first failure gate', () => {
   const script = 'frontend/e2e/scripts/test-m3b3-reconnect-ingress.sh'

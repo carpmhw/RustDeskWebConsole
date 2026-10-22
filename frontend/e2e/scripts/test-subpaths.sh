@@ -49,6 +49,6 @@ for APP_BASE_PATH in $prefixes; do
   for PREFIX_MODE in $modes; do
     export APP_BASE_PATH PREFIX_MODE
     docker compose -f deploy/dev/docker-compose.spikes.yml up -d --wait --wait-timeout 60
-    corepack pnpm --dir frontend e2e "$@"
+    (cd frontend && corepack pnpm e2e "$@")
   done
 done

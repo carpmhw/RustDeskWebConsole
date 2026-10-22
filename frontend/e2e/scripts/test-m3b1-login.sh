@@ -40,6 +40,6 @@ console_owned=1
 for APP_BASE_PATH in ${RDWEB_B1_BASES:-/ /rdweb /a/b/c}; do
   for PREFIX_MODE in ${RDWEB_B1_MODES:-preserve strip}; do
     export APP_BASE_PATH PREFIX_MODE
-    corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.real-login.config.ts
+    (cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.real-login.config.ts)
   done
 done

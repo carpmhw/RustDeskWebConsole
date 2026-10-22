@@ -5,22 +5,16 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
+// 以frontend為Corepack工作目錄，確保讀到專案packageManager版本而非根層預設值。
+const frontendRoot = join(dirname(fileURLToPath(import.meta.url)), '../..')
+
 // 子程序只繼承一般工具路徑與公開fixture；list不能連任何遠端或載操作者秘密。
 function list(overrides = {}, config = 'playwright.input.config.ts') {
   return spawnSync(
     'corepack',
-    [
-      'pnpm',
-      '--dir',
-      'frontend',
-      'exec',
-      'playwright',
-      'test',
-      '--config',
-      'e2e/config/' + config,
-      '--list',
-    ],
+    ['pnpm', 'exec', 'playwright', 'test', '--config', 'e2e/config/' + config, '--list'],
     {
+      cwd: frontendRoot,
       env: { PATH: process.env.PATH, HOME: process.env.HOME, ...overrides },
       encoding: 'utf8',
       timeout: 30000,
@@ -81,8 +75,6 @@ test('ingress runtime refuses absent capability before reset', () => {
       'corepack',
       [
         'pnpm',
-        '--dir',
-        'frontend',
         'exec',
         'playwright',
         'test',
@@ -92,6 +84,7 @@ test('ingress runtime refuses absent capability before reset', () => {
         'linux/tcp',
       ],
       {
+        cwd: frontendRoot,
         env: {
           PATH: directory + ':' + process.env.PATH,
           HOME: process.env.HOME,

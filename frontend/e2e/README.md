@@ -22,24 +22,24 @@
 
 ```sh
 # 收集管理案例，不啟動服務或瀏覽器
-corepack pnpm --dir frontend e2e --list
+(cd frontend && corepack pnpm e2e --list)
 
 # 真實認證／代理驗收：runner 準備隔離服務及程序環境
 bash frontend/e2e/scripts/test-subpaths.sh
 
 # 公開 UI harness：先建置再執行，不連真實 API 或 RustDesk
-corepack pnpm --dir frontend exec vite build --config e2e/config/vite.ui.config.ts
-corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.ui.config.ts
+(cd frontend && corepack pnpm exec vite build --config e2e/config/vite.ui.config.ts)
+(cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.ui.config.ts)
 
 # 公開 codec harness：先驗證／準備固定來源 fixture
 node frontend/scripts/prepare-codec-fixtures.mjs
-corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.codecs.config.ts
+(cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.codecs.config.ts)
 
 # 代理工具測試與專用型別檢查
-corepack pnpm --dir frontend exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts
-corepack pnpm --dir frontend exec tsc --project e2e/config/tsconfig.reconnect.json
-corepack pnpm --dir frontend exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json
-corepack pnpm --dir frontend typecheck:text-return-probe
+(cd frontend && corepack pnpm exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts)
+(cd frontend && corepack pnpm exec tsc --project e2e/config/tsconfig.reconnect.json)
+(cd frontend && corepack pnpm exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json)
+(cd frontend && corepack pnpm typecheck:text-return-probe)
 
 # 目錄、runner 與測試註冊回歸；不連操作者的真機
 node --test frontend/e2e/scripts/test-e2e-layout.mjs frontend/e2e/scripts/test-m3b3-runner.mjs frontend/e2e/scripts/test-input-registration.mjs

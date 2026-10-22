@@ -188,7 +188,7 @@ JS
           exit "$status"
         fi
       else
-        corepack pnpm --dir frontend exec playwright test --config "e2e/config/$config"
+        (cd frontend && corepack pnpm exec playwright test --config "e2e/config/$config")
       fi
     done
   done
