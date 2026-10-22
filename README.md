@@ -89,7 +89,7 @@ docker compose -f deploy/dev/docker-compose.spikes.yml down
 ```sh
 dotnet tool restore
 dotnet restore RdWeb.sln --locked-mode
-corepack pnpm --dir frontend install --frozen-lockfile
+(cd frontend && corepack pnpm install --frozen-lockfile)
 dotnet build RdWeb.sln -c Release --no-restore
 ```
 
@@ -107,9 +107,9 @@ docker compose -f deploy/dev/docker-compose.redis-test.yml down
 ### 前端檢查
 
 ```sh
-corepack pnpm --dir frontend lint
-corepack pnpm --dir frontend test
-corepack pnpm --dir frontend build
+(cd frontend && corepack pnpm lint)
+(cd frontend && corepack pnpm test)
+(cd frontend && corepack pnpm build)
 ```
 
 ### 真實整合與瀏覽器測試
