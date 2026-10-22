@@ -96,7 +96,7 @@
 ```sh
 dotnet tool restore
 dotnet restore RdWeb.sln --locked-mode
-corepack pnpm --dir frontend install --frozen-lockfile
+(cd frontend && corepack pnpm install --frozen-lockfile)
 ```
 
 首次 build／test 可能下載 pinned proto；離線快取仍須通過雜湊驗證。不可刪除鎖檔或取消 locked／frozen 模式解決還原失敗。
@@ -117,14 +117,14 @@ dotnet list RdWeb.sln package --vulnerable --include-transitive
 
 ### 前端檢查指令
 
-局部測試可用 `corepack pnpm --dir frontend test src/相關檔案.test.ts`；以下 `test`／`lint` 指令涵蓋整個前端，依本次影響範圍選用。
+局部測試可用 `(cd frontend && corepack pnpm test src/相關檔案.test.ts)`；以下 `test`／`lint` 指令涵蓋整個前端，依本次影響範圍選用。
 
 ```sh
 node tools/test-url-lint.mjs
-corepack pnpm --dir frontend lint
-corepack pnpm --dir frontend test
-corepack pnpm --dir frontend build
-corepack pnpm --dir frontend audit --audit-level high
+(cd frontend && corepack pnpm lint)
+(cd frontend && corepack pnpm test)
+(cd frontend && corepack pnpm build)
+(cd frontend && corepack pnpm audit --audit-level high)
 ```
 
 `build` 包含 proto 生成、`vue-tsc --noEmit` 與 Vite；`test` 包含 proto 生成與 Vitest。變更 codec、剪貼簿或 fzstd 時，另跑相關 fixture 完整性／patch 回歸，指令見 CI。
@@ -141,7 +141,7 @@ git diff --check
 
 ### 真實整合與瀏覽器驗收
 
-先準備 Chromium：`corepack pnpm --dir frontend exec playwright install chromium`。按影響範圍選用 runner，環境需求詳見 README、腳本與對應本機設計：
+先準備 Chromium：`(cd frontend && corepack pnpm exec playwright install chromium)`。按影響範圍選用 runner，環境需求詳見 README、腳本與對應本機設計：
 
 | 變更範圍                    | 指令                                           |
 | --------------------------- | ---------------------------------------------- |
