@@ -307,7 +307,6 @@ test('reconnect proxy reaches native dedicated Worker sockets', async ({ page })
   const endpoint = await publicEndpoint()
   const proxy = await publicWorkerProxy(endpoint.url.replace('http:', 'ws:') + '/connect')
   try {
-    const routes = await installMainReconnectRoutes(page.context())
     await page.goto(endpoint.url)
     await page.evaluate((proxyUrl) => {
       const state = window as Window & { publicWorkerMatched?: boolean; publicWorkerClose?: number }

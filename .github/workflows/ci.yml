@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: '24'
       - name: Restore pinned formatter
-        run: corepack pnpm --dir frontend install --frozen-lockfile
+        run: (cd frontend && corepack pnpm install --frozen-lockfile)
       - name: Check changed documentation
         run: node tools/ci.mjs docs
   checks:
@@ -74,7 +74,7 @@ jobs:
           node-version: '24'
       - name: Verify pinned pnpm version
         working-directory: frontend
-        run: test "$(corepack pnpm --version)" = "12.14.0"
+        run: test "$(corepack pnpm --version)" = "12.15.0"
       - name: Restore locked dependencies
         run: |
           dotnet restore RdWeb.sln --locked-mode
@@ -122,7 +122,7 @@ jobs:
         with:
           node-version: '24'
       - name: Restore locked tool dependencies
-        run: corepack pnpm --dir frontend install --frozen-lockfile
+        run: (cd frontend && corepack pnpm install --frozen-lockfile)
       - name: Diagnostic and runner contracts
         run: |
           node --test frontend/e2e/scripts/test-e2e-layout.mjs
@@ -160,12 +160,12 @@ jobs:
       - name: Restore locked dependencies
         run: |
           dotnet restore RdWeb.sln --locked-mode
-          corepack pnpm --dir frontend install --frozen-lockfile
+          (cd frontend && corepack pnpm install --frozen-lockfile)
       - name: Prepare native codec fixtures and browser
         run: |
           node frontend/scripts/prepare-codec-fixtures.mjs
           node tools/test-codec-fixture-integrity.mjs
-          corepack pnpm --dir frontend exec playwright install --with-deps chromium
+          (cd frontend && corepack pnpm exec playwright install --with-deps chromium)
       - name: Runtime crypto and timezone spikes
         run: |
           docker build -f deploy/dev/Dockerfile.api -t rdweb-m0-api .
@@ -175,7 +175,7 @@ jobs:
       - name: Pinned RustDesk TCP and WebSocket relay
         run: bash frontend/e2e/scripts/test-m3a-relay.sh
       - name: Native WebCodecs public fixture matrix
-        run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.codecs.config.ts
+        run: (cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.codecs.config.ts)
       - name: Cleanup spike containers
         if: always()
         run: |
@@ -208,9 +208,9 @@ jobs:
         with:
           node-version: '24'
       - name: Restore locked dependencies
-        run: corepack pnpm --dir frontend install --frozen-lockfile
+        run: (cd frontend && corepack pnpm install --frozen-lockfile)
       - name: Install Chromium
-        run: corepack pnpm --dir frontend exec playwright install --with-deps chromium
+        run: (cd frontend && corepack pnpm exec playwright install --with-deps chromium)
       - name: Run complete suite
         env:
           CI_SUITE: ${{ matrix.suite }}
@@ -260,21 +260,21 @@ jobs:
         with:
           node-version: '24'
       - name: Restore locked browser dependencies
-        run: corepack pnpm --dir frontend install --frozen-lockfile
+        run: (cd frontend && corepack pnpm install --frozen-lockfile)
       - name: Install Chromium
-        run: corepack pnpm --dir frontend exec playwright install --with-deps chromium
+        run: (cd frontend && corepack pnpm exec playwright install --with-deps chromium)
       - name: Public UI and reconnect harness type checks
         run: |
-          corepack pnpm --dir frontend exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json
-          corepack pnpm --dir frontend exec tsc --project e2e/config/tsconfig.reconnect.json
+          (cd frontend && corepack pnpm exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json)
+          (cd frontend && corepack pnpm exec tsc --project e2e/config/tsconfig.reconnect.json)
       - name: Public UI regression
         if: matrix.suite == 'ui'
         run: |
-          corepack pnpm --dir frontend exec vite build --config e2e/config/vite.ui.config.ts
-          corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.ui.config.ts
+          (cd frontend && corepack pnpm exec vite build --config e2e/config/vite.ui.config.ts)
+          (cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.ui.config.ts)
       - name: Public proxy browser regression
         if: matrix.suite == 'proxy'
-        run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.reconnect-proxy.config.ts
+        run: (cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.reconnect-proxy.config.ts)
   rustdesk-desktop:
     needs: changes
     if: needs.changes.outputs.mode == 'full'
