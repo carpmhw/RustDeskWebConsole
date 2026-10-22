@@ -62,6 +62,7 @@ node --test frontend/e2e/scripts/test-e2e-layout.mjs frontend/e2e/scripts/test-m
 - 發布前管理頁測試分為 `management` 與 `proxy`：前者在 `/a/b/c + preserve` 執行非 `@proxy` 的功能與布局案例，後者在三種 base path × 兩種代理模式執行標記 `@proxy` 的真實登入／refresh／logout、資源路徑、Cookie／redirect／WebSocket 契約。
 - 官方瀏覽器登入仍走原六組路徑 × TCP／WS；影像、輸入與有限重連的完整功能案例在 `/a/b/c + preserve` 執行，TCP／WS 皆保留。這是 CI 的分層覆蓋策略，不宣稱每個功能都已跑過原六組矩陣。
 - reconnect-security、longrun、ingress 與原始 50 次 reliability 依既有 scope 在 `/rdweb + preserve` 執行；不縮短期限、退避、限流或可靠性序列。公開 UI 與 proxy browser harness 也納入發布前檢查。Windows 原生操作、SAS／IME 與文字診斷仍需操作者 runtime，不由 Linux CI 代替。
+- `real/reconnect-routing.ts` 只校準 Main 的 Playwright WebSocket route；Dedicated Worker 不受該 API 攔截，Worker 中斷由 `proxy/worker.spec.ts` 的真 loopback 代理驗證，不將 Main route 的結果視為 Worker 通過。
 - 未指定 `RDWEB_E2E_MATRIX` 的管理 runner，以及其他 runner 的預設值，仍保留原本完整矩陣，供需要逐項交叉驗收時執行。
 
 ```sh

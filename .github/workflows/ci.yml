@@ -247,6 +247,11 @@ jobs:
   browser:
     needs: changes
     if: needs.changes.outputs.mode == 'full'
+    name: browser (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ui, proxy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -263,10 +268,12 @@ jobs:
           corepack pnpm --dir frontend exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json
           corepack pnpm --dir frontend exec tsc --project e2e/config/tsconfig.reconnect.json
       - name: Public UI regression
+        if: matrix.suite == 'ui'
         run: |
           corepack pnpm --dir frontend exec vite build --config e2e/config/vite.ui.config.ts
           corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.ui.config.ts
       - name: Public proxy browser regression
+        if: matrix.suite == 'proxy'
         run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.reconnect-proxy.config.ts
   rustdesk-desktop:
     needs: changes

@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 import { expect, test, type Page } from '@playwright/test'
-import { installReconnectRoutes } from '../real/reconnect-routing'
+import { installMainReconnectRoutes } from '../real/reconnect-routing'
 
 // 僅供固定公開短字串的有界WS endpoint；不載App／auth、RustDesk或系統clipboard。
 async function publicEndpoint() {
@@ -78,6 +78,10 @@ async function publicEndpoint() {
     url: 'http://127.0.0.1:' + address.port,
     // 只暴露安全計數，不回送測試原文或server物件。
     counts: () => ({ opened, messages, active: sockets.size }),
+    // 只中斷本函數持有的公開 socket，與 Playwright route 計數獨立。
+    interrupt: () => {
+      for (const socket of sockets) socket.destroy()
+    },
     // 只收回本函數建立的endpoint與socket。
     close: async () => {
       for (const socket of sockets) socket.destroy()
@@ -116,7 +120,7 @@ test('reconnect route forwards native traffic and injects restart without replac
   const endpoint = await publicEndpoint()
   try {
     await page.goto(endpoint.url)
-    const routes = await installReconnectRoutes(page.context())
+    const routes = await installMainReconnectRoutes(page.context())
     expect(await openPublicSocket(page, endpoint.url)).toBe(true)
     expect(endpoint.counts()).toMatchObject({ opened: 1, messages: 1 })
     expect(routes.opened).toBe(1)
@@ -139,7 +143,7 @@ test('reconnect route cleanup closes every upstream and stays idempotent', async
   const endpoint = await publicEndpoint()
   try {
     await page.goto(endpoint.url)
-    const routes = await installReconnectRoutes(page.context())
+    const routes = await installMainReconnectRoutes(page.context())
     expect(await openPublicSocket(page, endpoint.url)).toBe(true)
     expect(await openPublicSocket(page, endpoint.url)).toBe(true)
     expect(routes.opened).toBe(2)
@@ -153,12 +157,13 @@ test('reconnect route cleanup closes every upstream and stays idempotent', async
   }
 })
 
-// 正式WS由Dedicated Worker擁有；只驗Main的routing成功不能宣稱能切斷產品transport。
-test('reconnect route reaches native dedicated Worker sockets', async ({ page }) => {
+// 保留上游限制的負向回歸：Main route 不可冒充 Worker 故障注入。
+// Worker 的真 TCP 中斷另由 e2e/proxy/worker.spec.ts 驗證；上游議題 microsoft/playwright#37048。
+test('Main routes cannot claim Dedicated Worker interruption', async ({ page }) => {
   const endpoint = await publicEndpoint()
   try {
+    const routes = await installMainReconnectRoutes(page.context())
     await page.goto(endpoint.url)
-    const routes = await installReconnectRoutes(page.context())
     await page.evaluate(() => {
       const state = window as Window & { publicWorkerMatched?: boolean; publicWorkerClose?: number }
       state.publicWorkerMatched = false
@@ -180,13 +185,17 @@ test('reconnect route reaches native dedicated Worker sockets', async ({ page })
       )
       .toBe(true)
     expect(endpoint.counts()).toMatchObject({ opened: 1, messages: 1 })
-    expect(routes.opened).toBe(1)
-    await routes.interrupt(0)
+    expect(routes.opened).toBe(0)
+    await expect(routes.interrupt(0)).rejects.toThrow('Invalid reconnect route')
+    await routes.close()
+    expect(endpoint.counts().active).toBe(1)
+    // 原生 endpoint 的真中斷才可讓 Worker 收到 1006，不能以 route.close 假冒成功。
+    endpoint.interrupt()
     await expect
       .poll(() =>
         page.evaluate(() => (window as Window & { publicWorkerClose?: number }).publicWorkerClose),
       )
-      .toBe(1012)
+      .toBe(1006)
     await expect.poll(() => endpoint.counts().active).toBe(0)
     await routes.close()
   } finally {
