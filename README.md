@@ -41,7 +41,7 @@ API（ASP.NET Core）── SQLite（正式資料）
 
 ## 快速啟動（開發環境）
 
-需要 Docker Compose 與 Node.js 24（含 Corepack）。在專案根目錄執行：
+需要 Docker Compose 與 Node.js 24（含 Corepack）。以下指令使用 Bash，在專案根目錄執行：
 
 ```sh
 # 產生僅供本機開發使用的兩把獨立金鑰
@@ -82,7 +82,9 @@ docker compose -f deploy/dev/docker-compose.spikes.yml down
 
 ## 本機開發與驗證
 
-需要 .NET 10 SDK、Node.js 24（含 Corepack）及 Docker Compose。還原並建置：
+需要 .NET 10 SDK（依 `global.json`）、Node.js 24（含 Corepack）、`frontend/package.json` 指定的 pnpm 及 Docker Compose。以下指令皆從專案根目錄執行，依變更範圍選用；開發規範見 [`AGENTS.md`](AGENTS.md)。
+
+### 還原與建置
 
 ```sh
 dotnet tool restore
@@ -91,7 +93,9 @@ corepack pnpm --dir frontend install --frozen-lockfile
 dotnet build RdWeb.sln -c Release --no-restore
 ```
 
-執行後端一般測試需先啟動測試用 Redis；此篩選會排除需要官方 RustDesk runtime fixture 的案例：
+### 後端一般測試
+
+先啟動測試用 Redis；此篩選會排除需要官方 RustDesk runtime fixture 的案例：
 
 ```sh
 docker compose -f deploy/dev/docker-compose.redis-test.yml up -d --wait
@@ -100,7 +104,7 @@ TEST_REDIS_URL=redis://127.0.0.1:16379 \
 docker compose -f deploy/dev/docker-compose.redis-test.yml down
 ```
 
-執行前端檢查：
+### 前端檢查
 
 ```sh
 corepack pnpm --dir frontend lint
@@ -108,9 +112,11 @@ corepack pnpm --dir frontend test
 corepack pnpm --dir frontend build
 ```
 
-前端 E2E 案例、設定、專用工具與 Docker 環境集中於 [`frontend/e2e/`](frontend/e2e/README.md)。真實 relay、瀏覽器登入、影像與輸入驗收使用 `frontend/e2e/scripts/test-*.sh` 隔離 runner；依測試需求先安裝 Chromium，並使用對應的 Docker／官方 fixture 環境。直接執行 `pnpm e2e` 不會自動準備這些環境。CI 目前涵蓋 M3-A relay、M3-B1 login、M3-B2 video，以及 M3-B3 Linux input／reconnect／50 次；M3-B3 Windows、SAS 與 IME 仍需操作者 runtime，不在 GitHub-hosted CI。CI 檢查見 [GitHub Actions workflow](.github/workflows/ci.yml)。
+### 真實整合與瀏覽器測試
 
-2026-10-21 本機共享 stack 的 M3-B3 Linux 完整矩陣已通過：codecs 8、subpaths 29×6＝174、B1 12、B2 24、input 102、reconnect 24、M3A real 2、timezones 3 與 proxy redaction；Linux／Windows reliability 各 50 筆原始 first-attempt 報告保留。Windows input／reconnect、SAS／IME 與遠端 CI 尚未完成，M3-B3 與 M3 仍未完成驗收。
+前端 E2E 案例、設定、專用工具與 Docker 環境集中於 [`frontend/e2e/`](frontend/e2e/README.md)。真實 relay、瀏覽器登入、影像與輸入測試使用該目錄的隔離 runner；依測試需求先安裝 Chromium，並準備對應的 Docker／官方 fixture 環境。直接執行 `pnpm e2e` 不會自動準備這些環境。
+
+Windows 真機、SAS 與 IME 測試需要操作者提供 runtime 與對應環境；Linux 測試不能代表 Windows 或完整跨平台支援。已接入 CI 的檢查以 [GitHub Actions workflow](.github/workflows/ci.yml) 為準。
 
 ## 專案結構
 
