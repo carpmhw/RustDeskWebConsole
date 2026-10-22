@@ -2,12 +2,14 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { get, createServer } from 'node:http'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { createIngressIo } from '../real/reconnect-ingress-io'
 
 // 真child僅執行自有公開executable；任何情況都不fallback至Docker。
 it('fixed_argv_only output_limit_4096 and abort_reaps_child', async () => {
-  const dir = mkdtempSync('/tmp/opencode/ingress-io-'),
+  const dir = mkdtempSync(join(tmpdir(), 'ingress-io-')),
     children = new Set<ChildProcess>(),
     calls: string[][] = []
   const executable = dir + '/docker'

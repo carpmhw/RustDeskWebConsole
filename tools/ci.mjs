@@ -18,6 +18,28 @@ export function documentationOnly(paths) {
   return paths.length > 0 && paths.every(isDocumentationPath)
 }
 
+// 工具本身、共用協定 helper、部署及工具鏈變更都需重驗診斷工具。
+export function affectsTestTools(path) {
+  return (
+    /^(?:tools\/|frontend\/e2e\/|frontend\/src\/rdweb\/|deploy\/|\.github\/)/.test(path) ||
+    /^(?:global\.json|Directory\.Build\.props|\.editorconfig|eslint\.config\.mjs|\.prettierrc\.json|frontend\/(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|eslint\.config\.js|tsconfig\.json|\.prettierrc\.json|patches\/.*)|src\/[^/]+\/(?:packages\.lock\.json|[^/]+\.csproj))$/.test(
+      path,
+    )
+  )
+}
+
+// main 的 PR 一律發布前驗證；一般文件快檢、dev 日常跑基本測試，未知來源不略過。
+export function verificationScope(paths, eventName, baseRef) {
+  const full =
+    (eventName === 'pull_request' && baseRef === 'main') ||
+    eventName === 'workflow_dispatch' ||
+    !['pull_request', 'push', 'workflow_dispatch'].includes(eventName) ||
+    (eventName === 'pull_request' && !baseRef) ||
+    !paths?.length
+  const mode = full ? 'full' : documentationOnly(paths) ? 'docs' : 'basic'
+  return { mode, tools: mode === 'full' || (mode === 'basic' && paths.some(affectsTestTools)) }
+}
+
 // PR 比較完整分支差異，push 比較 before；來源不可用時安全退回完整 CI。
 export function changedPaths(eventName, baseSha, cwd = process.cwd()) {
   if (!['pull_request', 'push'].includes(eventName) || !/^[a-f0-9]{40}$/.test(baseSha ?? ''))
@@ -67,14 +89,23 @@ export function checkDocumentLinks(path, root = process.cwd()) {
 }
 
 // 彙總檢查拒絕失敗、取消及非預期略過，沿用 build-test 的固定檢查名稱。
-export function verificationPassed(needs) {
+export function verificationPassed(needs, eventName, baseRef) {
   if (needs.changes?.result !== 'success' || needs.docs?.result !== 'success') return false
-  const docsOnly = needs.changes.outputs?.docs_only
-  if (!['true', 'false'].includes(docsOnly)) return false
-  const expected = docsOnly === 'true' ? 'skipped' : 'success'
-  return ['checks', 'runtime', 'e2e', 'rustdesk-desktop'].every(
+  const { mode, tools } = needs.changes.outputs ?? {}
+  if (!['docs', 'basic', 'full'].includes(mode) || !['true', 'false'].includes(tools)) return false
+  if (eventName === 'pull_request' && baseRef === 'main' && mode !== 'full') return false
+  if ((mode === 'docs' && tools !== 'false') || (mode === 'full' && tools !== 'true')) return false
+  const expected = {
+    checks: mode === 'docs' ? 'skipped' : 'success',
+    tools: tools === 'true' ? 'success' : 'skipped',
+    runtime: mode === 'full' ? 'success' : 'skipped',
+    browser: mode === 'full' ? 'success' : 'skipped',
+    e2e: mode === 'full' ? 'success' : 'skipped',
+    'rustdesk-desktop': mode === 'full' ? 'success' : 'skipped',
+  }
+  return Object.entries(expected).every(
     // matrix 的彙總結果也必須符合本次預期範圍。
-    (job) => needs[job]?.result === expected,
+    ([job, result]) => needs[job]?.result === result,
   )
 }
 
@@ -86,9 +117,13 @@ function currentPaths() {
 // CLI 只接受固定操作，不將 PR 檔名或事件內容插入 shell 指令。
 function main(command) {
   if (command === 'detect') {
-    const docsOnly = documentationOnly(currentPaths() ?? [])
-    appendFileSync(process.env.GITHUB_OUTPUT, `docs_only=${docsOnly}\n`)
-    console.log(docsOnly ? '僅執行文件檢查。' : '執行完整驗證。')
+    const scope = verificationScope(
+      currentPaths(),
+      process.env.CI_EVENT_NAME,
+      process.env.CI_BASE_REF,
+    )
+    appendFileSync(process.env.GITHUB_OUTPUT, `mode=${scope.mode}\ntools=${scope.tools}\n`)
+    console.log(`驗證範圍：${scope.mode}；診斷工具：${scope.tools}。`)
   } else if (command === 'docs') {
     const paths = currentPaths()
     const files = (
@@ -104,7 +139,13 @@ function main(command) {
     }
     console.log(`文件格式與相對檔案引用檢查完成：${files.length} 份。`)
   } else if (command === 'gate') {
-    if (!verificationPassed(JSON.parse(process.env.CI_NEEDS)))
+    if (
+      !verificationPassed(
+        JSON.parse(process.env.CI_NEEDS),
+        process.env.CI_EVENT_NAME,
+        process.env.CI_BASE_REF,
+      )
+    )
       throw new Error('必要的 CI 工作未全部通過。')
     console.log('本次範圍的必要檢查全部通過。')
   } else {

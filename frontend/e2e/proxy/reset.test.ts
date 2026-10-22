@@ -1,5 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { expect, it, vi } from 'vitest'
 
 // 用真resetStack及受控Docker替身驗三檔，不啟daemon、不承接操作者秘密。
@@ -17,7 +18,7 @@ for (const suite of [
     it(
       'reset uses exact compose whitelist: ' + String(override) + ' / ' + String(suite),
       async () => {
-        const directory = mkdtempSync('/tmp/opencode/reconnect-reset-')
+        const directory = mkdtempSync(join(tmpdir(), 'reconnect-reset-'))
         const calls = join(directory, 'calls')
         const previous = process.env
         writeFileSync(calls, '')

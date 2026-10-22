@@ -4,7 +4,14 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { changedPaths, checkDocumentLinks, documentationOnly, verificationPassed } from './ci.mjs'
+import {
+  changedPaths,
+  checkDocumentLinks,
+  documentationOnly,
+  verificationPassed,
+  verificationScope,
+  affectsTestTools,
+} from './ci.mjs'
 
 // fixture 僅使用臨時目錄；完成或失敗皆清理本測試擁有的檔案。
 function fixture(action) {
@@ -114,17 +121,82 @@ test('文件引用驗證本機檔案及 HTML 圖片，拒絕失效與越界引�
     }
   }))
 
-test('固定 gate 不可把失敗、取消或非預期略過判為通過', () => {
-  for (const docsOnly of ['true', 'false']) {
+// 一般 dev 開發不啟動 Docker E2E；main PR 包含文件變更也必須發布前驗證。
+test('verification policy separates daily work from main promotion and manual acceptance', () => {
+  assert.deepEqual(verificationScope(['README.md'], 'pull_request', 'dev'), {
+    mode: 'docs',
+    tools: false,
+  })
+  assert.deepEqual(verificationScope(['frontend/src/views/Login.vue'], 'pull_request', 'dev'), {
+    mode: 'basic',
+    tools: false,
+  })
+  assert.deepEqual(verificationScope(['frontend/e2e/scripts/test-a.mjs'], 'push'), {
+    mode: 'basic',
+    tools: true,
+  })
+  for (const paths of [['README.md'], ['src/app.cs'], null, []])
+    assert.deepEqual(verificationScope(paths, 'pull_request', 'main'), {
+      mode: 'full',
+      tools: true,
+    })
+  for (const event of ['push', 'pull_request', 'workflow_dispatch', 'unknown'])
+    assert.deepEqual(verificationScope(null, event, 'dev'), { mode: 'full', tools: true })
+  assert.deepEqual(verificationScope(['src/app.cs'], 'push', 'main'), {
+    mode: 'basic',
+    tools: false,
+  })
+  assert.deepEqual(verificationScope(['README.md'], 'workflow_dispatch'), {
+    mode: 'full',
+    tools: true,
+  })
+  assert.deepEqual(verificationScope(['src/app.cs'], 'pull_request'), { mode: 'full', tools: true })
+})
+
+// 依賴、協定 helper、部署與 SDK 的變更不能漏掉診斷工具回歸。
+test('tool regressions follow tool and shared dependency changes', () => {
+  for (const path of [
+    'tools/a.mjs',
+    'frontend/e2e/scripts/a.cs',
+    'frontend/src/rdweb/host.ts',
+    '.github/workflows/ci.yml',
+    'deploy/dev/Dockerfile.web',
+    'frontend/package.json',
+    'frontend/pnpm-lock.yaml',
+    'frontend/patches/fzstd.patch',
+    'global.json',
+    'src/RdWeb.Api/packages.lock.json',
+    '.editorconfig',
+  ])
+    assert.equal(affectsTestTools(path), true)
+  for (const path of [
+    'frontend/src/views/Login.vue',
+    'src/RdWeb.Api/Targets/TargetService.cs',
+    'README.md',
+  ])
+    assert.equal(affectsTestTools(path), false)
+})
+
+// 彙總依本次明確範圍檢查所有 job，不能將取消、漏跑或 main 的降級當成成功。
+test('fixed gate rejects failed cancelled missing and unexpectedly skipped jobs', () => {
+  for (const [mode, tools] of [
+    ['docs', 'false'],
+    ['basic', 'false'],
+    ['basic', 'true'],
+    ['full', 'true'],
+  ]) {
     const needs = {
-      changes: { result: 'success', outputs: { docs_only: docsOnly } },
+      changes: { result: 'success', outputs: { mode, tools } },
       docs: { result: 'success' },
+      checks: { result: mode === 'docs' ? 'skipped' : 'success' },
+      tools: { result: tools === 'true' ? 'success' : 'skipped' },
     }
-    for (const job of ['checks', 'runtime', 'e2e', 'rustdesk-desktop'])
-      needs[job] = { result: docsOnly === 'true' ? 'skipped' : 'success' }
+    for (const job of ['runtime', 'browser', 'e2e', 'rustdesk-desktop'])
+      needs[job] = { result: mode === 'full' ? 'success' : 'skipped' }
     assert.equal(verificationPassed(needs), true)
+    assert.equal(verificationPassed(needs, 'pull_request', 'main'), mode === 'full')
     for (const job of Object.keys(needs)) {
-      for (const result of ['failure', 'cancelled', docsOnly === 'true' ? 'success' : 'skipped']) {
+      for (const result of ['failure', 'cancelled', 'success', 'skipped']) {
         const bad = JSON.parse(JSON.stringify(needs))
         bad[job].result = result
         if (bad[job].result !== needs[job].result) assert.equal(verificationPassed(bad), false)
@@ -133,7 +205,7 @@ test('固定 gate 不可把失敗、取消或非預期略過判為通過', () =>
       delete missing[job]
       assert.equal(verificationPassed(missing), false)
     }
-    needs.changes.outputs.docs_only = ''
+    needs.changes.outputs.mode = ''
     assert.equal(verificationPassed(needs), false)
   }
 })

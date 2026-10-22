@@ -3,12 +3,13 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 
 const runner = fileURLToPath(new URL('../scripts/test-subpaths.sh', import.meta.url))
 
 // 只替換慢速外部命令，真shell控制流程／環境與參數仍由正式runner決定。
 function run(matrix?: string): { status: number | null; calls: string[] } {
-  const directory = mkdtempSync('/tmp/opencode/rdweb-ui-runner-')
+  const directory = mkdtempSync(join(tmpdir(), 'rdweb-ui-runner-'))
   const log = join(directory, 'public-commands.log')
   try {
     for (const name of ['docker', 'corepack']) {
@@ -81,4 +82,22 @@ test('management runner preserves the default six path combinations', () => {
     '/a/b/c|preserve',
     '/a/b/c|strip',
   ])
+})
+
+// 功能與布局只在代表性深路徑跑一次，排除已由六組代理契約覆蓋的案例。
+test('management runner separates functional cases from proxy contracts', () => {
+  const result = run('management')
+  expect(result.status).toBe(0)
+  expect(result.calls.filter((line) => line.startsWith('corepack|'))).toEqual([
+    'corepack|/a/b/c|preserve|pnpm --dir frontend e2e --grep-invert @proxy e2e/management/workspace-ui.spec.ts --grep header keeps',
+  ])
+})
+
+// 代理專用矩陣保留原六組，不將外觀等無關組合重複乘上 prefix 維度。
+test('management runner keeps all six proxy contract combinations', () => {
+  const result = run('proxy')
+  expect(result.status).toBe(0)
+  const calls = result.calls.filter((line) => line.startsWith('corepack|'))
+  expect(calls).toHaveLength(6)
+  expect(calls.every((line) => line.includes(' e2e --grep @proxy '))).toBe(true)
 })

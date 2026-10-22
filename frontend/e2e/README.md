@@ -53,3 +53,23 @@ node --test frontend/e2e/scripts/test-e2e-layout.mjs frontend/e2e/scripts/test-m
 - 測試產物仍留在既有忽略的 `frontend/test-results/`、`frontend/.cache/` 或根目錄 `artifacts/`，不與來源 fixture 混放。
 - Docker build context 為儲存庫根目錄；console overlay 搭配 `deploy/dev/docker-compose.spikes.yml` 使用，不改共用開發 stack。
 - 真實驗收維持禁止 trace、screenshot、video 與自動 DOM snapshot；不得保存憑證或真實剪貼簿內容。runner 只清理自己啟動的資源，預設保留 volumes。
+
+## CI 執行範圍
+
+- 一般 PR 與 `dev`／`main` push 執行建置、前後端單元／整合測試、lint、audit 與授權檢查；一般純文件變更只做文件檢查。
+- 診斷工具與目錄／runner 契約只在工具、E2E、共用協定 helper、部署、依賴或工具鏈設定變更時執行；發布前驗證一律包含。
+- 指向 `main` 的 PR（包含 `dev → main`，即使只有文件變更）以及手動執行 workflow，執行發布前完整驗證。合併後的 `main` push 不重複啟動 E2E。
+- 發布前管理頁測試分為 `management` 與 `proxy`：前者在 `/a/b/c + preserve` 執行非 `@proxy` 的功能與布局案例，後者在三種 base path × 兩種代理模式執行標記 `@proxy` 的真實登入／refresh／logout、資源路徑、Cookie／redirect／WebSocket 契約。
+- 官方瀏覽器登入仍走原六組路徑 × TCP／WS；影像、輸入與有限重連的完整功能案例在 `/a/b/c + preserve` 執行，TCP／WS 皆保留。這是 CI 的分層覆蓋策略，不宣稱每個功能都已跑過原六組矩陣。
+- reconnect-security、longrun、ingress 與原始 50 次 reliability 依既有 scope 在 `/rdweb + preserve` 執行；不縮短期限、退避、限流或可靠性序列。公開 UI 與 proxy browser harness 也納入發布前檢查。Windows 原生操作、SAS／IME 與文字診斷仍需操作者 runtime，不由 Linux CI 代替。
+- 未指定 `RDWEB_E2E_MATRIX` 的管理 runner，以及其他 runner 的預設值，仍保留原本完整矩陣，供需要逐項交叉驗收時執行。
+
+```sh
+# 一組完整管理功能／布局（排除由代理矩陣執行的契約）
+RDWEB_E2E_MATRIX=management bash frontend/e2e/scripts/test-subpaths.sh
+
+# 六組代理契約
+RDWEB_E2E_MATRIX=proxy bash frontend/e2e/scripts/test-subpaths.sh
+```
+
+`build-test` 彙總本次範圍內所有必要 job；失敗、取消與非預期略過均不通過。要阻擋未通過的 `main` 合併，儲存庫分支保護／ruleset 仍須將此檢查設為必要並要求最新分支檢查；workflow 本身不會修改儲存庫管理設定。

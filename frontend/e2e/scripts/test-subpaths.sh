@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# 精選僅縮小本機UI回歸範圍；未指定時保留原六組，未知值先安全拒絕。
+# 預設仍保留原六組全部案例；CI 將代理契約與單組完整功能分開，不把精選稱為原完整矩陣。
 case "${RDWEB_E2E_MATRIX:-full}" in
   full)
     prefixes='/ /rdweb /a/b/c'
@@ -10,6 +10,16 @@ case "${RDWEB_E2E_MATRIX:-full}" in
   ui-targeted)
     prefixes='/a/b/c'
     modes='preserve'
+    ;;
+  management)
+    prefixes='/a/b/c'
+    modes='preserve'
+    set -- --grep-invert @proxy "$@"
+    ;;
+  proxy)
+    prefixes='/ /rdweb /a/b/c'
+    modes='preserve strip'
+    set -- --grep @proxy "$@"
     ;;
   *)
     echo 'Unsupported E2E matrix' >&2
