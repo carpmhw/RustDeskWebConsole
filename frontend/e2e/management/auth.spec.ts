@@ -17,7 +17,7 @@ import { totpCode } from './helpers/totp'
 test.beforeEach(() => resetStack())
 
 // 帳密、reload、跨分頁refresh与logout均由真正API完成。
-test('sign in, restore in two tabs and revoke on logout', async ({ page, context }) => {
+test('sign in, restore in two tabs and revoke on logout @proxy', async ({ page, context }) => {
   const fixture = await createFixture()
   try {
     await loginUi(page, fixture.user.username)

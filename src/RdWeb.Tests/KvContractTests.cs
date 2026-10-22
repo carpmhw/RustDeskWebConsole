@@ -5,6 +5,13 @@ using StackExchange.Redis;
 
 namespace RdWeb.Tests;
 
+// 真實時鐘的 TTL 邊界與高 CPU 的 Argon2id 等案例隔離；不改正式期限或案例內的並行競爭。
+[CollectionDefinition("KvContractTiming", DisableParallelization = true)]
+public sealed class KvContractTimingCollection
+{
+}
+
+[Collection("KvContractTiming")]
 public sealed class KvContractTests
 {
     // 一百個並發取出者只允許一人取得原本的值。

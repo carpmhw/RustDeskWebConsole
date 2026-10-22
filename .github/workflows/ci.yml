@@ -3,10 +3,57 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
 permissions:
   contents: read
+# 只取消同一 PR 的舊執行；分支 push 的完整驗證不被新提交中斷。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# 差異的 SHA 透過環境傳遞，不將事件資料插入 shell 程式。
+env:
+  CI_EVENT_NAME: ${{ github.event_name }}
+  CI_BASE_REF: ${{ github.base_ref }}
+  CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
 jobs:
-  build-test:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
+      tools: ${{ steps.scope.outputs.tools }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify CI scope and aggregate gate
+        run: node --test tools/test-ci.mjs
+      - name: Select verification scope
+        id: scope
+        run: node tools/ci.mjs detect
+  docs:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Restore pinned formatter
+        run: corepack pnpm --dir frontend install --frozen-lockfile
+      - name: Check changed documentation
+        run: node tools/ci.mjs docs
+  checks:
+    needs: changes
+    if: needs.changes.outputs.mode != 'docs'
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       TEST_REDIS_URL: redis://127.0.0.1:6379
@@ -46,6 +93,38 @@ jobs:
           node tools/test-clipboard-fixture-integrity.mjs
           node tools/test-fzstd-patch.mjs
           node tools/test-url-lint.mjs
+          (cd frontend && corepack pnpm lint)
+          (cd frontend && corepack pnpm test)
+          (cd frontend && corepack pnpm exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts)
+          (cd frontend && corepack pnpm build)
+          (cd frontend && corepack pnpm typecheck:text-return-probe)
+          (cd frontend && corepack pnpm audit --audit-level high)
+      - name: Third-party licenses
+        run: |
+          frontend/node_modules/.bin/eslint tools
+          frontend/node_modules/.bin/prettier --check tools/*.mjs .github/workflows/*.yml deploy/dev/*.yml frontend/e2e/docker/*.yml README.md THIRD_PARTY_NOTICES.md
+          node tools/licenses.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-licenses
+          path: artifacts/*-licenses.json
+  tools:
+    needs: changes
+    if: needs.changes.outputs.tools == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Restore locked tool dependencies
+        run: corepack pnpm --dir frontend install --frozen-lockfile
+      - name: Diagnostic and runner contracts
+        run: |
           node --test frontend/e2e/scripts/test-e2e-layout.mjs
           node --test frontend/e2e/scripts/test-e2e-tool-lint.mjs
           node frontend/e2e/scripts/test-target-password-init.mjs
@@ -65,58 +144,141 @@ jobs:
           node --test frontend/e2e/scripts/test-windows-clipboard-read-race.mjs
           node --test frontend/e2e/scripts/test-windows-clipboard-read-race-diagnostic.mjs
           node --test frontend/e2e/scripts/test-windows-clipboard-read-open-gap.mjs
-          (cd frontend && corepack pnpm lint)
-          (cd frontend && corepack pnpm test)
-          (cd frontend && corepack pnpm exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts)
-          (cd frontend && corepack pnpm build)
-          (cd frontend && corepack pnpm typecheck:text-return-probe)
-          (cd frontend && corepack pnpm audit --audit-level high)
-      - name: Third-party licenses
-        run: |
-          frontend/node_modules/.bin/eslint tools
-          frontend/node_modules/.bin/prettier --check tools/*.mjs .github/workflows/*.yml deploy/dev/*.yml frontend/e2e/docker/*.yml README.md THIRD_PARTY_NOTICES.md
-          node tools/licenses.mjs
-      - uses: actions/upload-artifact@v4
+  runtime:
+    needs: changes
+    if: needs.changes.outputs.mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          name: dependency-licenses
-          path: artifacts/*-licenses.json
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Restore locked dependencies
+        run: |
+          dotnet restore RdWeb.sln --locked-mode
+          corepack pnpm --dir frontend install --frozen-lockfile
+      - name: Prepare native codec fixtures and browser
+        run: |
+          node frontend/scripts/prepare-codec-fixtures.mjs
+          node tools/test-codec-fixture-integrity.mjs
+          corepack pnpm --dir frontend exec playwright install --with-deps chromium
       - name: Runtime crypto and timezone spikes
         run: |
           docker build -f deploy/dev/Dockerfile.api -t rdweb-m0-api .
           node tools/test-container-timezones.mjs
-      - name: Real authentication and nginx subpath matrix
-        run: |
-          (cd frontend && corepack pnpm exec playwright install --with-deps chromium)
-          bash frontend/e2e/scripts/test-subpaths.sh
       - name: Proxy failure must not log request contents
-        run: |
-          node frontend/e2e/scripts/test-proxy-log-redaction.mjs --start
+        run: node frontend/e2e/scripts/test-proxy-log-redaction.mjs --start
       - name: Pinned RustDesk TCP and WebSocket relay
         run: bash frontend/e2e/scripts/test-m3a-relay.sh
-      - name: Official browser secure login matrix
-        run: bash frontend/e2e/scripts/test-m3b1-login.sh
       - name: Native WebCodecs public fixture matrix
-        run: (cd frontend && corepack pnpm exec playwright test --config e2e/config/playwright.codecs.config.ts)
-      - name: Official browser video and bounded presentation matrix
-        run: bash frontend/e2e/scripts/test-m3b2-video.sh
-      - name: Official Linux input and clipboard matrix
-        run: RDWEB_INPUT_PLATFORMS=linux bash frontend/e2e/scripts/test-m3b3-input.sh
-      - name: Official Linux finite reconnect matrix
-        run: RDWEB_INPUT_PLATFORMS=linux bash frontend/e2e/scripts/test-m3b3-reconnect.sh
-      - name: Official Linux original fifty attempts
-        run: |
-          RDWEB_RELIABILITY_PLATFORM=linux \
-          RDWEB_INPUT_PLATFORMS=linux \
-          RDWEB_INPUT_CHANNELS=chromium \
-          RDWEB_B3_BASES=/rdweb \
-          RDWEB_B3_MODES=preserve \
-          bash frontend/e2e/scripts/test-m3b3-reliability.sh
+        run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.codecs.config.ts
       - name: Cleanup spike containers
         if: always()
         run: |
           docker compose -f deploy/dev/docker-compose.spikes.yml down
           docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml down
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.mode == 'full'
+    name: e2e (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # 每套 suite 使用獨立 runner；不平行操作同一 Docker stack 或拆散 50 次序列。
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - management
+          - proxy-paths
+          - login
+          - video
+          - input
+          - reconnect
+          - reconnect-security
+          - reconnect-longrun
+          - reconnect-ingress
+          - reliability
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Restore locked dependencies
+        run: corepack pnpm --dir frontend install --frozen-lockfile
+      - name: Install Chromium
+        run: corepack pnpm --dir frontend exec playwright install --with-deps chromium
+      - name: Run complete suite
+        env:
+          CI_SUITE: ${{ matrix.suite }}
+        run: |
+          case "$CI_SUITE" in
+            management) RDWEB_E2E_MATRIX=management bash frontend/e2e/scripts/test-subpaths.sh ;;
+            proxy-paths) RDWEB_E2E_MATRIX=proxy bash frontend/e2e/scripts/test-subpaths.sh ;;
+            login) bash frontend/e2e/scripts/test-m3b1-login.sh ;;
+            video) RDWEB_B2_BASES=/a/b/c RDWEB_B2_MODES=preserve bash frontend/e2e/scripts/test-m3b2-video.sh ;;
+            input) RDWEB_INPUT_PLATFORMS=linux RDWEB_B3_BASES=/a/b/c RDWEB_B3_MODES=preserve bash frontend/e2e/scripts/test-m3b3-input.sh ;;
+            reconnect) RDWEB_INPUT_PLATFORMS=linux RDWEB_B3_BASES=/a/b/c RDWEB_B3_MODES=preserve bash frontend/e2e/scripts/test-m3b3-reconnect.sh ;;
+            reconnect-security|reconnect-longrun|reconnect-ingress)
+              RDWEB_INPUT_PLATFORMS=linux \
+              RDWEB_INPUT_CHANNELS=chromium \
+              RDWEB_B3_BASES=/rdweb \
+              RDWEB_B3_MODES=preserve \
+              bash "frontend/e2e/scripts/test-m3b3-$CI_SUITE.sh"
+              ;;
+            reliability)
+              RDWEB_RELIABILITY_PLATFORM=linux \
+              RDWEB_INPUT_PLATFORMS=linux \
+              RDWEB_INPUT_CHANNELS=chromium \
+              RDWEB_B3_BASES=/rdweb \
+              RDWEB_B3_MODES=preserve \
+              bash frontend/e2e/scripts/test-m3b3-reliability.sh
+              ;;
+            *) exit 2 ;;
+          esac
+      - name: Cleanup suite containers
+        if: always()
+        run: |
+          docker compose -f deploy/dev/docker-compose.spikes.yml down
+          docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml down
+  browser:
+    needs: changes
+    if: needs.changes.outputs.mode == 'full'
+    name: browser (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ui, proxy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Restore locked browser dependencies
+        run: corepack pnpm --dir frontend install --frozen-lockfile
+      - name: Install Chromium
+        run: corepack pnpm --dir frontend exec playwright install --with-deps chromium
+      - name: Public UI and reconnect harness type checks
+        run: |
+          corepack pnpm --dir frontend exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json
+          corepack pnpm --dir frontend exec tsc --project e2e/config/tsconfig.reconnect.json
+      - name: Public UI regression
+        if: matrix.suite == 'ui'
+        run: |
+          corepack pnpm --dir frontend exec vite build --config e2e/config/vite.ui.config.ts
+          corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.ui.config.ts
+      - name: Public proxy browser regression
+        if: matrix.suite == 'proxy'
+        run: corepack pnpm --dir frontend exec playwright test --config e2e/config/playwright.reconnect-proxy.config.ts
   rustdesk-desktop:
+    needs: changes
+    if: needs.changes.outputs.mode == 'full'
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,3 +298,18 @@ jobs:
       - name: Cleanup test containers
         if: always()
         run: docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml --profile acceptance down
+  # 保留既有 required check 名稱；不讓上游失敗或非預期略過變成綠燈。
+  build-test:
+    if: always()
+    needs: [changes, docs, checks, tools, runtime, browser, e2e, rustdesk-desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Require all expected verification jobs
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node tools/ci.mjs gate

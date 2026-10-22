@@ -17,7 +17,7 @@ test('saved timezone alias remains selected', async ({ page }) => {
 })
 
 // 真實瀏覽器的深層路由刷新、個人時區與所有資源請求皆遵循執行期前綴。
-test('deep route, runtime prefix and timezone preference', async ({ page }) => {
+test('deep route, runtime prefix and timezone preference', { tag: '@proxy' }, async ({ page }) => {
   const wrongRequests: string[] = []
   const errors: string[] = []
   // 收集違反掛載路徑的同來源請求，避免只檢查 HTML 而漏掉 JS／CSS。
@@ -46,7 +46,7 @@ test('deep route, runtime prefix and timezone preference', async ({ page }) => {
 })
 
 // 兩層真實 nginx 代理後 Cookie Path、redirect 與 WebSocket 握手仍正確。
-test('proxy redirect, cookie and WebSocket ready', async ({ page, request }) => {
+test('proxy redirect, cookie and WebSocket ready', { tag: '@proxy' }, async ({ page, request }) => {
   const response = await request.get(`${base}/api/v1/spikes/redirect`, { maxRedirects: 0 })
   expect(response.status()).toBe(302)
   expect(response.headers()['location']).toBe(`http://127.0.0.1:18080${base}/api/v1/health`)

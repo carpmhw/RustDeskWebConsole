@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { ProxySummary } from '../real/reconnect-proxy-types.ts'
 
@@ -9,7 +10,7 @@ export async function runOwnerChild(
   mode: 'setup' | 'timeout' | 'signal' | 'runner-signal',
   upstreamPort: number,
 ) {
-  const directory = mkdtempSync('/tmp/opencode/reconnect-owner-')
+  const directory = mkdtempSync(join(tmpdir(), 'reconnect-owner-'))
   const root = fileURLToPath(new URL('../../..', import.meta.url))
   const modulePath = (name: string): string => JSON.stringify(join(root, 'frontend', name))
   const stopping = mode === 'signal' || mode === 'runner-signal'

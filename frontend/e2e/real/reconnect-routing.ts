@@ -8,8 +8,11 @@ export interface ReconnectRoutes {
   close(): Promise<void>
 }
 
+// 僅供 Main 的公開路由校準；routeWebSocket 不攔 Dedicated Worker，不作正式重連故障注入。
 // 真連上保存的backend後沿預設雙向forward；從不讀message／headers／票證或私有bytes。
-export async function installReconnectRoutes(context: BrowserContext): Promise<ReconnectRoutes> {
+export async function installMainReconnectRoutes(
+  context: BrowserContext,
+): Promise<ReconnectRoutes> {
   const entries: Array<{
     client: WebSocketRoute
     server: WebSocketRoute
