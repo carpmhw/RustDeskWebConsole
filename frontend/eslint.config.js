@@ -10,6 +10,7 @@ export default [
       'playwright-report/**',
       'test-results/**',
       'src/rdweb/generated/**',
+      'e2e/receiver/generated/**',
       '.cache/**',
     ],
   },

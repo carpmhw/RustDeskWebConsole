@@ -1,0 +1,15 @@
+{
+  "version": "v24.22.1",
+  "arch": "win-x64",
+  "archiveUrl": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip",
+  "checksumsUrl": "https://nodejs.org/dist/v24.22.1/SHASUMS256.txt",
+  "signatureUrl": "https://nodejs.org/dist/v24.22.1/SHASUMS256.txt.sig",
+  "archiveSha256": "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5",
+  "nodeExeSha256": "d702daa815eabbff763c7d3808e235cf031cf2ca70211b56847bc72f51e240e5",
+  "licenseSha256": "ed34dd8e3f0a78dbaf00d0444ce8e285b015b765379c2e17880455f70370f8e9",
+  "trust": {
+    "fingerprint": "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356",
+    "sourceUrl": "https://github.com/nodejs/release-keys/blob/481637f813e912c4aa3622d7964ab426c97b8e8d/keys/5BE8A3F6C8A5C01D106C0AD820B1A390B168D356.asc",
+    "verifier": "/usr/bin/gpg"
+  }
+}

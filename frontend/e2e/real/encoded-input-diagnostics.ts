@@ -18,6 +18,10 @@ export interface PreEncryptInputCapture {
   preEncryptInput: PreEncryptInputEvidence
   preEncryptText: string | null
 }
+export type InputOnlyEncodedEvidence = Omit<
+  PreEncryptInputEvidence,
+  'receiveSelectComplete' | 'receiveCopyComplete'
+>
 export interface InputPinnedEnums {
   control: number
   capsLock: number
@@ -32,6 +36,10 @@ export interface EncodedWorkerScope {
 export interface EncodedInputDiagnostics {
   // 在第一筆輸入前同步設定同一Worker scope，不等待診斷ready。
   begin(publicExpected: string, captureText?: boolean): void
+  // 明確五鍵用途不授權保存文字，原HR預設profile不變。
+  beginInputOnly(publicExpected: string): void
+  // 只消費同用途八布林；用錯take不清除另一用途scope。
+  takeInputOnly(): Promise<InputOnlyEncodedEvidence>
   // 僅原oracle後取摘要，缺資料不得當完整證據。
   take(): Promise<PreEncryptInputEvidence>
   // 只取已明確opt-in的公開seq；舊十boolean介面保持。
@@ -73,6 +81,7 @@ export function installEncodedInputDiagnostics(): void {
     deadline: number
     captureText: boolean
     expected: string
+    inputOnly: boolean
   } | null = null
   // 只有不可用旗標為true；缺證據不能假造sequence成立。
   function unavailable(): PreEncryptInputEvidence {
@@ -117,9 +126,9 @@ export function installEncodedInputDiagnostics(): void {
     current.resolve?.({ preEncryptInput: { ...value }, preEncryptText: text })
   }
   // 同scope僅取一次；文字只有明確opt-in、十boolean及同expected通過才回Node。
-  function take(withText: boolean): Promise<PreEncryptInputCapture> {
+  function take(withText: boolean, inputOnly = false): Promise<PreEncryptInputCapture> {
     const current = active
-    if (!current || current.resolve)
+    if (!current || current.resolve || current.inputOnly !== inputOnly)
       return Promise.resolve({ preEncryptInput: unavailable(), preEncryptText: null })
     const capture = withText && current.captureText
     return new Promise(
@@ -142,13 +151,19 @@ export function installEncodedInputDiagnostics(): void {
             )
               throw new Error()
             const value = capture ? reply.preEncryptInput : reply
+            const names = inputOnly
+              ? fields.filter(/* 新用途只接受八欄。 */ (field) => !field.startsWith('receive'))
+              : fields
             if (
               !value ||
               typeof value !== 'object' ||
-              Object.keys(value).length !== fields.length ||
-              fields.some(
-                /* own十boolean，不准prototype／extra或任意metadata。 */ (field) =>
-                  !Object.hasOwn(value, field) || typeof value[field] !== 'boolean',
+              ![Object.prototype, null].includes(Object.getPrototypeOf(value)) ||
+              Reflect.ownKeys(value).length !== names.length ||
+              names.some(
+                /* 依用途驗own八／十boolean，不接受getter或extra。 */ (field) =>
+                  !Object.hasOwn(value, field) ||
+                  !Object.hasOwn(Object.getOwnPropertyDescriptor(value, field)!, 'value') ||
+                  typeof value[field] !== 'boolean',
               )
             )
               throw new Error()
@@ -165,11 +180,17 @@ export function installEncodedInputDiagnostics(): void {
             )
               throw new Error()
             finish(
-              Object.fromEntries(
-                fields.map(
-                  /* 只copy固定十欄，不保留transport DTO。 */ (field) => [field, value[field]],
+              {
+                ...unavailable(),
+                ...Object.fromEntries(
+                  names.map(
+                    /* 只copy本用途固定欄位，不保留transport DTO。 */ (field) => [
+                      field,
+                      value[field],
+                    ],
+                  ),
                 ),
-              ) as unknown as PreEncryptInputEvidence,
+              } as PreEncryptInputEvidence,
               false,
               text,
             )
@@ -190,7 +211,7 @@ export function installEncodedInputDiagnostics(): void {
         try {
           current.worker.postMessage({
             type: 'rdweb-encoded-input-diagnostic',
-            action: capture ? 'takeWithText' : 'take',
+            action: inputOnly ? 'takeInputOnly' : capture ? 'takeWithText' : 'take',
             scope: current.scope,
           })
         } catch {
@@ -199,60 +220,84 @@ export function installEncodedInputDiagnostics(): void {
       },
     )
   }
+  // 同一queue先設定public expected；固定用途只在test-only port內流動。
+  function begin(publicExpected: string, captureText = false, inputOnly = false): void {
+    const owners = [...states].filter(
+      /* 只有明確Windowssafe ready能選為owner。 */ ([, state]) => state.ready,
+    )
+    if (
+      active ||
+      capacityExceeded ||
+      owners.length !== 1 ||
+      typeof publicExpected !== 'string' ||
+      !publicExpected.startsWith('Public ') ||
+      typeof captureText !== 'boolean' ||
+      ((captureText || inputOnly) && publicExpected.includes('\0')) ||
+      publicExpected.length > 4096 ||
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
+        publicExpected,
+      ) ||
+      new TextEncoder().encode(publicExpected).length > 4096 ||
+      nextScope >= Number.MAX_SAFE_INTEGER
+    )
+      throw new Error('encoded_input_diagnostics_unavailable')
+    const [worker, state] = owners[0]!,
+      channel = new MessageChannel(),
+      scope = ++nextScope
+    active = {
+      worker,
+      scope,
+      revision: state.revision,
+      generation: state.generation,
+      port: channel.port1,
+      deadline: Infinity,
+      captureText,
+      expected: captureText ? publicExpected : '',
+      inputOnly,
+    }
+    try {
+      worker.postMessage(
+        {
+          type: 'rdweb-encoded-input-diagnostic',
+          action: 'begin',
+          scope,
+          expected: publicExpected,
+          ...(captureText ? { captureText: true } : {}),
+          ...(inputOnly ? { profile: 'input_only' } : {}),
+        },
+        [channel.port2],
+      )
+    } catch {
+      channel.port2.close()
+      finish(unavailable(), false)
+      throw new Error('encoded_input_diagnostics_unavailable')
+    }
+  }
   window.__rdwebEncodedInputDiagnostics = {
     // 舊take與文字take共用單次消費，不新增第二次Worker roundtrip。
     async takeWithText(): Promise<PreEncryptInputCapture> {
       return take(true)
     },
-    // 同一postMessage queue先設定public expected，再由產品送input；沒有await。
+    // 原入口固定維持13鍵profile。
     begin(publicExpected, captureText = false): void {
-      const owners = [...states].filter(
-        /* 只有明確Windowssafe ready能選為owner。 */ ([, state]) => state.ready,
-      )
-      if (
-        active ||
-        capacityExceeded ||
-        owners.length !== 1 ||
-        typeof publicExpected !== 'string' ||
-        !publicExpected.startsWith('Public ') ||
-        typeof captureText !== 'boolean' ||
-        (captureText && publicExpected.includes('\0')) ||
-        publicExpected.length > 4096 ||
-        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
-          publicExpected,
-        ) ||
-        new TextEncoder().encode(publicExpected).length > 4096 ||
-        nextScope >= Number.MAX_SAFE_INTEGER
-      )
-        throw new Error('encoded_input_diagnostics_unavailable')
-      const [worker, state] = owners[0]!,
-        channel = new MessageChannel(),
-        scope = ++nextScope
-      active = {
-        worker,
-        scope,
-        revision: state.revision,
-        generation: state.generation,
-        port: channel.port1,
-        deadline: Infinity,
-        captureText,
-        expected: captureText ? publicExpected : '',
-      }
-      try {
-        worker.postMessage(
-          {
-            type: 'rdweb-encoded-input-diagnostic',
-            action: 'begin',
-            scope,
-            expected: publicExpected,
-            ...(captureText ? { captureText: true } : {}),
-          },
-          [channel.port2],
-        )
-      } catch {
-        channel.port2.close()
-        finish(unavailable(), false)
-        throw new Error('encoded_input_diagnostics_unavailable')
+      begin(publicExpected, captureText)
+    },
+    // 新入口不提供captureText選項。
+    beginInputOnly(publicExpected): void {
+      begin(publicExpected, false, true)
+    },
+    // 只回白名單八布林，不回內部相容用receive欄位。
+    async takeInputOnly(): Promise<InputOnlyEncodedEvidence> {
+      const { preEncryptInput: value } = await take(false, true)
+      return {
+        observed: value.observed,
+        textExact: value.textExact,
+        textSingle: value.textSingle,
+        initialSelectComplete: value.initialSelectComplete,
+        sequenceComplete: value.sequenceComplete,
+        sequenceInvalid: value.sequenceInvalid,
+        overflow: value.overflow,
+        unavailable: value.unavailable,
       }
     },
     // 僅原oracle後收摘要；2000ms截止後即使偶然回覆也不算完整取證。
@@ -380,6 +425,7 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
   let port: MessagePort | null = null
   let captureText = false,
     capturedText: string | null = null
+  let inputOnly = false
   // 只建立固定boolean，不將tags／文字／按鍵或protobuf帶出Worker。
   function empty(unavailable = false): PreEncryptInputEvidence {
     return {
@@ -396,12 +442,26 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
     }
   }
   let evidence = empty()
+  // 新用途只投影八欄，不把13鍵的receive完成狀態帶出去。
+  function inputSnapshot(value: PreEncryptInputEvidence): InputOnlyEncodedEvidence {
+    return {
+      observed: value.observed,
+      textExact: value.textExact,
+      textSingle: value.textSingle,
+      initialSelectComplete: value.initialSelectComplete,
+      sequenceComplete: value.sequenceComplete,
+      sequenceInvalid: value.sequenceInvalid,
+      overflow: value.overflow,
+      unavailable: value.unavailable,
+    }
+  }
   // 當前scope獨占port；取消與take皆清expected，舊訊號不作用於新scope。
   function clear(): void {
     enabled = false
     expected = ''
     capturedText = null
     captureText = false
+    inputOnly = false
     try {
       port?.close()
     } catch {
@@ -410,7 +470,7 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
     port = null
   }
   scope.__rdwebEncodedInputObserver = {
-    // 只追13個鍵訊息，chord外正常mouse不改序列；容量含所有input最多64。
+    // 固定用途各追13或5鍵；mouse守衛分流，容量仍含所有input最多64。
     record(value): void {
       if (!enabled) return
       evidence.observed = true
@@ -420,7 +480,8 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
         return
       }
       if (value.kind === 'mouse') {
-        if ([1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12].includes(step)) evidence.sequenceInvalid = true
+        if ([1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12].includes(step) || (inputOnly && step >= 5))
+          evidence.sequenceInvalid = true
         return
       }
       if (value.union === 'seq') {
@@ -451,7 +512,7 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
         const letter = step < 9 ? 65 : 67
         const control = position === 0 || position === 3
         valid =
-          step < 13 &&
+          step < (inputOnly ? 5 : 13) &&
           clean &&
           !value.press &&
           value.down === position < 2 &&
@@ -503,21 +564,27 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
         }
         clear()
         lastScope = current = data.scope
+        inputOnly = Object.hasOwn(data, 'profile') && data.profile === 'input_only'
         evidence = empty()
         port = event.ports[0] ?? null
         if (
-          Object.keys(data).length !== (Object.hasOwn(data, 'captureText') ? 5 : 4) ||
+          Object.keys(data).length !==
+            4 +
+              Number(Object.hasOwn(data, 'captureText')) +
+              Number(Object.hasOwn(data, 'profile')) ||
+          (Object.hasOwn(data, 'profile') && !inputOnly) ||
+          (inputOnly && Object.hasOwn(data, 'captureText')) ||
           (Object.hasOwn(data, 'captureText') && data.captureText !== true) ||
           typeof data.expected !== 'string' ||
           !data.expected.startsWith('Public ') ||
-          (data.captureText === true && data.expected.includes('\0')) ||
+          ((data.captureText === true || inputOnly) && data.expected.includes('\0')) ||
           data.expected.length > 4096 ||
           /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
             data.expected,
           ) ||
           new TextEncoder().encode(data.expected).length > 4096
         ) {
-          port?.postMessage(empty(true))
+          port?.postMessage(inputOnly ? inputSnapshot(empty(true)) : empty(true))
           clear()
           return
         }
@@ -526,16 +593,27 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
         step = count = texts = 0
         enabled = !!port
       } else if (data.scope === current && enabled && Object.keys(data).length === 3) {
-        if (data.action === 'take' || data.action === 'takeWithText') {
+        if (['take', 'takeWithText', 'takeInputOnly'].includes(data.action)) {
+          if ((data.action === 'takeInputOnly') !== inputOnly) {
+            port?.postMessage(
+              data.action === 'takeInputOnly'
+                ? inputSnapshot(empty(true))
+                : data.action === 'takeWithText'
+                  ? { preEncryptInput: empty(true), preEncryptText: null }
+                  : empty(true),
+            )
+            return
+          }
           evidence.sequenceComplete =
-            step === 13 &&
+            step === (inputOnly ? 5 : 13) &&
             texts === 1 &&
             !evidence.sequenceInvalid &&
             !evidence.overflow &&
             !evidence.unavailable
           try {
             const snapshot = { ...evidence }
-            if (data.action === 'takeWithText')
+            if (inputOnly) port?.postMessage(inputSnapshot(snapshot))
+            else if (data.action === 'takeWithText')
               port?.postMessage({
                 preEncryptInput: snapshot,
                 preEncryptText:

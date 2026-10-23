@@ -191,6 +191,7 @@ test('handoff factory requires explicit calibration directory and preserves the 
   for (const name of [
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
   ]) {
     const target = join(cwd, name)
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
@@ -778,6 +779,7 @@ test('CLI prepares exclusively and never echoes invalid arguments', () => {
   for (const name of [
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
     'frontend/e2e/scripts/prepare-windows-host-observation.mjs',
     'frontend/e2e/scripts/import-windows-host-observation.mjs',
   ]) {

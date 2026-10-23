@@ -1,0 +1,103 @@
+# 僅限Task32核准的新隔離project；不接舊network／volume或官方client。
+name: rdweb-receiver-isolated-20261023-01
+services:
+  hbbs:
+    image: ${RDWEB_RECEIVER_SERVER_IMAGE:-rdweb-receiver-server:20261023-01}
+    build:
+      context: ../../..
+      dockerfile: frontend/e2e/docker/Dockerfile.rustdesk-server
+    command: [hbbs, -r, hbbr:21117]
+    volumes: [server-data:/data, public-key:/public-key]
+    ports:
+      - 127.0.0.1:21136:21116
+      - 127.0.0.1:21136:21116/udp
+    logging: { driver: none }
+    healthcheck:
+      test: [CMD-SHELL, 'test -s /public-key/id_ed25519.pub && nc -z 127.0.0.1 21116']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    networks: [isolation]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  hbbr:
+    image: ${RDWEB_RECEIVER_SERVER_IMAGE:-rdweb-receiver-server:20261023-01}
+    command: [hbbr]
+    volumes: [relay-data:/data]
+    ports: ['127.0.0.1:21137:21117']
+    logging: { driver: none }
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, '21117']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    networks: [isolation]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  backend:
+    image: ${RDWEB_RECEIVER_API_IMAGE:-rdweb-receiver-api:20261023-01}
+    build:
+      context: ../../..
+      dockerfile: deploy/dev/Dockerfile.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      APP_BASE_PATH: /
+      APP_PUBLIC_URL: http://127.0.0.1:18080/
+      TRUSTED_PROXIES: 172.30.91.0/24
+      LOG_TIME_ZONE: UTC
+      TZ: UTC
+      SECRET_KEY: ${SECRET_KEY:?runtime required}
+      VAULT_KEY: ${VAULT_KEY:?runtime required}
+      BOOTSTRAP_ADMIN_USERNAME: receiver-isolated-admin
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?runtime required}
+    volumes: [api-data:/app/data]
+    logging: { driver: none }
+    healthcheck:
+      test: [CMD, dotnet, RdWeb.Api.dll, healthcheck]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks: [isolation]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  web:
+    image: ${RDWEB_RECEIVER_WEB_IMAGE:-rdweb-receiver-web:20261023-01}
+    build:
+      context: ../../..
+      dockerfile: deploy/dev/Dockerfile.web
+    environment: { APP_BASE_PATH: /, DEFAULT_DISPLAY_TIME_ZONE: Asia/Taipei }
+    depends_on:
+      backend: { condition: service_healthy }
+    logging: { driver: none }
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    networks: [isolation]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  ingress:
+    image: ${RDWEB_RECEIVER_WEB_IMAGE:-rdweb-receiver-web:20261023-01}
+    environment: { WEB_ROLE: ingress, APP_BASE_PATH: /, PREFIX_MODE: preserve }
+    ports: ['127.0.0.1:18080:8080']
+    depends_on:
+      web: { condition: service_healthy }
+    logging: { driver: none }
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    networks: [isolation]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+networks:
+  isolation:
+    ipam:
+      config: [{ subnet: 172.30.91.0/24 }]
+volumes:
+  server-data:
+  relay-data:
+  public-key:
+  api-data:

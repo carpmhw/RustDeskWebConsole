@@ -5,9 +5,12 @@ import {
   validateHostReady,
   validateHostResult,
   validateHostTimeline,
+  validateInputOnlyClient,
   type HostManifest,
   type HostMainTimeline,
+  type InputOnlyClientReport,
 } from './host-observation-schema.ts'
+import { classifyHostInputOnly } from './host-input-only.ts'
 import {
   constants,
   lstatSync,
@@ -39,6 +42,16 @@ type HostObservationController = {
   pollReady(): boolean
   finish(timeline: HostMainTimeline, code: string): void
 }
+type Purpose = 'hr' | 'input_only'
+export type HostInputOnlyController = {
+  expected: string
+  // 首click前只建立一次同輪request。
+  start(): void
+  // 固定正式60秒ready gate。
+  pollReady(): boolean
+  // 收尾後只保存獨立安全report。
+  finish(report: InputOnlyClientReport): void
+}
 const setupDiagnostics = new WeakMap<object, HostSetupDiagnostic>()
 
 // 只認真正controller的私有來源，不讀未知物件或例外屬性；快照不能反向修改guard。
@@ -53,8 +66,24 @@ export function readHostSetupDiagnostic(controller: unknown): Readonly<HostSetup
 const defaultDirectory = fileURLToPath(
   new URL('../../.cache/windows-host-observer/current/', import.meta.url),
 )
+const inputOnlyDirectory = fileURLToPath(
+  new URL('../../.cache/windows-host-input-only/current/', import.meta.url),
+)
 // 不opt-in完全不I/O；非法值／CI／平台／prefix在副作用前拒絕。
-function enabled(env: Environment): boolean {
+function enabled(env: Environment, purpose: Purpose = 'hr'): boolean {
+  const inputFlag = env.RDWEB_WINDOWS_HOST_INPUT_ONLY
+  if (purpose === 'hr' && inputFlag !== undefined && inputFlag !== '0') hostUnavailable()
+  if (purpose === 'input_only') {
+    if (inputFlag === undefined || inputFlag === '0') return false
+    if (
+      inputFlag !== '1' ||
+      [env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG, env.RDWEB_WINDOWS_TEXT_PROBE].some(
+        /* 此用途不能保存clipboard原文或啟動人工文字probe。 */ (flag) =>
+          flag !== undefined && flag !== '0',
+      )
+    )
+      hostUnavailable()
+  }
   const flag = env.RDWEB_WINDOWS_HOST_OBSERVE
   if (flag === undefined || flag === '0') return false
   if (
@@ -62,7 +91,7 @@ function enabled(env: Environment): boolean {
     process.platform !== 'linux' ||
     env.CI ||
     env.GITHUB_ACTIONS ||
-    env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG !== '1' ||
+    (purpose === 'hr' && env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG !== '1') ||
     env.RDWEB_INPUT_PLATFORMS !== 'windows' ||
     (env.RDWEB_INPUT_CHANNELS ?? env.RDWEB_INPUT_CHANNEL ?? 'chromium') !== 'chromium' ||
     env.RDWEB_B3_BASES !== '/' ||
@@ -70,6 +99,19 @@ function enabled(env: Environment): boolean {
   )
     hostUnavailable()
   return true
+}
+// 在讀檔前拒絕另一用途的固定樹；自訂私有tmp仍須通過purpose守衛。
+function directoryPurpose(path: string, purpose: Purpose): void {
+  const parts = resolve(path).split('/')
+  if (
+    purpose === 'input_only'
+      ? parts.some(
+          /* 不碰原HR／handoff資料。 */ (part) =>
+            /^windows-host-(?:observer|handoff(?:-.*)?)$/.test(part),
+        )
+      : parts.includes('windows-host-input-only')
+  )
+    hostUnavailable()
 }
 // 只接公開整數幾何，不複製任何runtime憑證。
 function editor(env: Environment): HostManifest['editor'] {
@@ -153,16 +195,55 @@ function write(path: string, value: unknown, limit = 8192): void {
     if (fd !== undefined) closeSync(fd)
   }
 }
+// 用途不傳Windows；讀寫均沿同一nofollow核心，回identity供setup／finish防換檔。
+function purposeIdentity(path: string, manifest: HostManifest, purpose: Purpose): string | null {
+  const file = join(path, 'purpose.json')
+  if (purpose === 'hr') {
+    if (!missing(file)) hostUnavailable()
+    return null
+  }
+  const before = lstatSync(file)
+  const value = read(file) as { schemaVersion?: unknown; purpose?: unknown; runId?: unknown }
+  const after = lstatSync(file)
+  if (
+    !value ||
+    Object.keys(value).length !== 3 ||
+    value.schemaVersion !== 1 ||
+    value.purpose !== 'input_only' ||
+    value.runId !== manifest.runId ||
+    before.dev !== after.dev ||
+    before.ino !== after.ino
+  )
+    hostUnavailable()
+  return `${after.dev}:${after.ino}`
+}
 // readonly preflight不建立／claim，geometry與runtime必一致。
 export function readHostObservation(
   env: Environment = process.env,
   directory = defaultDirectory,
 ): HostManifest | null {
-  if (!enabled(env)) return null
+  return readObservation(env, directory, 'hr')
+}
+// 新用途readonly preflight不讀原HR current；off不I/O。
+export function readHostInputOnlyObservation(
+  env: Environment = process.env,
+  directory = inputOnlyDirectory,
+): HostManifest | null {
+  return readObservation(env, directory, 'input_only')
+}
+// 兩用途共用schema／private／scope／claim檢查，不靠改process.env轉用舊入口。
+function readObservation(
+  env: Environment,
+  directory: string,
+  purpose: Purpose,
+): HostManifest | null {
+  if (!enabled(env, purpose)) return null
   try {
     const path = resolve(directory)
+    directoryPurpose(path, purpose)
     identity(path)
     const m = validateHostManifest(read(join(path, 'manifest.json')))
+    purposeIdentity(path, m, purpose)
     if (JSON.stringify(m.editor) !== JSON.stringify(editor(env))) hostUnavailable()
     if (!missing(join(path, 'claim.json'))) hostUnavailable()
     return m
@@ -175,9 +256,21 @@ export function prepareHostObservation(
   env: Environment = process.env,
   directory = defaultDirectory,
 ): void {
+  prepareObservation(env, directory, 'hr')
+}
+// 固定新root準備，只建立公開manifest及用途標記。
+export function prepareHostInputOnlyObservation(
+  env: Environment = process.env,
+  directory = inputOnlyDirectory,
+): void {
+  prepareObservation(env, directory, 'input_only')
+}
+// 共用exclusive準備；任一步失敗保留已產資料，從不自動清理或重試。
+function prepareObservation(env: Environment, directory: string, purpose: Purpose): void {
   try {
-    if (!enabled(env)) hostUnavailable()
+    if (!enabled(env, purpose)) hostUnavailable()
     const path = resolve(directory)
+    directoryPurpose(path, purpose)
     if (!missing(path)) hostUnavailable()
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     identity(dirname(path))
@@ -193,6 +286,8 @@ export function prepareHostObservation(
       expiresUtc: new Date(Date.parse(createdUtc) + 1800000).toISOString(),
     })
     write(join(path, 'manifest.json'), m)
+    if (purpose === 'input_only')
+      write(join(path, 'purpose.json'), { schemaVersion: 1, purpose: 'input_only', runId: m.runId })
   } catch {
     hostUnavailable()
   }
@@ -203,6 +298,13 @@ export function createHostObservation(
   directory = defaultDirectory,
 ): HostObservationController {
   return createObservationController(env, directory, 60000)
+}
+// 新用途固定60秒，僅finish接受獨立Report，不授權原HR成功code。
+export function createHostInputOnlyObservation(
+  env: Environment = process.env,
+  directory = inputOnlyDirectory,
+): HostInputOnlyController {
+  return createObservationController(env, directory, 60000, 'input_only')
 }
 // 獨立SFTP校準才用固定90秒；必須明確私有目錄，不能漏參數誤用正式current。
 export function createHostHandoffObservation(
@@ -223,18 +325,33 @@ function createObservationController(
   env: Environment,
   directory: string,
   setupBudgetMs: 60000 | 90000,
-): HostObservationController {
+): HostObservationController
+// 新用途沿相同狀態機，型別上與原timeline／code入口分離。
+function createObservationController(
+  env: Environment,
+  directory: string,
+  setupBudgetMs: 60000,
+  purpose: 'input_only',
+): HostInputOnlyController
+// 私有固定用途核心不提供任意timeout或重試入口。
+function createObservationController(
+  env: Environment,
+  directory: string,
+  setupBudgetMs: 60000 | 90000,
+  purpose: Purpose = 'hr',
+): HostObservationController | HostInputOnlyController {
   try {
-    const m = readHostObservation(env, directory)
-    if (!m) hostUnavailable()
+    const m = readObservation(env, directory, purpose) ?? hostUnavailable()
     const path = resolve(directory),
-      owner = identity(path)
+      owner = identity(path),
+      marker = purposeIdentity(path, m, purpose)
     write(join(path, 'claim.json'), { schemaVersion: 1, runId: m.runId })
     let closed = false,
       invalid = false,
       deadline = 0,
       last = 0
     let startedAt: number | null = null
+    let readyAccepted = false
     const diagnostic: HostSetupDiagnostic = { reason: 'unknown', elapsedMs: null }
     let request: ReturnType<typeof validateHostRequest> | undefined
     // 沿原clock樣本計算，未開始／倒退／非有限或超額皆unknown，不新增clockread。
@@ -270,7 +387,7 @@ function createObservationController(
         if (!Number.isFinite(now)) reject('clock_invalid')
         let sameIdentity = false
         try {
-          sameIdentity = identity(path) === owner
+          sameIdentity = identity(path) === owner && purposeIdentity(path, m, purpose) === marker
         } catch {
           reject('identity_rejected')
         }
@@ -332,24 +449,58 @@ function createObservationController(
             reject('ready_rejected')
           }
           deadline = 0
+          readyAccepted = true
           return true
         } catch {
           hostUnavailable()
         }
       },
-      // 原case終態只存安全timeline及固定code，不改原strict結果。
-      finish(timeline: HostMainTimeline, code: string): void {
+      // 終態只存本用途安全摘要與固定code，不改原HR strict結果。
+      finish(timeline: HostMainTimeline | InputOnlyClientReport, code?: string): void {
         try {
           if (
             closed ||
             identity(path) !== owner ||
+            purposeIdentity(path, m, purpose) !== marker ||
             !request ||
-            typeof code !== 'string' ||
-            !/^(?:host_client_failed|host_client_pass|host_setup_failed|input_clipboard_remote_input_(?:mismatch|clipboard_timeout|local_unavailable|no_local_result))$/.test(
-              code,
-            )
+            (purpose === 'hr' &&
+              (typeof code !== 'string' ||
+                !/^(?:host_client_failed|host_client_pass|host_setup_failed|input_clipboard_remote_input_(?:mismatch|clipboard_timeout|local_unavailable|no_local_result))$/.test(
+                  code,
+                )))
           )
             hostUnavailable()
+          if (purpose === 'input_only') {
+            const report = timeline as InputOnlyClientReport
+            const names = ['code', 'main', 'encoded', 'timeline', 'observation', 'resourcesClosed']
+            if (
+              !report ||
+              ![Object.prototype, null].includes(Object.getPrototypeOf(report)) ||
+              Reflect.ownKeys(report).length !== names.length ||
+              names.some(
+                /* 展開前拒絕getter／額外欄位，不執行不可信程式。 */ (name) => {
+                  const descriptor = Object.getOwnPropertyDescriptor(report, name)
+                  return !descriptor || !Object.hasOwn(descriptor, 'value')
+                },
+              )
+            )
+              hostUnavailable()
+            const client = validateInputOnlyClient(
+              {
+                ...report,
+                schemaVersion: 1,
+                purpose: 'input_only',
+                runId: m.runId,
+                requestId: request.requestId,
+                code: invalid || !readyAccepted ? 'input_only_setup_failed' : report.code,
+              },
+              m,
+              request,
+            )
+            write(join(path, 'client.json'), client, 65536)
+            closed = true
+            return
+          }
           const t = validateHostTimeline(timeline)
           write(
             join(path, 'client.json'),
@@ -381,11 +532,32 @@ export function importHostObservation(
   env: Environment = process.env,
   directory = defaultDirectory,
 ): void {
+  importObservation(kind, source, env, directory, 'hr')
+}
+// 新用途import只產生獨立joined，不改原HR資料與code。
+export function importHostInputOnlyObservation(
+  kind: string,
+  source: string,
+  env: Environment = process.env,
+  directory = inputOnlyDirectory,
+): void {
+  importObservation(kind, source, env, directory, 'input_only')
+}
+// 同一安全I/O／同輪／exclusive匯入核心，各用途用各自client validator。
+function importObservation(
+  kind: string,
+  source: string,
+  env: Environment,
+  directory: string,
+  purpose: Purpose,
+): void {
   try {
-    if (!enabled(env)) hostUnavailable()
+    if (!enabled(env, purpose)) hostUnavailable()
     const path = resolve(directory)
+    directoryPurpose(path, purpose)
     identity(path)
     const m = validateHostManifest(read(join(path, 'manifest.json')))
+    purposeIdentity(path, m, purpose)
     const request = validateHostRequest(read(join(path, 'start-request.json')), m)
     const claim = read(join(path, 'claim.json')) as { schemaVersion?: unknown; runId?: unknown }
     if (
@@ -405,6 +577,25 @@ export function importHostObservation(
       const ready = validateHostReady(read(join(path, 'ready.json')), m, request)
       const result = validateHostResult(read(resolve(source), 65536), m, request)
       if (result.startedUtc !== ready.utc) hostUnavailable()
+      if (purpose === 'input_only') {
+        const client = validateInputOnlyClient(read(join(path, 'client.json'), 65536), m, request)
+        write(
+          join(path, 'joined.json'),
+          {
+            schemaVersion: 1,
+            purpose: 'input_only',
+            runId: m.runId,
+            requestId: request.requestId,
+            crossClockOrder: 'unknown',
+            client,
+            host: result,
+            classification: classifyHostInputOnly(client, result),
+          },
+          131072,
+        )
+        write(join(path, 'result.json'), result, 65536)
+        return
+      }
       const client = read(join(path, 'client.json'), 65536) as {
         schemaVersion?: unknown
         runId?: unknown

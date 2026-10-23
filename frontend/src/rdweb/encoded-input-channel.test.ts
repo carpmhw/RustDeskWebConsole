@@ -39,6 +39,7 @@ class Channel {
 // Worker constructor本身不更換URL、參數或產品dispatch。
 class WorkerFixture extends EventTarget {
   static all: WorkerFixture[] = []
+  static serialized = false
   target = new EventTarget() as EventTarget & EncodedWorkerScope
   commands: unknown[] = []
   diagnosticPort: Port | undefined
@@ -56,7 +57,9 @@ class WorkerFixture extends EventTarget {
       /* NodeEventTarget配送到WorkerGlobalScope式onmessage。 */ (event) =>
         this.target.onmessage?.call(this.target, event as MessageEvent),
     )
-    installWorkerEncodedInputDiagnostics(enums)
+    if (WorkerFixture.serialized)
+      new Function('enums', `(${installWorkerEncodedInputDiagnostics.toString()})(enums)`)(enums)
+    else installWorkerEncodedInputDiagnostics(enums)
   }
   // 原postMessage僅配送一次；bootstrap攔自己的控制，不產生input。
   postMessage(data: unknown, ports: Port[] = []): void {
@@ -87,11 +90,13 @@ class WorkerFixture extends EventTarget {
   }
 }
 // Main collector和真Worker bootstrap經可控transport串接；沒有OS或socket。
-function fixture() {
+function fixture(serialized = false) {
   WorkerFixture.all = []
+  WorkerFixture.serialized = serialized
   vi.stubGlobal('window', { Worker: WorkerFixture })
   vi.stubGlobal('MessageChannel', Channel)
-  installEncodedInputDiagnostics()
+  if (serialized) new Function(`(${installEncodedInputDiagnostics.toString()})()`)()
+  else installEncodedInputDiagnostics()
   const worker = new window.Worker('/rdweb/assets/protocol.worker-public.js', {
     type: 'module',
   }) as unknown as WorkerFixture
@@ -128,6 +133,100 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
+
+// 新Main API須走真Worker collector，且用錯take不吃掉input-only scope。
+it('input-only channel preserves the profile and single consumption', async () => {
+  const f = fixture()
+  expect(f.port.beginInputOnly).toBeTypeOf('function')
+  f.port.beginInputOnly('Public test')
+  expect((await f.port.take()).unavailable).toBe(true)
+  for (const value of [
+    { controlKey: 4, down: true, mode: 0 },
+    { chr: 65 * 65536, down: true, mode: 2, modifiers: [4] },
+    { chr: 65 * 65536, down: false, mode: 2, modifiers: [4] },
+    { controlKey: 4, down: false, mode: 0 },
+    { seq: 'Public test', down: true, mode: 0 },
+  ])
+    observeEncodedInput(
+      encodeMessage({ keyEvent: value }),
+      f.worker.target.__rdwebEncodedInputObserver!,
+    )
+  const result = await f.port.takeInputOnly()
+  expect(result.sequenceComplete).toBe(true)
+  expect(Object.keys(result)).toHaveLength(8)
+  expect((await f.port.takeInputOnly()).unavailable).toBe(true)
+  expect(JSON.stringify(f.worker.commands)).not.toContain('captureText')
+})
+// 兩端序列化後不得偷用模組閉包，input-only同樣沿16個Worker容量界線。
+it('runs the input-only serialized bootstraps and enforces the worker bound', async () => {
+  const f = fixture(true)
+  f.port.beginInputOnly('Public test')
+  emitText(f.worker)
+  expect(await f.port.takeInputOnly()).toMatchObject({
+    observed: true,
+    textExact: true,
+    sequenceComplete: false,
+  })
+  for (let i = 0; i < 16; i++) new window.Worker('public-unready')
+  expect(() => f.port.beginInputOnly('Public test')).toThrow(
+    'encoded_input_diagnostics_unavailable',
+  )
+})
+
+// 固定八欄不接受原十欄、額外資料或會執行的getter。
+it.each(['ten', 'extra', 'nonboolean', 'getter', 'prototype'])(
+  'input_only_channel_rejects_wrong_profile_extra_and_late_reply: %s',
+  /* 只替代port傳輸，Main驗證仍執行真函數。 */ async (mode) => {
+    const f = fixture()
+    expect(f.port.beginInputOnly).toBeTypeOf('function')
+    f.port.beginInputOnly('Public test')
+    f.worker.postMessage = /* 故障transport只供應不可信回覆。 */ () => {
+      const value: Record<string, unknown> = {
+        observed: true,
+        textExact: true,
+        textSingle: true,
+        initialSelectComplete: true,
+        sequenceComplete: true,
+        sequenceInvalid: false,
+        overflow: false,
+        unavailable: false,
+      }
+      if (mode === 'ten')
+        Object.assign(value, { receiveSelectComplete: true, receiveCopyComplete: true })
+      if (mode === 'extra') value.text = 'Public must not escape'
+      if (mode === 'nonboolean') value.textExact = 1
+      if (mode === 'getter')
+        Object.defineProperty(value, 'observed', { get: /* getter不可執行。 */ () => true })
+      const reply = mode === 'prototype' ? Object.assign(Object.create({}), value) : value
+      f.worker.diagnosticPort!.postMessage(reply)
+    }
+    const result = await f.port.takeInputOnly()
+    expect(result.unavailable).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('Public')
+  },
+)
+
+// 新profile沿原2000ms期限、取消及owner換代，不讓舊callback污染新scope。
+it.each(['timeout', 'cancel', 'terminate', 'revision'])(
+  'input-only snapshot becomes unavailable on %s',
+  /* 精確控制transport與clock，不啟動瀏覽器。 */ async (mode) => {
+    vi.useFakeTimers()
+    const f = fixture()
+    expect(f.port.beginInputOnly).toBeTypeOf('function')
+    f.port.beginInputOnly('Public test')
+    f.worker.postMessage = /* 模擬沒有回覆。 */ () => undefined
+    const waiting = f.port.takeInputOnly(),
+      late = f.worker.diagnosticPort!.peer.onmessage!
+    if (mode === 'timeout') await vi.advanceTimersByTimeAsync(2000)
+    if (mode === 'cancel') f.port.cancel()
+    if (mode === 'terminate') f.worker.terminate()
+    if (mode === 'revision') f.worker.ready(2)
+    expect((await waiting).unavailable).toBe(true)
+    late({ data: { observed: true } })
+    expect((await f.port.takeInputOnly()).unavailable).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  },
+)
 
 // 沒有matching owner時不送診斷控制，非法scope不能啟用。
 it('requires one live Windows owner and bounded public expected', () => {

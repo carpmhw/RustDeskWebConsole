@@ -454,6 +454,7 @@ test('interactive CLI refuses piped confirmation and preserves cases01-11 withou
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
   ]) {
     const target = join(cwd, name)
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
@@ -686,6 +687,7 @@ test('watch diagnostics CLI append metadata but preserve the original terminal c
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
   ]) {
     const target = join(cwd, name)
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
@@ -919,6 +921,7 @@ test('commit-ready CLI submits only metadata and refuses CI unknown flags and re
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
   ]) {
     const target = join(cwd, name)
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
@@ -1363,6 +1366,7 @@ test('CLI prepares case12 without touching cases01-11 evidence and refuses reuse
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
   ]) {
     const path = join(cwd, name)
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })

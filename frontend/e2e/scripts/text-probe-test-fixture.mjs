@@ -8,11 +8,13 @@ export function copyTextProbeTools(root) {
     'frontend/e2e/real/windows-runtime.ts',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
     'frontend/e2e/real/clipboard-text-log.ts',
     'frontend/src/rdweb/interaction-limits.ts',
     'frontend/e2e/scripts/finish-windows-text-probe.mjs',
     'frontend/e2e/scripts/test-m3b3-text-probe.sh',
     'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
+    'frontend/e2e/scripts/test-m3b3-host-input-only.sh',
     'frontend/e2e/scripts/test-m3b3-common.sh',
   ]) {
     const destination = join(root, path)

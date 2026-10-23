@@ -43,7 +43,7 @@ function sequence(): EncodedInputSnapshot[] {
   return [...chord(65), key('seq', sample, true), ...chord(65), ...chord(67)]
 }
 // 自有EventTarget代替Worker控制transport；觀察器本體仍是真安裝函數。
-function fixture(expected = sample, captureText = false) {
+function fixture(expected = sample, captureText = false, profile?: string) {
   const target = new EventTarget() as EventTarget & EncodedWorkerScope
   vi.stubGlobal('self', target)
   target.addEventListener(
@@ -73,7 +73,11 @@ function fixture(expected = sample, captureText = false) {
           action,
           scope,
           ...(action === 'begin'
-            ? { expected: publicExpected, ...(captureText ? { captureText: true } : {}) }
+            ? {
+                expected: publicExpected,
+                ...(captureText ? { captureText: true } : {}),
+                ...(profile ? { profile } : {}),
+              }
             : {}),
         },
       },
@@ -137,6 +141,83 @@ it('reports the complete encoded sequence using only ten booleans', () => {
   })
   expect(JSON.stringify(f.posted)).not.toContain(sample)
 })
+// 五鍵完成必須來自實際encoded接點，新用途不假造接收／複製兩段。
+it('input_only_requires_exactly_five_encoded_keys', () => {
+  const f = fixture(sample, false, 'input_only')
+  f.observer.record({ kind: 'mouse', mask: 9 })
+  for (const value of chord(65)) f.observer.record(value)
+  observeEncodedInput(encodeMessage({ keyEvent: { seq: sample, down: true, mode: 0 } }), f.observer)
+  f.control('takeInputOnly')
+  expect(f.posted).toEqual([
+    {
+      observed: true,
+      textExact: true,
+      textSingle: true,
+      initialSelectComplete: true,
+      sequenceComplete: true,
+      sequenceInvalid: false,
+      overflow: false,
+      unavailable: false,
+    },
+  ])
+  expect(JSON.stringify(f.posted)).not.toContain(sample)
+})
+// profile互斥且錯誤take不能消費正確scope，原13鍵仍不能只跑五鍵。
+it('profiles_do_not_accept_each_other', () => {
+  const f = fixture(sample, false, 'input_only')
+  for (const value of sequence().slice(0, 5)) f.observer.record(value)
+  f.control('take')
+  expect(f.posted[0]?.unavailable).toBe(true)
+  f.control('takeInputOnly')
+  expect(f.posted[1]?.sequenceComplete).toBe(true)
+  const old = fixture()
+  for (const value of sequence().slice(0, 5)) old.observer.record(value)
+  old.control('takeInputOnly')
+  expect(old.posted[0]?.unavailable).toBe(true)
+  old.control('take')
+  expect(old.posted[1]?.sequenceComplete).toBe(false)
+})
+// 任何破壞五鍵wire或Seq後的操作都不可變成完整證據。
+it.each([
+  'incomplete',
+  'missing-up',
+  'text',
+  'mode',
+  'modifier',
+  'down',
+  'press',
+  'extra-key',
+  'duplicate',
+  'mouse',
+  'chord-mouse',
+  'overflow',
+  'fault',
+])(
+  'input_only_rejects_post_seq_input and %s mutation',
+  /* 各案從手寫原五鍵獨立變異。 */ (mutation) => {
+    const f = fixture(sample, false, 'input_only'),
+      events = sequence().slice(0, 5)
+    const text = events[4] as Extract<EncodedInputSnapshot, { kind: 'key' }>
+    if (mutation === 'incomplete') events.pop()
+    if (mutation === 'missing-up') events.splice(3, 1)
+    if (mutation === 'text') text.seq = 'Public wrong'
+    if (mutation === 'mode') text.mode = 2
+    if (mutation === 'modifier') text.modifiers = [4]
+    if (mutation === 'down') text.down = false
+    if (mutation === 'press') text.press = true
+    if (mutation === 'extra-key') events.push(key('controlKey', 4, true))
+    if (mutation === 'duplicate') events.push(key('seq', sample, true))
+    if (mutation === 'mouse') events.push({ kind: 'mouse', mask: 9 })
+    if (mutation === 'chord-mouse') events.splice(2, 0, { kind: 'mouse', mask: 9 })
+    for (const value of events) f.observer.record(value)
+    if (mutation === 'overflow')
+      for (let n = 0; n < 65; n++) f.observer.record({ kind: 'mouse', mask: 0 })
+    if (mutation === 'fault') f.observer.unavailable()
+    f.control('takeInputOnly')
+    expect(f.posted.at(-1)?.sequenceComplete).toBe(false)
+    expect(Object.keys(f.posted.at(-1)!)).toHaveLength(8)
+  },
+)
 // 若以expected代填、未opt-in就保存、或從Main intent讀值，本組真encode與mutation會失敗。
 it('captures the actual encoded seq only with explicit public-text opt-in', () => {
   const f = fixture(sample, true)

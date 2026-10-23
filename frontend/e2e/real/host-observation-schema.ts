@@ -1,3 +1,35 @@
+import type { TextOnlyEvidence } from './input-diagnostics.ts'
+import type { InputOnlyEncodedEvidence } from './encoded-input-diagnostics.ts'
+import { inputOnlyClientCode } from './host-input-only.ts'
+
+export type InputOnlyClientCode =
+  | 'input_only_completed'
+  | 'input_only_setup_failed'
+  | 'input_only_input_failed'
+  | 'input_only_observation_unavailable'
+  | 'input_only_cleanup_failed'
+export type InputOnlyClassification =
+  'stable_exact_observed' | 'stable_mismatch_observed' | 'inconclusive'
+export interface InputOnlyObservation {
+  budgetMs: 5000
+  elapsedMs: number | null
+  completed: boolean
+}
+export interface InputOnlyClientReport {
+  code: InputOnlyClientCode
+  main: TextOnlyEvidence
+  encoded: InputOnlyEncodedEvidence
+  timeline: HostMainTimeline
+  observation: InputOnlyObservation
+  resourcesClosed: boolean
+}
+export interface InputOnlyClient extends InputOnlyClientReport {
+  schemaVersion: 1
+  purpose: 'input_only'
+  runId: string
+  requestId: string
+}
+
 export interface HostManifest {
   schemaVersion: 1
   runId: string
@@ -406,4 +438,72 @@ export function validateHostTimeline(value: unknown): HostMainTimeline {
   }
   v.events = events
   return v as unknown as HostMainTimeline
+}
+
+// 新用途獨立白名單，不把五鍵摘要或失敗code塞進原HR client契約。
+export function validateInputOnlyClient(
+  value: unknown,
+  manifest: HostManifest,
+  request: HostRequest,
+): InputOnlyClient {
+  const v = fields(value, [
+    'schemaVersion',
+    'purpose',
+    'runId',
+    'requestId',
+    'code',
+    'main',
+    'encoded',
+    'timeline',
+    'observation',
+    'resourcesClosed',
+  ])
+  if (
+    v.schemaVersion !== 1 ||
+    v.purpose !== 'input_only' ||
+    v.runId !== manifest.runId ||
+    v.requestId !== request.requestId ||
+    ![
+      'input_only_completed',
+      'input_only_setup_failed',
+      'input_only_input_failed',
+      'input_only_observation_unavailable',
+      'input_only_cleanup_failed',
+    ].includes(v.code as string)
+  )
+    hostUnavailable()
+  const mainNames = [
+    'prefixSubmitted',
+    'prefixAccepted',
+    'postTextInput',
+    'clipboardObserved',
+    'scopeInterrupted',
+    'overflow',
+  ]
+  const encodedNames = [
+    'observed',
+    'textExact',
+    'textSingle',
+    'initialSelectComplete',
+    'sequenceComplete',
+    'sequenceInvalid',
+    'overflow',
+    'unavailable',
+  ]
+  v.main = fields(v.main, mainNames)
+  v.encoded = fields(v.encoded, encodedNames)
+  booleans(v.main as Record<string, unknown>, mainNames)
+  booleans(v.encoded as Record<string, unknown>, encodedNames)
+  v.observation = fields(v.observation, ['budgetMs', 'elapsedMs', 'completed'])
+  const observation = v.observation as Record<string, unknown>
+  if (observation.budgetMs !== 5000) hostUnavailable()
+  if (observation.elapsedMs !== null) integer(observation.elapsedMs, 180000)
+  booleans(observation, ['completed'])
+  booleans(v, ['resourcesClosed'])
+  v.timeline = validateHostTimeline(v.timeline)
+  const client = v as unknown as InputOnlyClient
+  if (client.code === 'input_only_completed' && inputOnlyClientCode(client) !== client.code)
+    hostUnavailable()
+  if (new TextEncoder().encode(JSON.stringify(v)).length > 65536) hostUnavailable()
+  return client
 }

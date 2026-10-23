@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs'
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  mkdirSync,
+  symlinkSync,
+  existsSync,
+  renameSync,
+  chmodSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { test } from 'node:test'
 import { copyTextProbeTools } from './text-probe-test-fixture.mjs'
+import { prepareHostInputOnlyObservation } from '../real/host-observation-control.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
@@ -19,10 +30,35 @@ function run(
   const calls = join(dir, 'calls')
   const probeSuite = script === 'frontend/e2e/scripts/test-m3b3-text-probe.sh'
   const textReturnSuite = script === 'frontend/e2e/scripts/test-m3b3-text-return-probe.sh'
+  const inputOnlySuite = script === 'frontend/e2e/scripts/test-m3b3-host-input-only.sh'
   const reliabilitySuite = script === 'frontend/e2e/scripts/test-m3b3-reliability.sh'
-  if (probeSuite || textReturnSuite) {
+  if (probeSuite || textReturnSuite || inputOnlySuite) {
     const current = copyTextProbeTools(dir)
     if (probeSuite && stale) mkdirSync(current, { recursive: true, mode: 0o700 })
+    if (inputOnlySuite && overrides.STUB_INPUT_ONLY_FIXTURE !== 'missing') {
+      const path = join(dir, 'frontend/.cache/windows-host-input-only/current')
+      prepareHostInputOnlyObservation(
+        {
+          ...textReturnProbe,
+          RDWEB_WINDOWS_HOST_INPUT_ONLY: '1',
+          RDWEB_WINDOWS_HOST_OBSERVE: '1',
+          RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '0',
+        },
+        path,
+      )
+      if (overrides.STUB_INPUT_ONLY_FIXTURE === 'purpose')
+        renameSync(join(path, 'purpose.json'), join(path, 'purpose.old'))
+      if (overrides.STUB_INPUT_ONLY_FIXTURE === 'mode')
+        chmodSync(join(path, 'manifest.json'), 0o644)
+      if (overrides.STUB_INPUT_ONLY_FIXTURE === 'claimed')
+        writeFileSync(join(path, 'claim.json'), '{}', { mode: 0o600 })
+      if (overrides.STUB_INPUT_ONLY_FIXTURE === 'expired') {
+        const manifest = JSON.parse(readFileSync(join(path, 'manifest.json'), 'utf8'))
+        manifest.createdUtc = '2020-01-01T00:00:00.000Z'
+        manifest.expiresUtc = '2020-01-01T00:30:00.000Z'
+        writeFileSync(join(path, 'manifest.json'), JSON.stringify(manifest))
+      }
+    }
   }
   // 可靠性run需由repo根載入共用preflight；以暫存鏡像隔離artifacts，不讀寫真實驗收報告。
   if (reliabilitySuite) {
@@ -126,7 +162,7 @@ exit "\${STUB_SUITE_EXIT:-0}"
   }
   try {
     const result = spawnSync('bash', [script], {
-      cwd: probeSuite || textReturnSuite || reliabilitySuite ? dir : undefined,
+      cwd: probeSuite || textReturnSuite || inputOnlySuite || reliabilitySuite ? dir : undefined,
       env,
       encoding: 'utf8',
       timeout: 10000,
@@ -159,6 +195,82 @@ const textReturnProbe = {
   RDWEB_B3_BASES: '/',
   RDWEB_B3_MODES: 'preserve',
 }
+const inputOnlyProbe = {
+  ...textReturnProbe,
+  RDWEB_WINDOWS_HOST_INPUT_ONLY: '1',
+  RDWEB_WINDOWS_HOST_OBSERVE: '1',
+  RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '0',
+  STUB_LOG_DOCKER: '1',
+}
+const inputOnlyScript = 'frontend/e2e/scripts/test-m3b3-host-input-only.sh'
+// 新入口應在任何Docker呼叫前拒絕，不以找不到shell入口當安全拒絕。
+test('input_only_preflight_rejects_before_docker', () => {
+  assert.ok(existsSync(inputOnlyScript), 'input-only runner unavailable')
+  for (const patch of [
+    { RDWEB_WINDOWS_HOST_INPUT_ONLY: undefined },
+    { RDWEB_WINDOWS_HOST_INPUT_ONLY: '0' },
+    { RDWEB_WINDOWS_HOST_INPUT_ONLY: 'yes' },
+    { RDWEB_WINDOWS_HOST_OBSERVE: '0' },
+    { CI: '1' },
+    { GITHUB_ACTIONS: '1' },
+    { RDWEB_INPUT_PLATFORMS: 'linux' },
+    { RDWEB_INPUT_CHANNELS: 'msedge' },
+    { RDWEB_B3_BASES: '/rdweb' },
+    { RDWEB_B3_MODES: 'strip' },
+    { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
+    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
+    ...['missing', 'purpose', 'mode', 'claimed', 'expired'].map(
+      /* 每案保留自身不合法fixture。 */ (value) => ({ STUB_INPUT_ONLY_FIXTURE: value }),
+    ),
+  ]) {
+    const result = run({ ...inputOnlyProbe, ...patch }, inputOnlyScript)
+    assert.equal(result.status, 2, result.output)
+    assert.equal(result.calls, '')
+    assert.equal(result.output.includes('public-fixture-password'), false)
+  }
+})
+// 新用途不能誤排原HR或其他suite，即使舊suite的runtime本身合法。
+test('input-only flag is rejected by existing suite preflight before Docker', () => {
+  const result = run(
+    { ...textReturnProbe, RDWEB_WINDOWS_HOST_INPUT_ONLY: '1', STUB_LOG_DOCKER: '1' },
+    'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
+  )
+  assert.equal(result.status, 2)
+  assert.equal(result.calls, '')
+})
+// 失敗不重試，保持owned cleanup／reuse界線與真實exit碼。
+test('input_only_runner_keeps_owned_cleanup_and_failure_exit', () => {
+  assert.ok(existsSync(inputOnlyScript), 'input-only runner unavailable')
+  const result = run(
+    { ...inputOnlyProbe, STUB_OFFICIAL: 'full', STUB_SUITE_EXIT: '1' },
+    inputOnlyScript,
+  )
+  assert.equal(result.status, 1, result.output)
+  assert.equal(
+    result.calls
+      .split('\n')
+      .filter(/* 只排一次正式Playwright入口。 */ (line) => line.startsWith('playwright:')).length,
+    1,
+  )
+  assert.equal(result.calls.includes('official action:'), false)
+  assert.equal(result.calls.includes(' -v'), false)
+  const busy = run({ ...inputOnlyProbe, STUB_CONSOLE_RUNNING: '1' }, inputOnlyScript)
+  assert.equal(busy.status, 2)
+  assert.equal(busy.calls.includes('console action:'), false)
+  const owned = run({ ...inputOnlyProbe, STUB_CONSOLE_DOWN_FAIL: '1' }, inputOnlyScript)
+  assert.equal(owned.status, 1)
+  for (const scope of ['official', 'console'])
+    assert.equal(
+      owned.calls
+        .split('\n')
+        .filter(
+          /* 每個自有stack只清一次。 */ (line) =>
+            line.startsWith(scope + ' action:') && line.endsWith(' down'),
+        ).length,
+      1,
+    )
+  assert.equal(owned.calls.includes(' -v'), false)
+})
 
 const longrunScope = {
   RDWEB_INPUT_PLATFORMS: 'linux',

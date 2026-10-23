@@ -6,7 +6,7 @@ unset DEBUG PWDEBUG
 # 共用runtime與owner生命週期；不修改外部Windows／RustDesk／防火牆。
 run_b3_suite_owned() {
   local config="$1"
-  case "$config" in playwright.input.config.ts|playwright.reconnect.config.ts|playwright.reconnect-security.config.ts|playwright.reconnect-longrun.config.ts|playwright.reconnect-ingress.config.ts|playwright.reliability.config.ts|playwright.text-probe.config.ts|playwright.text-return-probe.config.ts) ;; *) exit 2 ;; esac
+  case "$config" in playwright.input.config.ts|playwright.reconnect.config.ts|playwright.reconnect-security.config.ts|playwright.reconnect-longrun.config.ts|playwright.reconnect-ingress.config.ts|playwright.reliability.config.ts|playwright.text-probe.config.ts|playwright.text-return-probe.config.ts|playwright.host-input-only.config.ts) ;; *) exit 2 ;; esac
   local reconnect=0
   case "$config" in playwright.reconnect.config.ts|playwright.reconnect-security.config.ts|playwright.reconnect-longrun.config.ts|playwright.reconnect-ingress.config.ts) reconnect=1 ;; esac
   local bases="${RDWEB_B3_BASES-/ /rdweb /a/b/c}" modes="${RDWEB_B3_MODES-preserve strip}"
@@ -28,10 +28,13 @@ import { inputPlatforms, readWindowsRuntime } from './frontend/e2e/real/windows-
 import { createClipboardTextLogger } from './frontend/e2e/real/clipboard-text-log.ts'
 import { readTextProbeRuntime } from './frontend/e2e/real/text-probe-runtime.ts'
 import { assertTextProbeAvailable } from './frontend/e2e/real/text-probe-control.ts'
-import { readHostObservation } from './frontend/e2e/real/host-observation-control.ts'
+import { readHostObservation, readHostInputOnlyObservation } from './frontend/e2e/real/host-observation-control.ts'
 try {
   const textProbe = process.env.RDWEB_B3_SUITE_CONFIG === 'playwright.text-probe.config.ts'
   const textReturnProbe = process.env.RDWEB_B3_SUITE_CONFIG === 'playwright.text-return-probe.config.ts'
+  const inputOnly = process.env.RDWEB_B3_SUITE_CONFIG === 'playwright.host-input-only.config.ts'
+  if (process.env.RDWEB_WINDOWS_HOST_INPUT_ONLY !== undefined && process.env.RDWEB_WINDOWS_HOST_INPUT_ONLY !== '0' && !inputOnly) throw new Error()
+  if (inputOnly && !readHostInputOnlyObservation()) throw new Error()
   const reconnect = ['playwright.reconnect.config.ts', 'playwright.reconnect-security.config.ts', 'playwright.reconnect-longrun.config.ts', 'playwright.reconnect-ingress.config.ts'].includes(process.env.RDWEB_B3_SUITE_CONFIG)
   if (reconnect && Object.hasOwn(process.env, 'RDWEB_RECONNECT_INGRESS_OWNER')) throw new Error()
   if (process.env.RDWEB_B3_SUITE_CONFIG === 'playwright.reconnect-ingress.config.ts') {
@@ -50,7 +53,7 @@ try {
     const { assertReconnectEnvironment } = await import('./frontend/e2e/scripts/reconnect-preflight.mjs')
     assertReconnectEnvironment(process.env)
   }
-  if (process.env.RDWEB_WINDOWS_HOST_OBSERVE !== undefined && process.env.RDWEB_WINDOWS_HOST_OBSERVE !== '0') {
+  if (!inputOnly && process.env.RDWEB_WINDOWS_HOST_OBSERVE !== undefined && process.env.RDWEB_WINDOWS_HOST_OBSERVE !== '0') {
     if (!textReturnProbe) throw new Error()
     readHostObservation()
   }
@@ -69,7 +72,7 @@ try {
   )) throw new Error()
   if (platforms.includes('windows')) {
     readWindowsRuntime()
-    if (!textProbe) {
+    if (!textProbe && !inputOnly) {
       const logger = createClipboardTextLogger(process.env)
       if (textReturnProbe && !logger) throw new Error()
     }
