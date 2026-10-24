@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from 'node:path'
 import type { Page } from '@playwright/test'
+import type { ReceiverPolicyGate } from './test-receiver-policy'
 import {
   createReceiverClient,
   readReceiverEndpoints,
@@ -32,6 +33,12 @@ const CLIENT_STAGES = [
   'login',
   'target_selection',
   'console_ready',
+  'ready_policy',
+  'ready_streaming',
+  'ready_peer',
+  'ready_canvas',
+  'ready_snapshot',
+  'ready_diagnostics',
   'input',
   'observation',
   'peer_end',
@@ -167,7 +174,9 @@ export async function openSavedReceiverConsole(
   runtime: ReceiverCaseEnvironment,
   binding: ReceiverBinding,
   onStage?: (stage: ReceiverClientStage) => void,
+  onPolicy?: (gate: ReceiverPolicyGate) => void,
 ): Promise<Page> {
+  let gate: ReceiverPolicyGate | undefined
   try {
     const trusted = validateReceiverBinding(binding)
     // 只有實際開頁時才載入Playwright helper，preflight匯入保持零外部I/O。
@@ -184,12 +193,17 @@ export async function openSavedReceiverConsole(
       (await row.getByRole('cell', { name: trusted.peerId, exact: true }).count()) !== 1
     )
       throw new Error('receiver_unavailable')
-    const popup = page.context().waitForEvent('page')
-    await row.getByRole('link', { name: '連線', exact: true }).click()
-    const consolePage = await popup
-    await consolePage.bringToFront()
-    return consolePage
+    const link = row.getByRole('link', { name: '連線', exact: true })
+    const href = await link.getAttribute('href')
+    if (!href) throw new Error('receiver_unavailable')
+    onStage?.('ready_policy')
+    // 原生Node preflight只需環境／marker，不提前載入瀏覽器gate或其轉譯相依。
+    const { installReceiverPolicyGate } = await import('./test-receiver-policy')
+    gate = await installReceiverPolicyGate(page, href, base)
+    onPolicy?.(gate)
+    return await gate.prepare(link)
   } catch {
+    await gate?.dispose()
     throw new Error('receiver_unavailable')
   }
 }

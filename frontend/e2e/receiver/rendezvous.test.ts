@@ -3,6 +3,7 @@ import { binding, endpoints, receiverApi } from './test-fixtures'
 import { decodeReceiverControl, encodeReceiverControl } from './wire.ts'
 import { createReceiverFramer, frameReceiverBytes } from './framing.ts'
 import { hbb as rendezvousMessage } from './generated/rendezvous.js'
+import { createReceiverDiagnostic } from './diagnostic.ts'
 
 type Endpoint = { host: string; port: number }
 type Start = { kind: 'udp' | 'tcp'; endpoint: Endpoint }
@@ -50,6 +51,7 @@ class FakeNetwork {
   readonly hbbr = new FakeDuplex()
   readonly opened: Start[] = []
   holdHbbr = false
+  private pendingHbbr: ((duplex: FakeDuplex) => void) | null = null
   clock = 0
   private id = 0
   private readonly timers: {
@@ -71,11 +73,21 @@ class FakeNetwork {
     return endpoint.host === hbbr.host && endpoint.port === hbbr.port
   }
 
-  // 第一次TCP是hbbs，第二次是保存的hbbr；hold時回永遠pending。
+  // 第一次TCP是hbbs，第二次是保存的hbbr；hold時等待測試明確釋放。
   async openTcp(endpoint: Endpoint): Promise<FakeDuplex> {
     this.opened.push({ kind: 'tcp', endpoint })
-    if (this.isHbbr(endpoint) && this.holdHbbr) return new Promise<FakeDuplex>(() => {})
+    if (this.isHbbr(endpoint) && this.holdHbbr)
+      return new Promise<FakeDuplex>((resolve) => {
+        this.pendingHbbr = resolve
+      })
     return this.isHbbr(endpoint) ? this.hbbr : this.hbbs
+  }
+
+  // 只釋放本測試已hold的hbbr連線，不重開或模擬額外ACK。
+  releaseHbbr(): void {
+    const complete = this.pendingHbbr
+    this.pendingHbbr = null
+    complete?.(this.hbbr)
   }
 
   // 只回本案單調clock，讓4999／15000／60000邊界可確定命中。
@@ -122,15 +134,17 @@ async function flush(): Promise<void> {
 // 每次建立新receiver連線；signing key只是公開32-byte fixture。
 async function start(network = new FakeNetwork(), signal = new AbortController().signal) {
   const c = (await receiverApi('rendezvous')) as typeof import('./rendezvous')
+  const diagnostic = createReceiverDiagnostic()
   const promise = c.connectReceiverRelay(
     binding(),
     endpoints(),
     new Uint8Array(32).fill(7),
     network,
     signal,
+    diagnostic,
   )
   void promise.catch(() => {})
-  return { c, network, promise, signal }
+  return { c, network, promise, signal, diagnostic }
 }
 
 // 從TCP raw chunks重建完整frame，供測試檢視送出的控制訊息。
@@ -165,6 +179,88 @@ async function registered(network: FakeNetwork): Promise<void> {
 function punch(network: FakeNetwork, value: Parameters<typeof encodeReceiverControl>[0]): void {
   network.hbbs.push(frameReceiverBytes(encodeReceiverControl(value)))
 }
+
+// 從真relay reader取來源；不讓runtime直接消費fake duplex作為替代實作。
+async function paired() {
+  const f = await start()
+  await registered(f.network)
+  punch(f.network, { punchHole: { socketAddr: Uint8Array.of(1, 2, 3, 4) } })
+  const relay = await f.promise
+  return { ...f, relay }
+}
+
+// 只有底層明確來源可上傳；缺方法／非法值／例外仍是unknown，不讀例外內容。
+it.each([
+  ['eof', 'eof'],
+  ['io_failed', 'io_failed'],
+  ['budget_exceeded', 'budget_exceeded'],
+  ['aborted', 'aborted'],
+  ['missing', 'unknown'],
+  ['null', 'unknown'],
+  ['invalid', 'unknown'],
+  ['throws', 'unknown'],
+] as const)(
+  'preserves a relay read source of %s without failing the collector early',
+  async (kind, expected) => {
+    const f = await paired()
+    if (kind !== 'missing')
+      Object.assign(f.network.hbbr, {
+        // 注入的是可信port的固定能力，不傳任意例外字串作分類。
+        failureReason: () => {
+          if (kind === 'throws') throw new Error('PUBLIC_SECRET_SENTINEL')
+          return kind === 'null' ? null : kind === 'invalid' ? 'PUBLIC_SECRET_SENTINEL' : kind
+        },
+      })
+    try {
+      await f.network.hbbr.close()
+      expect(await f.relay.receive()).toBeNull()
+      expect(f.relay.failureReason?.()).toBe(expected)
+      expect(f.diagnostic.snapshot().phase).toBe('unknown')
+    } finally {
+      await f.relay.close()
+    }
+  },
+)
+
+// 真framer拒絕與完整frame queue超限須區分，不以後續close／EOF覆寫首原因。
+it.each(['malformed', 'partial-eof', 'queue', 'io'] as const)(
+  'distinguishes relay %s read failure',
+  async (kind) => {
+    const f = await paired()
+    try {
+      if (kind === 'malformed') f.network.hbbr.push(Uint8Array.of(0xfe, 0xff, 0x07))
+      if (kind === 'partial-eof') {
+        Object.assign(f.network.hbbr, { failureReason: () => 'eof' })
+        f.network.hbbr.push(Uint8Array.of(1))
+        await flush()
+        await f.network.hbbr.close()
+      }
+      if (kind === 'queue')
+        for (let i = 0; i < 5; i++) f.network.hbbr.push(frameReceiverBytes(new Uint8Array(65552)))
+      if (kind === 'io') {
+        f.network.hbbr.receive = () => Promise.reject(new Error('PUBLIC_SECRET_SENTINEL'))
+        f.network.hbbr.push(frameReceiverBytes(Uint8Array.of(0)))
+      }
+      await flush()
+      expect(await f.relay.receive()).toBeNull()
+      expect(f.relay.failureReason?.()).toBe(
+        kind === 'queue' ? 'budget_exceeded' : kind === 'io' ? 'io_failed' : 'decode_rejected',
+      )
+      expect(f.diagnostic.snapshot().reason).toBe('unknown')
+    } finally {
+      await f.relay.close()
+    }
+  },
+)
+
+// 本地主動終止reader不是遠端EOF；晚到資料不可毒化已完成輪次。
+it('leaves a deliberately closed relay without a read failure', async () => {
+  const f = await paired()
+  await f.relay.close()
+  f.network.hbbr.push(Uint8Array.of(0xfe, 0xff, 0x07))
+  await flush()
+  expect(f.relay.failureReason?.()).toBeNull()
+})
 
 // 正常UDP註冊、週期RegisterPeer、PunchHole不透明回覆及一次relay建立。
 it('registers over UDP, keeps RegisterPeer alive and pairs one forced relay', async () => {
@@ -203,7 +299,11 @@ it('registers over UDP, keeps RegisterPeer alive and pairs one forced relay', as
     socketAddr: Uint8Array.of(1, 2, 3, 4, 5, 6, 7),
     relayServer: `${endpoints().hbbrTcp.host}:${endpoints().hbbrTcp.port}`,
   })
-  expect(relay?.uuid).toMatch(/^[0-9a-f]{32}$/)
+  // 正式Coordinator在驗簽後只接受Guid D格式；不能再用hex格式當fake oracle。
+  expect(
+    typeof relay?.uuid === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(relay.uuid),
+  ).toBe(true)
   expect(relay?.version).toBe(
     ((await receiverApi('rendezvous')) as typeof import('./rendezvous')).RECEIVER_VERSION,
   )
@@ -256,6 +356,118 @@ it.each(['punchHole', 'fetchLocalAddr'] as const)(
     expect(network.activeTimers()).toBe(0)
   },
 )
+
+// 固定hbbs送出控制回覆後可正常結束，不能因此中斷待連或已連的唯一relay。
+it.each(['pending', 'connected'] as const)(
+  'keeps the one relay alive when pinned hbbs ends after RelayResponse with hbbr %s',
+  async (state) => {
+    const network = new FakeNetwork()
+    network.holdHbbr = state === 'pending'
+    const f = await start(network)
+    await registered(network)
+    network.udp.push(encodeReceiverControl({ punchHole: { socketAddr: Uint8Array.of(1, 2, 3) } }))
+    await flush()
+    expect(controls(network.hbbs.sent)).toHaveLength(1)
+    let rejected = false
+    void f.promise.catch(() => {
+      rejected = true
+    })
+    await network.hbbs.close()
+    await flush()
+    expect(rejected).toBe(false)
+    expect(network.udp.closed).toBe(false)
+    expect(network.hbbr.closed).toBe(false)
+    if (state === 'pending') network.releaseHbbr()
+    const relay = await f.promise
+    await relay.send(Uint8Array.of(9, 8))
+    network.hbbr.push(frameReceiverBytes(Uint8Array.of(6, 5)))
+    expect(await relay.receive()).toEqual(Uint8Array.of(6, 5))
+    // hbbs結束不允許晚到重複通知重建relay或再次送response。
+    network.udp.push(encodeReceiverControl({ fetchLocalAddr: { socketAddr: Uint8Array.of(7) } }))
+    await flush()
+    expect(controls(network.hbbs.sent)).toHaveLength(1)
+    expect(network.opened.filter((item) => item.kind === 'tcp')).toHaveLength(2)
+    expect(f.diagnostic.snapshot().reason).toBe('unknown')
+    expect(await relay.close()).toBe(true)
+    expect(network.activeTimers()).toBe(0)
+  },
+)
+
+// 送出尚未完成時EOF仍失敗，晚到send完成也不得開新的hbbr。
+it('rejects EOF before the response send completes without late relay creation', async () => {
+  const network = new FakeNetwork()
+  const send = network.hbbs.send.bind(network.hbbs)
+  let release: (() => void) | undefined
+  // 只hold外部write completion，仍經正式response encoder與狀態機。
+  network.hbbs.send = async (bytes) => {
+    await send(bytes)
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+  }
+  const f = await start(network)
+  await registered(network)
+  network.udp.push(encodeReceiverControl({ punchHole: { socketAddr: Uint8Array.of(1) } }))
+  await flush()
+  await network.hbbs.close()
+  await expect(f.promise).rejects.toThrow(/^receiver_unavailable$/)
+  release!()
+  await flush()
+  expect(network.opened.filter((item) => item.kind === 'tcp')).toHaveLength(1)
+  expect(network.activeTimers()).toBe(0)
+})
+
+// 預期EOF不是I/O錯誤或資料截斷的通行證，未知控制也仍需拒絕。
+it.each(['partial-header', 'partial-body', 'unknown-control', 'io-error'] as const)(
+  'still rejects %s after sending RelayResponse',
+  async (kind) => {
+    const network = new FakeNetwork()
+    network.holdHbbr = true
+    if (kind === 'io-error') {
+      const receive = network.hbbs.receive.bind(network.hbbs)
+      // 以外部receive拒絕模擬I/O故障，不讀或分類例外文字。
+      network.hbbs.receive = async () => {
+        const value = await receive()
+        if (value === null) throw new Error('public_receive_failure')
+        return value
+      }
+    }
+    const f = await start(network)
+    await registered(network)
+    network.udp.push(encodeReceiverControl({ punchHole: { socketAddr: Uint8Array.of(1) } }))
+    await flush()
+    if (kind === 'partial-header') network.hbbs.push(Uint8Array.of(1))
+    if (kind === 'partial-body') network.hbbs.push(Uint8Array.of(8, 9))
+    if (kind === 'unknown-control')
+      network.hbbs.push(frameReceiverBytes(rawControl({ testNatResponse: { port: 1 } })))
+    await flush()
+    await network.hbbs.close()
+    await expect(f.promise).rejects.toThrow(/^receiver_unavailable$/)
+    network.releaseHbbr()
+    await flush()
+    expect(network.hbbr.closed).toBe(true)
+    expect(network.activeTimers()).toBe(0)
+  },
+)
+
+// 乾淨hbbs EOF亦不延長原hbbr connect期限或觸發重試。
+it('keeps the original hbbr timeout after the expected hbbs EOF', async () => {
+  const network = new FakeNetwork()
+  network.holdHbbr = true
+  const f = await start(network)
+  await registered(network)
+  network.udp.push(encodeReceiverControl({ punchHole: { socketAddr: Uint8Array.of(1) } }))
+  await flush()
+  await network.hbbs.close()
+  await flush()
+  network.advance(15000)
+  await expect(f.promise).rejects.toThrow(/^receiver_unavailable$/)
+  expect(f.diagnostic.snapshot()).toMatchObject({ phase: 'hbbr_open', reason: 'deadline' })
+  network.releaseHbbr()
+  await flush()
+  expect(network.opened.filter((item) => item.kind === 'tcp')).toHaveLength(2)
+  expect(network.activeTimers()).toBe(0)
+})
 
 // 同LAN FetchLocalAddr也只能轉forced relay，不送LocalAddr或直連。
 it('turns FetchLocalAddr into the same forced relay response', async () => {

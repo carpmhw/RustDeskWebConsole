@@ -18,7 +18,7 @@ import {
 } from './contract.ts'
 import { claimReceiverRun, readReceiverJson, writeReceiverResult } from './private-io.ts'
 import { runReceiver } from './runtime.ts'
-import type { ReceiverDuplex, ReceiverNetwork } from './rendezvous.ts'
+import type { ReceiverDuplex, ReceiverNetwork, ReceiverReadFailureReason } from './rendezvous.ts'
 import {
   createReceiverDiagnostic,
   formatReceiverDiagnostic,
@@ -509,6 +509,12 @@ function createSocketDuplex(options: SocketDuplexOptions): ReceiverDuplex {
     closing = false,
     closeRequested = false,
     drainReject: ((reason: Error) => void) | null = null
+  let readFailure: ReceiverReadFailureReason | null = null
+
+  // 只記錄首次可觀察事件；本地主動收尾與晚到事件不可新造或覆寫讀取失敗。
+  function recordReadFailure(reason: ReceiverReadFailureReason): void {
+    if (readFailure === null && !closed && !closing && !closeRequested) readFailure = reason
+  }
 
   // 終態清除所有等待者；晚到資料不得恢復duplex。
   function terminate(): void {
@@ -533,6 +539,7 @@ function createSocketDuplex(options: SocketDuplexOptions): ReceiverDuplex {
 
   // 只有原生close事件是關閉證據；error／abort／destroy要求都不能代替它。
   function acknowledgeClose(): void {
+    recordReadFailure('unknown')
     nativeClosed = true
     terminate()
     for (const waiter of closeWaiters.splice(0)) waiter(!closeFailed)
@@ -543,6 +550,7 @@ function createSocketDuplex(options: SocketDuplexOptions): ReceiverDuplex {
   function push(chunk: Uint8Array): void {
     if (closed) return
     if (!(chunk instanceof Uint8Array) || queuedBytes + chunk.length > MAX_RAW_BYTES) {
+      recordReadFailure(chunk instanceof Uint8Array ? 'budget_exceeded' : 'unknown')
       terminate()
       return
     }
@@ -655,20 +663,32 @@ function createSocketDuplex(options: SocketDuplexOptions): ReceiverDuplex {
   }
 
   // abort只終止本duplex，不影響其他socket。
-  const onAbort = (): void => terminate()
+  const onAbort = (): void => {
+    recordReadFailure('aborted')
+    terminate()
+  }
+  // 固定error事件本身是I/O證據；原生Error的任意欄位完全不讀取。
+  const onError = (): void => {
+    recordReadFailure('io_failed')
+    terminate()
+  }
   signal.addEventListener('abort', onAbort, { once: true })
   if (kind === 'tcp') {
     tcp!.on('data', (chunk: Buffer) => push(new Uint8Array(chunk)))
-    tcp!.on('error', terminate)
+    tcp!.on('error', onError)
+    // close不一定來自EOF，只有實際end事件才保存這個來源。
+    tcp!.on('end', () => recordReadFailure('eof'))
     tcp!.on('close', acknowledgeClose)
   } else {
     udp!.on('message', (chunk: Buffer) => push(new Uint8Array(chunk)))
-    udp!.on('error', terminate)
+    udp!.on('error', onError)
     udp!.on('close', acknowledgeClose)
   }
   return {
     send,
     receive,
+    // 只回固定primitive來源，collector仍由protocol owner決定何時標記失敗。
+    failureReason: () => readFailure,
     // 關閉時移除本duplex的abort listener，避免晚到abort恢復已關資源。
     async close(): Promise<boolean> {
       signal.removeEventListener('abort', onAbort)

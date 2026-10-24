@@ -48,6 +48,42 @@ const FIXED_PACKAGE_PIN = Object.freeze({
   integritySha256: 'e1bd76c075ff50f9f965cbfbc55fcd871466798eaca448e6f939c4586cd9065f',
   bundleSha256: '29450fd437c30dbb9da972dcd8de1bf1e5a34268bf6fef2cd80692805d407f2e',
 })
+const DIAGNOSTIC_PACKAGE_PIN = Object.freeze({
+  packageDirectory: join(
+    REPO,
+    'frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-01/portable',
+  ),
+  packageSha256: '9704428f76582c421b862d4cd49461611fe65b6f1a54b23d648e80a8a52deb09',
+  integritySha256: 'ade33ca425883e6b99b6293fe9d290efe29885f280de74c7c1d8f2b18e08163c',
+  bundleSha256: '8d369024c7a0dadf8e6221cdd976360c6b735b450e710fd7da1a4258adf8e8a2',
+})
+const EOF_FIXED_PACKAGE_PIN = Object.freeze({
+  packageDirectory: join(
+    REPO,
+    'frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-02/portable',
+  ),
+  packageSha256: '58623ffa2e41533cc887b5cb13cd509ca3030959ea1717027937705b6473807c',
+  integritySha256: 'c9e19ac93745b5fe57e21398ac5d2e062fe250bdc1cd0591add75c9b0081e206',
+  bundleSha256: '005b51a5084246dfeb109a42ffcf2953198c220a116bf61015e9e386a8e899b4',
+})
+const UUID_FIXED_PACKAGE_PIN = Object.freeze({
+  packageDirectory: join(
+    REPO,
+    'frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-03/portable',
+  ),
+  packageSha256: '86395b36604383fd0068785381eaf5e68e5bcb040ef50b7a190ef2f506837399',
+  integritySha256: '850dc4f40457651d6dba9d5c1da071d29487d56cdd4d3e4d6f8130e91e1a3d0d',
+  bundleSha256: '657e7cac66d9803ef7074f59988015220702d77d8caa5bb30a5430e806b6ef20',
+})
+const READ_SOURCE_PACKAGE_PIN = Object.freeze({
+  packageDirectory: join(
+    REPO,
+    'frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-04/portable',
+  ),
+  packageSha256: 'e7094d12b644df510a2e45ade29641f5a8ac80df9021e2d3f3bd359b2d23e3b8',
+  integritySha256: 'f84ff6df70d16db2225099242fc24e8c8b113015a1bb05258fe4c3e5b9f2e87b',
+  bundleSha256: '03d6c730119b941e20454e3f52ad9e920a08a6ef4473ac1e61d9c341ff559947',
+})
 const ORIGIN = 'http://127.0.0.1:18080'
 const { AbortController, AbortSignal } = globalThis
 
@@ -64,6 +100,11 @@ export function authorizeIsolation(env) {
       PROJECT,
       'rdweb-receiver-isolated-20261023-02',
       'rdweb-receiver-isolated-20261023-03',
+      'rdweb-receiver-isolated-20261024-04',
+      'rdweb-receiver-isolated-20261024-05',
+      'rdweb-receiver-isolated-20261024-06',
+      'rdweb-receiver-isolated-20261024-07',
+      'rdweb-receiver-isolated-20261024-08',
     ].includes(env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE) ||
     env.CI ||
     env.GITHUB_ACTIONS ||
@@ -81,6 +122,46 @@ export function authorizeIsolation(env) {
 // 僅明列已核准scope，不推算其他輪次；03與歷史包固定分離，沒有任意來源override。
 export function readIsolationScope(env) {
   authorizeIsolation(env)
+  if (env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE === 'rdweb-receiver-isolated-20261024-08')
+    return Object.freeze({
+      project: 'rdweb-receiver-isolated-20261024-08',
+      root: '/tmp/opencode/rdweb-test-receiver-isolated-20261024-08',
+      reuseImages: true,
+      images: REUSED_IMAGES,
+      ...READ_SOURCE_PACKAGE_PIN,
+    })
+  if (env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE === 'rdweb-receiver-isolated-20261024-07')
+    return Object.freeze({
+      project: 'rdweb-receiver-isolated-20261024-07',
+      root: '/tmp/opencode/rdweb-test-receiver-isolated-20261024-07',
+      reuseImages: true,
+      images: REUSED_IMAGES,
+      ...READ_SOURCE_PACKAGE_PIN,
+    })
+  if (env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE === 'rdweb-receiver-isolated-20261024-06')
+    return Object.freeze({
+      project: 'rdweb-receiver-isolated-20261024-06',
+      root: '/tmp/opencode/rdweb-test-receiver-isolated-20261024-06',
+      reuseImages: true,
+      images: REUSED_IMAGES,
+      ...UUID_FIXED_PACKAGE_PIN,
+    })
+  if (env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE === 'rdweb-receiver-isolated-20261024-05')
+    return Object.freeze({
+      project: 'rdweb-receiver-isolated-20261024-05',
+      root: '/tmp/opencode/rdweb-test-receiver-isolated-20261024-05',
+      reuseImages: true,
+      images: REUSED_IMAGES,
+      ...EOF_FIXED_PACKAGE_PIN,
+    })
+  if (env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE === 'rdweb-receiver-isolated-20261024-04')
+    return Object.freeze({
+      project: 'rdweb-receiver-isolated-20261024-04',
+      root: '/tmp/opencode/rdweb-test-receiver-isolated-20261024-04',
+      reuseImages: true,
+      images: REUSED_IMAGES,
+      ...DIAGNOSTIC_PACKAGE_PIN,
+    })
   if (env.RDWEB_RECEIVER_ISOLATED_AUTHORIZE === PROJECT)
     return Object.freeze({
       project: PROJECT,
@@ -109,12 +190,22 @@ export function readIsolationScope(env) {
 // directory／ZIP／manifest／實際bundle均須符合該scope的獨立pin，不信任可自行修改的清單。
 export function assertIsolationPackage(scope, actual) {
   const v = receiverFields(actual, ['directory', 'zipSha256', 'integritySha256', 'bundleSha256'])
-  const pin =
-    scope.project === 'rdweb-receiver-isolated-20261023-03'
-      ? FIXED_PACKAGE_PIN
-      : [PROJECT, 'rdweb-receiver-isolated-20261023-02'].includes(scope.project)
-        ? LEGACY_PACKAGE_PIN
-        : fail()
+  const pin = [
+    'rdweb-receiver-isolated-20261024-07',
+    'rdweb-receiver-isolated-20261024-08',
+  ].includes(scope.project)
+    ? READ_SOURCE_PACKAGE_PIN
+    : scope.project === 'rdweb-receiver-isolated-20261024-06'
+      ? UUID_FIXED_PACKAGE_PIN
+      : scope.project === 'rdweb-receiver-isolated-20261024-05'
+        ? EOF_FIXED_PACKAGE_PIN
+        : scope.project === 'rdweb-receiver-isolated-20261024-04'
+          ? DIAGNOSTIC_PACKAGE_PIN
+          : scope.project === 'rdweb-receiver-isolated-20261023-03'
+            ? FIXED_PACKAGE_PIN
+            : [PROJECT, 'rdweb-receiver-isolated-20261023-02'].includes(scope.project)
+              ? LEGACY_PACKAGE_PIN
+              : fail()
   if (
     v.directory !== pin.packageDirectory ||
     v.zipSha256 !== pin.packageSha256 ||

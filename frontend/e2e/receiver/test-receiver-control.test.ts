@@ -9,6 +9,8 @@ import {
 } from '../real/test-receiver-control'
 import { binding, clientReport, endpoints } from './test-fixtures'
 import type { Page } from '@playwright/test'
+import type { ReceiverPolicyGate } from '../real/test-receiver-policy'
+import { policyFixture } from './policy-fixture'
 
 // 認證／真HTTP是外部邊界；本案仍執行真正saved-target選擇及連線防護。
 vi.mock('../management/helpers/fixtures', () => ({
@@ -19,6 +21,27 @@ vi.mock('../management/helpers/fixtures', () => ({
 
 const key = endpoints().serverPublicKey
 const root = '/tmp/opencode/receiver-case-root'
+
+// 新白名單若缺項／誤改拼字會失敗；預期由已核准literal獨立列出。
+it.each([
+  'ready_policy',
+  'ready_streaming',
+  'ready_peer',
+  'ready_canvas',
+  'ready_snapshot',
+  'ready_diagnostics',
+] as const)('round trips the approved client substage %s', (stage) => {
+  const marker = '[[rdweb_receiver_stage:' + stage + ']]'
+  expect(receiverClientStageMarker(stage)).toBe(marker)
+  expect(parseReceiverClientStage('noise\n' + marker + '\n')).toBe(stage)
+})
+
+// 未核准的ready前綴不能藉由細分階段的改動變成任意診斷通道。
+it('does not accept an arbitrary ready-prefixed stage', () => {
+  expect(parseReceiverClientStage('[[rdweb_receiver_stage:ready_public_secret_sentinel]]')).toBe(
+    'unknown',
+  )
+})
 
 // 診斷只回固定階段，不回任意child文字；ANSI／reporter雜訊不能要求DOM快照。
 it('keeps client-stage diagnostics on a fixed safe allowlist', () => {
@@ -154,7 +177,9 @@ it.each([
   async (peerId, allowed) => {
     let clicks = 0,
       loaded = false
-    const popup = { bringToFront: async () => {} }
+    const fixture = policyFixture()
+    const popup = fixture.popup
+    let policy: ReceiverPolicyGate | undefined
     const row = {
       // 真Targets頁先回導航，再由非同步API填表；只替換瀏覽器等待的外部邊界。
       first() {
@@ -176,20 +201,35 @@ it.each([
         return role === 'cell'
           ? { count: async () => (options.name === peerId ? 1 : 0) }
           : {
+              // 公開saved link必須交給真policy gate驗target／origin。
+              getAttribute: async () => fixture.consoleUrl,
               click: async () => {
                 clicks++
+                fixture.open()
+                void fixture.initial.dispatch()
               },
             }
       },
     }
-    const page = {
-      goto: async () => {},
+    const page = Object.assign(fixture.source, {
       locator: () => ({ filter: () => row }),
-      context: () => ({ waitForEvent: async () => popup }),
-    } as unknown as Page
+    }) as unknown as Page
     const runtime = readReceiverCaseEnvironment(env())
-    if (allowed) expect(await openSavedReceiverConsole(page, runtime, binding())).toBe(popup)
-    else
+    if (allowed) {
+      expect(
+        await openSavedReceiverConsole(
+          page,
+          runtime,
+          binding(),
+          undefined,
+          /* 只收自己的policy owner，驗證結束必須收回route／listener。 */ (owner) => {
+            policy = owner
+          },
+        ),
+      ).toBe(popup)
+      policy?.beginCleanup()
+      await policy?.dispose()
+    } else
       await expect(openSavedReceiverConsole(page, runtime, binding())).rejects.toThrow(
         /^receiver_unavailable$/,
       )

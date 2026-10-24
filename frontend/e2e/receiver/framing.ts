@@ -53,6 +53,14 @@ export function createReceiverFramer(maxFrame: number) {
         return receiverUnavailable()
       }
     },
+    // EOF必須落在完整frame邊界；無論成敗都清除暫存並拒絕晚到資料。
+    finish(): void {
+      const complete = !closed && pending.length === 0
+      pending.fill(0)
+      pending = new Uint8Array()
+      closed = true
+      if (!complete) return receiverUnavailable()
+    },
     // 終態永久毒化，不重用半包或晚到資料。
     dispose(): void {
       pending.fill(0)

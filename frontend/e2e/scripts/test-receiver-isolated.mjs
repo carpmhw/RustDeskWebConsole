@@ -193,6 +193,442 @@ test('refuses old package fallback and substituted package metadata', async () =
 })
 
 // 精確重用分支缺檔／錯ID只能停，不得fallback成pull／build。
+test('binds the fourth diagnostic attempt to its approved new root and package', async () => {
+  const c = await api()
+  const env = { RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-04' }
+  assert.doesNotThrow(() => c.authorizeIsolation(env))
+  const scope = c.readIsolationScope(env)
+  assert.equal(scope.project, 'rdweb-receiver-isolated-20261024-04')
+  assert.equal(scope.root, '/tmp/opencode/rdweb-test-receiver-isolated-20261024-04')
+  assert.equal(
+    scope.packageDirectory.endsWith(
+      '/frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-01/portable',
+    ),
+    true,
+  )
+  assert.equal(
+    scope.packageSha256,
+    '9704428f76582c421b862d4cd49461611fe65b6f1a54b23d648e80a8a52deb09',
+  )
+  assert.equal(
+    scope.integritySha256,
+    'ade33ca425883e6b99b6293fe9d290efe29885f280de74c7c1d8f2b18e08163c',
+  )
+  assert.equal(
+    scope.bundleSha256,
+    '8d369024c7a0dadf8e6221cdd976360c6b735b450e710fd7da1a4258adf8e8a2',
+  )
+  assert.equal(scope.reuseImages, true)
+  assert.equal(c.isolationCommands(scope).build, null)
+  assert.deepEqual(c.isolationCommands(scope).up, [
+    'up',
+    '--no-build',
+    '--pull',
+    'never',
+    '-d',
+    '--wait',
+    '--wait-timeout',
+    '90',
+  ])
+  for (const id of ['rdweb-receiver-isolated-20261023-04', 'rdweb-receiver-isolated-20261024-09'])
+    assert.throws(
+      () => c.readIsolationScope({ RDWEB_RECEIVER_ISOLATED_AUTHORIZE: id }),
+      /^Error: receiver_unavailable$/,
+    )
+})
+
+// R8來源不符不能退回03或01／02包，未知extra與同時竄改manifest也拒絕。
+test('rejects pre-diagnostic package fallback for the fourth attempt', async () => {
+  const c = await api()
+  const scope = c.readIsolationScope({
+    RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-04',
+  })
+  const actual = {
+    directory: scope.packageDirectory,
+    zipSha256: '9704428f76582c421b862d4cd49461611fe65b6f1a54b23d648e80a8a52deb09',
+    integritySha256: 'ade33ca425883e6b99b6293fe9d290efe29885f280de74c7c1d8f2b18e08163c',
+    bundleSha256: '8d369024c7a0dadf8e6221cdd976360c6b735b450e710fd7da1a4258adf8e8a2',
+  }
+  assert.equal(c.assertIsolationPackage(scope, actual), true)
+  for (const id of [
+    'rdweb-receiver-isolated-20261023-01',
+    'rdweb-receiver-isolated-20261023-02',
+    'rdweb-receiver-isolated-20261023-03',
+  ]) {
+    const old = c.readIsolationScope({ RDWEB_RECEIVER_ISOLATED_AUTHORIZE: id })
+    for (const change of [
+      { directory: old.packageDirectory },
+      { zipSha256: old.packageSha256 },
+      { integritySha256: old.integritySha256 },
+      { bundleSha256: old.bundleSha256 },
+      { extra: true },
+    ])
+      assert.throws(
+        () => c.assertIsolationPackage(scope, { ...actual, ...change }),
+        /^Error: receiver_unavailable$/,
+      )
+    assert.throws(() => c.assertIsolationPackage(old, actual), /^Error: receiver_unavailable$/)
+  }
+})
+
+// 精確重用分支缺檔／錯ID只能停，不得fallback成pull／build。
+test('binds the fifth attempt to the approved EOF-fixed package without build or pull', async () => {
+  const c = await api()
+  const env = { RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-05' }
+  assert.doesNotThrow(() => c.authorizeIsolation(env))
+  const scope = c.readIsolationScope(env)
+  assert.equal(scope.project, 'rdweb-receiver-isolated-20261024-05')
+  assert.equal(scope.root, '/tmp/opencode/rdweb-test-receiver-isolated-20261024-05')
+  assert.equal(
+    scope.packageDirectory.endsWith(
+      '/frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-02/portable',
+    ),
+    true,
+  )
+  assert.equal(
+    scope.packageSha256,
+    '58623ffa2e41533cc887b5cb13cd509ca3030959ea1717027937705b6473807c',
+  )
+  assert.equal(
+    scope.integritySha256,
+    'c9e19ac93745b5fe57e21398ac5d2e062fe250bdc1cd0591add75c9b0081e206',
+  )
+  assert.equal(
+    scope.bundleSha256,
+    '005b51a5084246dfeb109a42ffcf2953198c220a116bf61015e9e386a8e899b4',
+  )
+  assert.equal(scope.reuseImages, true)
+  assert.equal(c.isolationCommands(scope).build, null)
+  assert.deepEqual(c.isolationCommands(scope).up, [
+    'up',
+    '--no-build',
+    '--pull',
+    'never',
+    '-d',
+    '--wait',
+    '--wait-timeout',
+    '90',
+  ])
+  assert.throws(
+    () =>
+      c.readIsolationScope({
+        RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-09',
+      }),
+    /^Error: receiver_unavailable$/,
+  )
+})
+
+// 05須精確使用EOF修正版，含診斷但尚未修正的04包亦不得fallback。
+test('rejects every historical package as a fallback for the fifth attempt', async () => {
+  const c = await api()
+  const scope = c.readIsolationScope({
+    RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-05',
+  })
+  const actual = {
+    directory: scope.packageDirectory,
+    zipSha256: '58623ffa2e41533cc887b5cb13cd509ca3030959ea1717027937705b6473807c',
+    integritySha256: 'c9e19ac93745b5fe57e21398ac5d2e062fe250bdc1cd0591add75c9b0081e206',
+    bundleSha256: '005b51a5084246dfeb109a42ffcf2953198c220a116bf61015e9e386a8e899b4',
+  }
+  assert.equal(c.assertIsolationPackage(scope, actual), true)
+  for (const id of [
+    'rdweb-receiver-isolated-20261023-01',
+    'rdweb-receiver-isolated-20261023-02',
+    'rdweb-receiver-isolated-20261023-03',
+    'rdweb-receiver-isolated-20261024-04',
+  ]) {
+    const old = c.readIsolationScope({ RDWEB_RECEIVER_ISOLATED_AUTHORIZE: id })
+    for (const change of [
+      { directory: old.packageDirectory },
+      { zipSha256: old.packageSha256 },
+      { integritySha256: old.integritySha256 },
+      { bundleSha256: old.bundleSha256 },
+      { extra: true },
+    ])
+      assert.throws(
+        () => c.assertIsolationPackage(scope, { ...actual, ...change }),
+        /^Error: receiver_unavailable$/,
+      )
+    assert.throws(() => c.assertIsolationPackage(old, actual), /^Error: receiver_unavailable$/)
+  }
+})
+
+// 06若誤綁舊包／root或產生build／pull會失敗；未知07仍不得自動取得scope。
+test('binds the sixth attempt to the approved UUID-fixed package without build or pull', async () => {
+  const c = await api()
+  const env = { RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-06' }
+  assert.doesNotThrow(() => c.authorizeIsolation(env))
+  const scope = c.readIsolationScope(env)
+  assert.equal(scope.project, 'rdweb-receiver-isolated-20261024-06')
+  assert.equal(scope.root, '/tmp/opencode/rdweb-test-receiver-isolated-20261024-06')
+  assert.equal(
+    scope.packageDirectory.endsWith(
+      '/frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-03/portable',
+    ),
+    true,
+  )
+  assert.equal(
+    scope.packageSha256,
+    '86395b36604383fd0068785381eaf5e68e5bcb040ef50b7a190ef2f506837399',
+  )
+  assert.equal(
+    scope.integritySha256,
+    '850dc4f40457651d6dba9d5c1da071d29487d56cdd4d3e4d6f8130e91e1a3d0d',
+  )
+  assert.equal(
+    scope.bundleSha256,
+    '657e7cac66d9803ef7074f59988015220702d77d8caa5bb30a5430e806b6ef20',
+  )
+  assert.equal(scope.reuseImages, true)
+  assert.equal(c.isolationCommands(scope).build, null)
+  assert.deepEqual(c.isolationCommands(scope).up, [
+    'up',
+    '--no-build',
+    '--pull',
+    'never',
+    '-d',
+    '--wait',
+    '--wait-timeout',
+    '90',
+  ])
+  assert.throws(
+    () =>
+      c.readIsolationScope({
+        RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-09',
+      }),
+    /^Error: receiver_unavailable$/,
+  )
+})
+
+// 06即使退回已有EOF修正的05包仍是錯來源；任一舊pin、跨scope或多餘欄位皆拒絕。
+test('rejects every historical package as a fallback for the sixth attempt', async () => {
+  const c = await api()
+  const scope = c.readIsolationScope({
+    RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-06',
+  })
+  const actual = {
+    directory: scope.packageDirectory,
+    zipSha256: '86395b36604383fd0068785381eaf5e68e5bcb040ef50b7a190ef2f506837399',
+    integritySha256: '850dc4f40457651d6dba9d5c1da071d29487d56cdd4d3e4d6f8130e91e1a3d0d',
+    bundleSha256: '657e7cac66d9803ef7074f59988015220702d77d8caa5bb30a5430e806b6ef20',
+  }
+  assert.equal(c.assertIsolationPackage(scope, actual), true)
+  for (const id of [
+    'rdweb-receiver-isolated-20261023-01',
+    'rdweb-receiver-isolated-20261023-02',
+    'rdweb-receiver-isolated-20261023-03',
+    'rdweb-receiver-isolated-20261024-04',
+    'rdweb-receiver-isolated-20261024-05',
+  ]) {
+    const old = c.readIsolationScope({ RDWEB_RECEIVER_ISOLATED_AUTHORIZE: id })
+    for (const change of [
+      { directory: old.packageDirectory },
+      { zipSha256: old.packageSha256 },
+      { integritySha256: old.integritySha256 },
+      { bundleSha256: old.bundleSha256 },
+      { extra: true },
+    ])
+      assert.throws(
+        () => c.assertIsolationPackage(scope, { ...actual, ...change }),
+        /^Error: receiver_unavailable$/,
+      )
+    assert.throws(() => c.assertIsolationPackage(old, actual), /^Error: receiver_unavailable$/)
+  }
+})
+
+// 07必須綁R8.1新包與新root，明列固定image ID且不產生build／pull命令。
+test('binds the seventh attempt to the approved read-source diagnostic package', async () => {
+  const c = await api()
+  const env = { RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-07' }
+  assert.doesNotThrow(() => c.authorizeIsolation(env))
+  const scope = c.readIsolationScope(env)
+  assert.equal(scope.project, 'rdweb-receiver-isolated-20261024-07')
+  assert.equal(scope.root, '/tmp/opencode/rdweb-test-receiver-isolated-20261024-07')
+  assert.equal(
+    scope.packageDirectory.endsWith(
+      '/frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-04/portable',
+    ),
+    true,
+  )
+  assert.equal(
+    scope.packageSha256,
+    'e7094d12b644df510a2e45ade29641f5a8ac80df9021e2d3f3bd359b2d23e3b8',
+  )
+  assert.equal(
+    scope.integritySha256,
+    'f84ff6df70d16db2225099242fc24e8c8b113015a1bb05258fe4c3e5b9f2e87b',
+  )
+  assert.equal(
+    scope.bundleSha256,
+    '03d6c730119b941e20454e3f52ad9e920a08a6ef4473ac1e61d9c341ff559947',
+  )
+  assert.equal(scope.reuseImages, true)
+  assert.deepEqual(scope.images, {
+    server: 'sha256:993e1615cd733264573f2440e6c1daeff7a8627c572c34085d6c5a0d7b8d504d',
+    api: 'sha256:2fa3aca31b154641864ccd327e9748d9c303b3cf58106e7f0254da04bf29e5fc',
+    web: 'sha256:470c199b6d9ec02b5e11156395482c69ea921a0251383d5257082aec2c396ad3',
+  })
+  assert.equal(c.isolationCommands(scope).build, null)
+  assert.deepEqual(c.isolationCommands(scope).up, [
+    'up',
+    '--no-build',
+    '--pull',
+    'never',
+    '-d',
+    '--wait',
+    '--wait-timeout',
+    '90',
+  ])
+  assert.throws(
+    () =>
+      c.readIsolationScope({
+        RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-09',
+      }),
+    /^Error: receiver_unavailable$/,
+  )
+})
+
+// 包含UUID修正但缺讀取來源的06包也不能fallback；所有舊pin與跨scope都必須拒絕。
+test('rejects every historical package as a fallback for the seventh attempt', async () => {
+  const c = await api()
+  const scope = c.readIsolationScope({
+    RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-07',
+  })
+  const actual = {
+    directory: scope.packageDirectory,
+    zipSha256: 'e7094d12b644df510a2e45ade29641f5a8ac80df9021e2d3f3bd359b2d23e3b8',
+    integritySha256: 'f84ff6df70d16db2225099242fc24e8c8b113015a1bb05258fe4c3e5b9f2e87b',
+    bundleSha256: '03d6c730119b941e20454e3f52ad9e920a08a6ef4473ac1e61d9c341ff559947',
+  }
+  assert.equal(c.assertIsolationPackage(scope, actual), true)
+  for (const id of [
+    'rdweb-receiver-isolated-20261023-01',
+    'rdweb-receiver-isolated-20261023-02',
+    'rdweb-receiver-isolated-20261023-03',
+    'rdweb-receiver-isolated-20261024-04',
+    'rdweb-receiver-isolated-20261024-05',
+    'rdweb-receiver-isolated-20261024-06',
+  ]) {
+    const old = c.readIsolationScope({ RDWEB_RECEIVER_ISOLATED_AUTHORIZE: id })
+    for (const change of [
+      { directory: old.packageDirectory },
+      { zipSha256: old.packageSha256 },
+      { integritySha256: old.integritySha256 },
+      { bundleSha256: old.bundleSha256 },
+      { extra: true },
+    ])
+      assert.throws(
+        () => c.assertIsolationPackage(scope, { ...actual, ...change }),
+        /^Error: receiver_unavailable$/,
+      )
+    assert.throws(() => c.assertIsolationPackage(old, actual), /^Error: receiver_unavailable$/)
+  }
+})
+
+// 08只新增獨立root，不出新包；三個來源pins與image ID仍須逐項精確核對。
+test('binds the eighth attempt to a fresh root and the approved existing receiver package', async () => {
+  const c = await api()
+  const env = { RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-08' }
+  assert.doesNotThrow(() => c.authorizeIsolation(env))
+  const scope = c.readIsolationScope(env)
+  assert.equal(scope.project, 'rdweb-receiver-isolated-20261024-08')
+  assert.equal(scope.root, '/tmp/opencode/rdweb-test-receiver-isolated-20261024-08')
+  assert.equal(
+    scope.packageDirectory.endsWith(
+      '/frontend/.cache/test-receiver-portable-v24.22.1-win-x64-20261024-04/portable',
+    ),
+    true,
+  )
+  assert.equal(
+    scope.packageSha256,
+    'e7094d12b644df510a2e45ade29641f5a8ac80df9021e2d3f3bd359b2d23e3b8',
+  )
+  assert.equal(
+    scope.integritySha256,
+    'f84ff6df70d16db2225099242fc24e8c8b113015a1bb05258fe4c3e5b9f2e87b',
+  )
+  assert.equal(
+    scope.bundleSha256,
+    '03d6c730119b941e20454e3f52ad9e920a08a6ef4473ac1e61d9c341ff559947',
+  )
+  assert.equal(scope.reuseImages, true)
+  assert.deepEqual(scope.images, {
+    server: 'sha256:993e1615cd733264573f2440e6c1daeff7a8627c572c34085d6c5a0d7b8d504d',
+    api: 'sha256:2fa3aca31b154641864ccd327e9748d9c303b3cf58106e7f0254da04bf29e5fc',
+    web: 'sha256:470c199b6d9ec02b5e11156395482c69ea921a0251383d5257082aec2c396ad3',
+  })
+  assert.equal(c.isolationCommands(scope).build, null)
+  assert.deepEqual(c.isolationCommands(scope).up, [
+    'up',
+    '--no-build',
+    '--pull',
+    'never',
+    '-d',
+    '--wait',
+    '--wait-timeout',
+    '90',
+  ])
+  const seven = c.readIsolationScope({
+    RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-07',
+  })
+  assert.equal(seven.root, '/tmp/opencode/rdweb-test-receiver-isolated-20261024-07')
+  assert.notEqual(scope.root, seven.root)
+  assert.equal(seven.packageDirectory, scope.packageDirectory)
+  assert.throws(
+    () =>
+      c.readIsolationScope({
+        RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-09',
+      }),
+    /^Error: receiver_unavailable$/,
+  )
+})
+
+// 07的程式包是08明確核准重用來源；更舊版本或extra欄位仍不得fallback。
+test('rejects older package fallbacks for the eighth attempt while allowing the exact shared package', async () => {
+  const c = await api()
+  const scope = c.readIsolationScope({
+    RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-08',
+  })
+  const actual = {
+    directory: scope.packageDirectory,
+    zipSha256: 'e7094d12b644df510a2e45ade29641f5a8ac80df9021e2d3f3bd359b2d23e3b8',
+    integritySha256: 'f84ff6df70d16db2225099242fc24e8c8b113015a1bb05258fe4c3e5b9f2e87b',
+    bundleSha256: '03d6c730119b941e20454e3f52ad9e920a08a6ef4473ac1e61d9c341ff559947',
+  }
+  assert.equal(c.assertIsolationPackage(scope, actual), true)
+  assert.equal(
+    c.assertIsolationPackage(
+      c.readIsolationScope({
+        RDWEB_RECEIVER_ISOLATED_AUTHORIZE: 'rdweb-receiver-isolated-20261024-07',
+      }),
+      actual,
+    ),
+    true,
+  )
+  for (const id of [
+    'rdweb-receiver-isolated-20261023-01',
+    'rdweb-receiver-isolated-20261023-02',
+    'rdweb-receiver-isolated-20261023-03',
+    'rdweb-receiver-isolated-20261024-04',
+    'rdweb-receiver-isolated-20261024-05',
+    'rdweb-receiver-isolated-20261024-06',
+  ]) {
+    const old = c.readIsolationScope({ RDWEB_RECEIVER_ISOLATED_AUTHORIZE: id })
+    for (const change of [
+      { directory: old.packageDirectory },
+      { zipSha256: old.packageSha256 },
+      { integritySha256: old.integritySha256 },
+      { bundleSha256: old.bundleSha256 },
+      { extra: true },
+    ])
+      assert.throws(
+        () => c.assertIsolationPackage(scope, { ...actual, ...change }),
+        /^Error: receiver_unavailable$/,
+      )
+  }
+})
+
+// 精確重用分支缺檔／錯ID只能停，不得fallback成pull／build。
 test('rejects missing or substituted reuse images while keeping first-attempt protection', async () => {
   const c = await api()
   assert.equal(typeof c.assertIsolationImage, 'function')
@@ -240,12 +676,26 @@ test('the reuse command plan never builds or pulls', async () => {
 test('preserves only a safe client stage in the orchestration outcome', async () => {
   const c = await api(),
     p = ports()
-  p.run = async () => ({
-    code: 'receiver_unavailable',
-    resourcesClosed: false,
-    clientStage: 'target_selection',
-  })
-  assert.equal((await c.executeIsolation(p)).clientStage, 'target_selection')
+  for (const stage of [
+    'target_selection',
+    'ready_policy',
+    'ready_streaming',
+    'ready_peer',
+    'ready_canvas',
+    'ready_snapshot',
+    'ready_diagnostics',
+  ]) {
+    // driver須保留已核准literal，但不得據此把原不可用結果升為成功。
+    p.run = async () => ({
+      code: 'receiver_unavailable',
+      resourcesClosed: false,
+      clientStage: stage,
+    })
+    const result = await c.executeIsolation(p)
+    assert.equal(result.clientStage, stage)
+    assert.equal(result.code, 'receiver_unavailable')
+    assert.equal(result.resourcesClosed, false)
+  }
   p.run = async () => ({
     code: 'receiver_unavailable',
     resourcesClosed: false,

@@ -83,6 +83,73 @@ afterEach(() => {
   state.failConnect = false
 })
 
+// 固定原因只由事件／guard產生；不能把close、錯誤原文或容量失敗一律當EOF。
+it.each([
+  ['end', 'eof'],
+  ['close', 'unknown'],
+  ['error', 'io_failed'],
+  ['overflow', 'budget_exceeded'],
+  ['abort', 'aborted'],
+] as const)('keeps the native TCP %s read source through late close', async (kind, expected) => {
+  const { createNodeReceiverNetwork } = await import('./cli')
+  const controller = new AbortController()
+  const d = createReceiverDiagnostic()
+  const duplex = await createNodeReceiverNetwork(endpoints(), d).openTcp(
+    endpoints().hbbrTcp,
+    controller.signal,
+  )
+  const socket = state.socket!
+  if (kind === 'end') socket.emit('end')
+  if (kind === 'error') socket.emit('error', new Error('PUBLIC_SECRET_SENTINEL'))
+  if (kind === 'overflow') socket.emit('data', Buffer.alloc(262145))
+  if (kind === 'abort') controller.abort()
+  socket.emit('close')
+  expect(await duplex.receive()).toBeNull()
+  expect(duplex.failureReason?.()).toBe(expected)
+  socket.emit('end')
+  socket.emit('error', new Error('PUBLIC_SECRET_SENTINEL'))
+  expect(duplex.failureReason?.()).toBe(expected)
+  expect(d.snapshot().phase).toBe('unknown')
+  expect(await duplex.close()).toBe(true)
+})
+
+// UDP亦保留明確error／raw容量／abort來源，不憑其close假造TCP EOF。
+it.each([
+  ['error', 'io_failed'],
+  ['overflow', 'budget_exceeded'],
+  ['abort', 'aborted'],
+] as const)('keeps the native UDP %s read source', async (kind, expected) => {
+  const { createNodeReceiverNetwork } = await import('./cli')
+  const controller = new AbortController()
+  const duplex = await createNodeReceiverNetwork(endpoints()).openUdp(
+    endpoints().hbbsUdp,
+    controller.signal,
+  )
+  if (kind === 'error') state.udp!.emit('error', new Error('PUBLIC_SECRET_SENTINEL'))
+  if (kind === 'overflow') state.udp!.emit('message', Buffer.alloc(262145))
+  if (kind === 'abort') controller.abort()
+  state.udp!.emit('close')
+  expect(duplex.failureReason?.()).toBe(expected)
+  expect(await duplex.close()).toBe(true)
+})
+
+// 主動收尾期間的end／error／abort不得新造讀取失敗，原生close仍須到齊。
+it('does not turn intentional native close or its late events into a read failure', async () => {
+  const { createNodeReceiverNetwork } = await import('./cli')
+  const controller = new AbortController()
+  const duplex = await createNodeReceiverNetwork(endpoints()).openTcp(
+    endpoints().hbbrTcp,
+    controller.signal,
+  )
+  const closing = duplex.close()
+  state.socket!.emit('end')
+  state.socket!.emit('error', new Error('PUBLIC_SECRET_SENTINEL'))
+  controller.abort()
+  state.socket!.emit('close')
+  expect(await closing).toBe(true)
+  expect(duplex.failureReason?.()).toBeNull()
+})
+
 // abort先要求UDP close，之後正式close必須等同一原生事件，不因重複要求而假失敗。
 it('waits for UDP close acknowledgement after abort without closing twice', async () => {
   const { createNodeReceiverNetwork } = await import('./cli')

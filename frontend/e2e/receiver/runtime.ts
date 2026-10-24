@@ -10,7 +10,12 @@ import {
 } from './contract.ts'
 import { createReceiverCrypto, type ReceiverCrypto } from './crypto.ts'
 import { verifyReceiverVp8 } from './media.ts'
-import { connectReceiverRelay, type ReceiverNetwork, type ReceiverRelay } from './rendezvous.ts'
+import {
+  connectReceiverRelay,
+  readReceiverFailureReason,
+  type ReceiverNetwork,
+  type ReceiverRelay,
+} from './rendezvous.ts'
 import { createReceiverSession, type ReceiverSession } from './session.ts'
 import type { ReceiverDiagnosticRecorder } from './diagnostic.ts'
 
@@ -584,11 +589,16 @@ export async function runReceiver(
       try {
         frame = await relay.receive()
       } catch {
+        if (finished) return
+        diagnostic?.fail('unknown', 'io_failed')
         fail()
         return
       }
       if (finished) return
       if (frame === null) {
+        const reason = readReceiverFailureReason(relay)
+        if (finished) return
+        diagnostic?.fail('unknown', reason)
         fail()
         return
       }

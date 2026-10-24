@@ -39,3 +39,29 @@ it('encodes canonical control and relay frame headers', async () => {
   expect(Array.from(c.frameReceiverBytes(Uint8Array.of(7, 8)))).toEqual([8, 7, 8])
   expect(() => c.frameReceiverBytes(new Uint8Array(65553))).toThrow(/^receiver_unavailable$/)
 })
+
+// 乾淨EOF只能在完整frame邊界；finish後不得接受晚到bytes。
+it.each([{ bytes: [] }, { bytes: [4, 9] }])(
+  'finishes only at a complete frame boundary $bytes',
+  async ({ bytes }) => {
+    const c = (await receiverApi('framing')) as typeof import('./framing')
+    const f = c.createReceiverFramer(65552)
+    expect(typeof f.finish).toBe('function')
+    f.push(Uint8Array.from(bytes))
+    expect(() => f.finish()).not.toThrow()
+    expect(() => f.push(Uint8Array.of(0))).toThrow(/^receiver_unavailable$/)
+  },
+)
+
+// 半header、半payload或完整frame後的殘包都不能以EOF截斷成成功。
+it.each([{ bytes: [1] }, { bytes: [8, 9] }, { bytes: [4, 9, 1] }])(
+  'rejects EOF with an incomplete frame $bytes',
+  async ({ bytes }) => {
+    const c = (await receiverApi('framing')) as typeof import('./framing')
+    const f = c.createReceiverFramer(65552)
+    expect(typeof f.finish).toBe('function')
+    f.push(Uint8Array.from(bytes))
+    expect(() => f.finish()).toThrow(/^receiver_unavailable$/)
+    expect(() => f.push(Uint8Array.of(0))).toThrow(/^receiver_unavailable$/)
+  },
+)

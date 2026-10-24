@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { MessageChannel } from 'node:worker_threads'
@@ -10,6 +11,12 @@ import { decodeMessage, encodeIdentity, encodeMessage } from '../../src/rdweb/co
 import type { hbb } from '../../src/rdweb/generated/message.ts'
 import type { Phase } from '../../src/rdweb/types.ts'
 import type { VideoMainEvent, VideoWorkerEvent } from '../../src/rdweb/video-types.ts'
+import { binding } from './test-fixtures'
+import { publicReceiverText } from './contract.ts'
+import { createReceiverCrypto } from './crypto.ts'
+import { createReceiverSession } from './session.ts'
+import { verifyReceiverVp8 } from './media.ts'
+import { createReceiverFramer, frameReceiverBytes } from './framing.ts'
 
 const TARGET = '00000000-0000-0000-0000-000000000001'
 const PEER = '123456789'
@@ -52,6 +59,15 @@ interface DecoderInitLike {
 // 公開VideoDecoder替身只驗Worker控制流，不解碼真VP8或冒充browser支持。
 class PublicVideoDecoder {
   static enabled = true
+  static failDecode = false
+  static holdOutput = false
+  static lastInput: Uint8Array | null = null
+  static readonly pending: { frame: PublicFrame; output: (frame: PublicFrame) => void }[] = []
+
+  // 只交付本測試hold的output，用來驗正式Worker拒絕晚到frame的ownership。
+  static releaseOutput(): void {
+    for (const { frame, output } of this.pending.splice(0)) output(frame)
+  }
   // probe與media配置都只廣告vp8，其他family回unsupported。
   static async isConfigSupported(config: VideoDecoderConfig): Promise<VideoDecoderSupport> {
     return { supported: PublicVideoDecoder.enabled && config.codec === 'vp8', config }
@@ -79,13 +95,20 @@ class PublicVideoDecoder {
     this.state = 'configured'
   }
   // 以配置幾何產生公開frame並同步通知dequeue，維持原有pump。
-  decode(chunk: { timestamp: number }): void {
+  decode(chunk: PublicEncodedVideoChunk): void {
+    PublicVideoDecoder.lastInput = chunk.init.data.slice()
+    if (PublicVideoDecoder.failDecode) {
+      this.#init.error()
+      return
+    }
     const frame = new PublicFrame(
       this.config?.codedWidth ?? 320,
       this.config?.codedHeight ?? 240,
       chunk.timestamp,
     )
-    this.#init.output(frame)
+    if (PublicVideoDecoder.holdOutput)
+      PublicVideoDecoder.pending.push({ frame, output: this.#init.output })
+    else this.#init.output(frame)
     this.#dequeue?.()
   }
   // RAM替身沒有native資源，只更新狀態。
@@ -97,7 +120,15 @@ class PublicVideoDecoder {
 
 // 只承接createNativeDecoder的chunk建構參數，不進行真正解碼。
 class PublicEncodedVideoChunk {
-  constructor(readonly init: { type: string; timestamp: number; data: Uint8Array }) {}
+  // 真EncodedVideoChunk會同步複製輸入；替身同樣不能保留稍後被清零的view。
+  constructor(readonly init: { type: string; timestamp: number; data: Uint8Array }) {
+    this.init = { ...init, data: init.data.slice() }
+  }
+
+  // timestamp沿原生介面直接取值，不由替身frame預設值掩蓋缺欄位。
+  get timestamp(): number {
+    return this.init.timestamp
+  }
 }
 
 // 公開Socket替身取代transport，NaCl與protobuf仍由正式Worker執行。
@@ -308,6 +339,144 @@ function publicVp8Keyframe(): Uint8Array {
 
 let workerCode = ''
 
+// 真receiver與編譯Worker只在transport／decoder邊界替換；不手寫server協定回覆。
+function receiverWorkerLoop() {
+  const harness = createHarness(workerCode)
+  const probe = new PublicFrame()
+  const b = binding()
+  const crypto = createReceiverCrypto(b)
+  const receiverOutbox: Uint8Array[] = []
+  const framer = createReceiverFramer(65552)
+  const timers = new Set<() => void>()
+  const password = new TextEncoder().encode('public-loop-password')
+  let clock = 0,
+    clientIndex = 0,
+    clientFrames = 0,
+    assisted = false
+  const session = createReceiverSession(b, password, {
+    crypto,
+    publicVp8: verifyReceiverVp8(
+      readFileSync(new URL('../../.cache/codec-fixtures/vp8.webm', import.meta.url)),
+    ),
+    // 兩方向都用正式TCP framing；只複製自有cipher，不開任何socket。
+    send: async (frame) => {
+      receiverOutbox.push(frameReceiverBytes(frame))
+    },
+    now: () => clock,
+    // 本測試不推進影像timer，取消仍須真正移除本輪所有權。
+    schedule: (_delay, callback) => {
+      timers.add(callback)
+      return () => {
+        timers.delete(callback)
+      }
+    },
+  })
+  password.fill(0)
+
+  // 單一consumer依序交換密文；有界循環避免錯誤echo形成無限測試。
+  async function drain(): Promise<void> {
+    const socket = harness.socket()
+    for (let round = 0; round < 64; round++) {
+      let progress = false
+      for (const frame of receiverOutbox.splice(0)) {
+        socket.deliver(asArrayBuffer(frame))
+        frame.fill(0)
+        progress = true
+      }
+      const assist = harness.events
+        .map(({ value }) => value)
+        .find((value) => value.type === 'assist')
+      if (!assisted && assist?.type === 'assist') {
+        assisted = true
+        const source = new TextEncoder().encode('public-loop-password')
+        const intermediate = createHash('sha256').update(source).update(assist.salt).digest()
+        const proof = createHash('sha256').update(intermediate).update(assist.challenge).digest()
+        harness.send({ type: 'assist-result', revision: 1, proof })
+        source.fill(0)
+        intermediate.fill(0)
+        proof.fill(0)
+        progress = true
+      }
+      while (clientIndex < socket.sent.length) {
+        for (const frame of framer.push(socket.sent[clientIndex++]!)) {
+          await session.receive(frame)
+          clientFrames++
+        }
+        progress = true
+      }
+      if (!progress) return
+    }
+    throw new Error('public_loop_budget_exceeded')
+  }
+
+  return {
+    harness,
+    session,
+    // 模擬可信後端ready，不取server私鑰；peer signing key來自本輪真receiver。
+    async start(): Promise<void> {
+      harness.deliverProbe(probe)
+      await waitForEvent(harness, 'capabilities')
+      harness.send({
+        type: 'start',
+        revision: 1,
+        target: TARGET,
+        peer: b.peerId,
+        origin: ORIGIN,
+        base: BASE,
+        ticket: TICKET,
+      })
+      await waitForPhase(harness, 'awaiting_ready')
+      harness.socket().deliver(
+        JSON.stringify({
+          type: 'rdweb.ready',
+          protocol: 'rustdesk/1.4.2',
+          transport: 'tcp',
+          target_id: TARGET,
+          rustdesk_id: b.peerId,
+          connection_id: CONNECTION,
+          peer_signing_key: Buffer.from(crypto.signingPublicKey).toString('base64'),
+        }),
+      )
+      await session.start()
+    },
+    // 只在同一有序transport推進後檢查安全predicate，不以固定sleep猜已登入。
+    async until(predicate: () => boolean): Promise<void> {
+      await vi.waitFor(
+        async () => {
+          await drain()
+          expect(predicate()).toBe(true)
+        },
+        { timeout: 5000 },
+      )
+    },
+    // 只推進RAM oracle的單調時間，不重排影像或改正式deadline。
+    advance(ms: number): void {
+      clock += ms
+    },
+    // 只回正式framer交給session的完整frame數；不暴露cipher或私有nonce。
+    deliveredClientFrames(): number {
+      return clientFrames
+    },
+    // 取消真session自有timer並釋放本案Worker／frame／ports，失敗也不外洩資源。
+    async close(): Promise<void> {
+      try {
+        await session.close()
+        expect(timers.size).toBe(0)
+        harness.send({ type: 'dispose', revision: 1 })
+        await waitForEvent(harness, 'disposed')
+      } finally {
+        crypto.dispose()
+        framer.dispose()
+        for (const bytes of receiverOutbox.splice(0)) bytes.fill(0)
+        for (const { value } of harness.events) if (value.type === 'frame') value.frame.close()
+        PublicVideoDecoder.releaseOutput()
+        probe.close()
+        harness.close()
+      }
+    },
+  }
+}
+
 // 以現有Vite把正式protocol.worker.ts編成單一IIFE，保留原entry行為。
 beforeAll(async () => {
   const root = fileURLToPath(new URL('../../', import.meta.url))
@@ -337,7 +506,138 @@ beforeAll(async () => {
 
 beforeEach(() => {
   PublicVideoDecoder.enabled = true
+  PublicVideoDecoder.failDecode = false
+  PublicVideoDecoder.holdOutput = false
+  PublicVideoDecoder.lastInput = null
 })
+
+// 真producer輸出的version／權限／公開VP8經正式Worker處理，仍須Main presented才可送五鍵。
+it('closes a real receiver and compiled worker loop through presentation and five keys', async () => {
+  const loop = receiverWorkerLoop()
+  try {
+    await loop.start()
+    await loop.until(() => loop.harness.events.some(({ value }) => value.type === 'frame'))
+    const peer = await waitForEvent(loop.harness, 'peer')
+    expect(peer.peer).toMatchObject({ platform: 'Windows', version: 'rdweb-test-receiver/0.1.0' })
+    expect(loop.session.snapshot()).toMatchObject({
+      authenticated: true,
+      macVerified: true,
+      received: false,
+    })
+    const expectedChunk = publicVp8Keyframe()
+    expect(
+      PublicVideoDecoder.lastInput?.every((byte, index) => byte === expectedChunk[index]),
+    ).toBe(true)
+    expect(PublicVideoDecoder.lastInput?.length).toBe(expectedChunk.length)
+    // 此替身同步output後尚未還Main credit；不能要求它先送video ACK。
+    expect(loop.deliveredClientFrames()).toBe(2)
+    expect(loop.session.snapshot()).toMatchObject({
+      parsed: true,
+      unavailable: false,
+      received: false,
+    })
+    expect(
+      loop.harness.events.some(
+        ({ value }) => value.type === 'phase' && value.phase === 'streaming',
+      ),
+    ).toBe(false)
+    expect(
+      loop.harness.events.some(({ value }) => value.type === 'input-state' && value.ready),
+    ).toBe(false)
+    const frame = await waitForEvent(loop.harness, 'frame')
+    // 手控Main邊界依正式ownership先釋放frame；drawn只測gate，不表示畫布真的繪製。
+    frame.frame.close()
+    loop.harness.send({
+      type: 'presented',
+      revision: 1,
+      generation: frame.generation,
+      frame_id: frame.frame_id,
+      drawn: true,
+    })
+    const state = await waitForInputReady(loop.harness)
+    expect(state).toMatchObject({ keyboard: true, clipboard: false })
+    // presented還credit後，PublicKey、LoginRequest及video ACK皆須抵達真session。
+    await loop.until(() => loop.deliveredClientFrames() === 3)
+    expect(loop.session.snapshot()).toMatchObject({
+      parsed: true,
+      unavailable: false,
+      received: false,
+    })
+    loop.harness.send({
+      type: 'input-batch',
+      revision: 1,
+      input_generation: state.input_generation,
+      batch_id: 1,
+      events: [
+        { kind: 'key', key: 'Control', down: true, modifiers: [] },
+        { kind: 'shortcut', char: 'a', down: true, modifiers: ['Control'] },
+        { kind: 'shortcut', char: 'a', down: false, modifiers: ['Control'] },
+        { kind: 'key', key: 'Control', down: false, modifiers: [] },
+        { kind: 'text', text: publicReceiverText(binding()), modifiers: [] },
+      ],
+    })
+    await loop.until(() => loop.session.snapshot().sequenceComplete)
+    expect(loop.session.snapshot()).toMatchObject({
+      textSingle: true,
+      textExact: true,
+      sequenceValid: true,
+      windowComplete: false,
+      unavailable: false,
+    })
+    expect((await waitForEvent(loop.harness, 'input-ack')).sent).toBe(true)
+    loop.advance(5000)
+    expect(loop.session.snapshot().windowComplete).toBe(true)
+    expect(loop.harness.events.some(({ value }) => value.type === 'failure')).toBe(false)
+  } finally {
+    await loop.close()
+  }
+}, 15000)
+
+// native邊界注入錯誤時真Worker必須fail closed，不能以receiver已認證恢復streaming／輸入。
+it('fails the receiver worker loop when the decoder boundary rejects the public frame', async () => {
+  PublicVideoDecoder.failDecode = true
+  const loop = receiverWorkerLoop()
+  try {
+    await loop.start()
+    await loop.until(() => loop.harness.events.some(({ value }) => value.type === 'failure'))
+    expect((await waitForEvent(loop.harness, 'failure')).code).toBe('video_decode_failed')
+    expect(loop.harness.socket().closed).toBe(true)
+    expect(loop.session.snapshot().received).toBe(false)
+    expect(
+      loop.harness.events.some(
+        ({ value }) => value.type === 'phase' && value.phase === 'streaming',
+      ),
+    ).toBe(false)
+  } finally {
+    await loop.close()
+  }
+}, 15000)
+
+// 已關閉generation的晚到output必須close，不可復活frame／streaming或送出輸入。
+it('releases a late decoder output after the receiver worker loop is disposed', async () => {
+  PublicVideoDecoder.holdOutput = true
+  const loop = receiverWorkerLoop()
+  try {
+    await loop.start()
+    await loop.until(() => PublicVideoDecoder.pending.length === 1)
+    const late = PublicVideoDecoder.pending[0]!.frame
+    loop.harness.send({ type: 'dispose', revision: 1 })
+    await waitForEvent(loop.harness, 'disposed')
+    const sent = loop.harness.socket().sent.length
+    PublicVideoDecoder.releaseOutput()
+    expect(late.closed).toBe(true)
+    expect(
+      loop.harness.events.some(
+        ({ value }) =>
+          value.type === 'frame' || (value.type === 'phase' && value.phase === 'streaming'),
+      ),
+    ).toBe(false)
+    expect(loop.harness.socket().sent.length).toBe(sent)
+    expect(loop.session.snapshot().received).toBe(false)
+  } finally {
+    await loop.close()
+  }
+}, 15000)
 
 // 正式Worker經capabilities、NaCl登入、WPT frame presented到輸入ACK全程RAM控制。
 it('drives the compiled worker through encrypted login, a WPT frame and input in RAM', async () => {

@@ -409,6 +409,43 @@ it.each(['empty-password', 'large-password', 'bad-endpoints', 'bad-vp8', 'aborte
   },
 )
 
+// runtime只在未終態的讀取失敗投影真relay來源；缺來源仍unknown，結果schema不變。
+it.each(['eof', 'io_failed', 'budget_exceeded', 'aborted', 'missing'] as const)(
+  'reports a post-login relay read source of %s',
+  async (reason) => {
+    const f = await startRun()
+    await logIn(f.network)
+    if (reason !== 'missing') Object.assign(f.network.hbbr, { failureReason: () => reason })
+    await f.network.hbbr.close()
+    const result = await f.promise
+    expect(result).toMatchObject({
+      code: 'receiver_unavailable',
+      authenticated: true,
+      received: false,
+      resourcesClosed: true,
+    })
+    const snapshot = f.diagnostic.snapshot()
+    expect(snapshot).toMatchObject({
+      phase: 'unknown',
+      reason: reason === 'missing' ? 'unknown' : reason,
+    })
+    f.network.hbbr.push(Uint8Array.of(0xfe, 0xff, 0x07))
+    expect(f.diagnostic.snapshot()).toEqual(snapshot)
+    expect(Object.isFrozen(snapshot)).toBe(true)
+    expectSafeResult(result)
+  },
+)
+
+// 完整輸入窗已完成時，收尾喚醒的reader不得拿底層舊來源毒化complete快照。
+it('does not consume a read failure source during successful runtime cleanup', async () => {
+  const f = await startRun()
+  const client = await logIn(f.network)
+  Object.assign(f.network.hbbr, { failureReason: () => 'io_failed' })
+  await completeInput(f.network, client)
+  expect((await f.promise).code).toBe('receiver_match')
+  expect(f.diagnostic.snapshot()).toMatchObject({ phase: 'complete', reason: 'none' })
+})
+
 // 正常runtime必須只建立一個crypto實例，同一公鑰註冊後交session完成輸入。
 it('runs a complete relay, login, input window and closes resources once', async () => {
   const fixture = await startRun()
@@ -440,6 +477,26 @@ it('runs a complete relay, login, input window and closes resources once', async
     sessionClose: 'confirmed',
     timersClose: 'confirmed',
   })
+})
+
+// 真實送出的兩側relay控制須共用符合Coordinator Guid D gate的同一UUID，之後仍須正常加密／認證／輸入。
+it('keeps a coordinator-compatible relay UUID through encrypted input', async () => {
+  const f = await startRun()
+  const client = await logIn(f.network)
+  const hbbsFramer = createReceiverFramer(65552)
+  const hbbsFrames = f.network.hbbs.sent.flatMap((chunk) => hbbsFramer.push(chunk))
+  hbbsFramer.dispose()
+  const offered = decodeReceiverControl(hbbsFrames[0]!).relayResponse?.uuid
+  const requested = decodeReceiverControl(relayFrames(f.network)[0]!).requestRelay?.uuid
+  expect(
+    typeof offered === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(offered),
+  ).toBe(true)
+  expect(requested === offered).toBe(true)
+  await completeInput(f.network, client)
+  const result = await f.promise
+  expect(result.code).toBe('receiver_match')
+  expectSafeResult(result)
 })
 
 // 未建session前的失敗不能只留下空證據，且abort收尾不得覆寫真正失敗分支。
@@ -513,6 +570,8 @@ it.each(['public_key', 'input_window'] as const)('locates rejected crypto in %s'
   const f = await startRun()
   if (phase === 'public_key') await completeRelay(f.network)
   else await logIn(f.network)
+  // cleanup可能喚醒底層reader；既有session首失敗不得被該來源覆寫。
+  Object.assign(f.network.hbbr, { failureReason: () => 'io_failed' })
   f.network.hbbr.push(frameReceiverBytes(new Uint8Array(32)))
   await flush()
   f.network.advance(250)
@@ -556,6 +615,21 @@ it('diagnoses cleanup expiration without changing the result contract', async ()
   const result = await f.promise
   expect(result.resourcesClosed).toBe(false)
   expect(f.diagnostic.snapshot()).toMatchObject({ reason: 'aborted', cleanupBudgetExceeded: true })
+  expectSafeResult(result)
+})
+
+// hbbs控制通道正常結束後，仍須完成真NaCl／proof與原五鍵觀察窗才可match。
+it('completes real crypto and input after the hbbs control connection ends', async () => {
+  const f = await startRun()
+  const client = await logIn(f.network)
+  await f.network.hbbs.close()
+  await flush()
+  await completeInput(f.network, client)
+  const result = await f.promise
+  expect(result.code).toBe('receiver_match')
+  expect(
+    result.identityBound && result.authenticated && result.macVerified && result.resourcesClosed,
+  ).toBe(true)
   expectSafeResult(result)
 })
 

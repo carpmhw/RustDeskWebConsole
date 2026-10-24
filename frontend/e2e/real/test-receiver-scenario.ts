@@ -23,6 +23,7 @@ import {
 } from './encoded-input-diagnostics'
 import { publicReceiverText, type ReceiverClientReport } from '../receiver/contract'
 import type { ReceiverClientControl } from '../receiver/client-control'
+import type { ReceiverPolicyGate } from './test-receiver-policy'
 
 // 固定三動作的遠端座標；不沿用記事本幾何或官方client版本。
 const CLICK = { x: 20, y: 30 } as const
@@ -42,6 +43,7 @@ class PlaywrightReceiverPort {
     private readonly page: Page,
     private readonly expected: string,
     private readonly onStage: (stage: ReceiverClientStage) => void,
+    private readonly assertPolicy: () => void,
   ) {}
 
   // 使用Node單調時鐘，與瀏覽器內clock分開。
@@ -52,9 +54,14 @@ class PlaywrightReceiverPort {
   // 真影像ready及peer summary存在後才允許固定輸入。
   async ready(): Promise<void> {
     this.onStage('console_ready')
+    this.onStage('ready_policy')
+    this.assertPolicy()
     await expect(this.page.getByTestId('console-auto-reconnect')).not.toBeChecked()
+    this.onStage('ready_streaming')
     await expect(this.page.getByTestId('console-streaming')).toBeVisible({ timeout: 45000 })
+    this.onStage('ready_peer')
     await expect(this.page.getByTestId('console-verified')).toBeVisible({ timeout: 45000 })
+    this.onStage('ready_canvas')
     await this.page.waitForFunction(
       /* 只掃自有Canvas的alpha／RGB，不輸出pixels或hash。 */ () => {
         try {
@@ -69,9 +76,11 @@ class PlaywrightReceiverPort {
       undefined,
       { timeout: 45000 },
     )
+    this.onStage('ready_snapshot')
     await this.refresh()
     if (!this.#current.streaming || !this.#current.identityVerified)
       throw new Error('receiver_unavailable')
+    this.onStage('ready_diagnostics')
     await prepareEncodedInputWorker(this.page)
     await this.page.evaluate(
       /* 只有既有text-only／五鍵profile，不載原文字logger或clipboard觀察。 */ (text) => {
@@ -88,6 +97,7 @@ class PlaywrightReceiverPort {
   // 真Canvas點擊也證明本輪鍵盤scope可聚焦；固定座標不讀遠端文字或pixel。
   async clickRemote(): Promise<void> {
     this.onStage('input')
+    this.assertPolicy()
     const surface = this.page.getByTestId('console-canvas')
     await expect(surface).toBeVisible()
     const position = await surface.evaluate(
@@ -110,6 +120,7 @@ class PlaywrightReceiverPort {
       },
       CLICK,
     )
+    this.assertPolicy()
     await surface.click({ position })
     await expect(this.page.getByTestId('console-input-active')).toBeVisible({ timeout: 5000 })
     await this.refresh()
@@ -117,12 +128,14 @@ class PlaywrightReceiverPort {
 
   // 只送一次全選，不追加第二個Ctrl+A。
   async selectAll(): Promise<void> {
+    this.assertPolicy()
     await this.page.keyboard.press('Control+a')
     await this.refresh()
   }
 
   // 只注入本輪RAM產生的公開文字，不從剪貼簿或檔案讀取。
   async insertText(text: string): Promise<void> {
+    this.assertPolicy()
     await this.page.keyboard.insertText(text)
     await this.refresh()
   }
@@ -137,6 +150,7 @@ class PlaywrightReceiverPort {
   // 本地窗結束後只等receiver自行斷線；不送額外操作，也不重設整案deadline。
   async waitForPeerEnd(deadline: number): Promise<void> {
     this.onStage('peer_end')
+    this.assertPolicy()
     const left = deadline - this.now()
     if (!Number.isFinite(left) || left <= 0) throw new Error('receiver_unavailable')
     await this.page.waitForFunction(
@@ -145,10 +159,12 @@ class PlaywrightReceiverPort {
       undefined,
       { timeout: left },
     )
+    this.assertPolicy()
   }
 
   // 觀察窗結束先取安全摘要，再等receiver收尾；不取文字／hash／timeline。
   async submissionEvidence(): Promise<boolean> {
+    this.assertPolicy()
     const capture = await this.page.evaluate(
       /* 診斷scope只回既有布林，不回Worker encoded payload。 */ async () => {
         const main = window.__rdwebInputDiagnostics,
@@ -157,6 +173,7 @@ class PlaywrightReceiverPort {
         return { main: main.textOnlySnapshot(), encoded: await encoded.takeInputOnly() }
       },
     )
+    this.assertPolicy()
     return confirmReceiverSubmission(capture.main, capture.encoded)
   }
 
@@ -168,6 +185,7 @@ class PlaywrightReceiverPort {
   // 只讀五鍵安全布林及畫面存在性；不取原文、peer值或exception。
   private async refresh(): Promise<void> {
     try {
+      this.assertPolicy()
       this.#current = await this.page.evaluate((toolVersion) => {
         const streaming = !!document.querySelector('[data-testid="console-streaming"]')
         const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="console-canvas"]')
@@ -209,6 +227,7 @@ class PlaywrightReceiverPort {
           unavailable: !streamingPresented || !identityVerified || alert || operation,
         }
       }, RECEIVER_VERSION)
+      this.assertPolicy()
     } catch {
       this.#current = {
         streaming: false,
@@ -248,6 +267,7 @@ export async function executeReceiverCase(page: Page): Promise<void> {
     started = false,
     cleanupSucceeded = true
   let report: ReceiverClientReport | undefined
+  let policy: ReceiverPolicyGate | undefined
   let stage: ReceiverClientStage = 'setup',
     failureStage: ReceiverClientStage | undefined
   // 階段只留本案RAM，最後才輸出一次白名單marker，不記載每次wait或頁面內容。
@@ -261,11 +281,28 @@ export async function executeReceiverCase(page: Page): Promise<void> {
     started = true
     await page.context().addInitScript(installInputDiagnostics)
     await attachEncodedInputDiagnostics(page.context())
-    consolePage = await openSavedReceiverConsole(page, env, client.binding, onStage)
+    consolePage = await openSavedReceiverConsole(
+      page,
+      env,
+      client.binding,
+      onStage,
+      /* 在點連線前取得owner，準備失敗也不會遺失自有popup。 */ (gate) => {
+        policy = gate
+      },
+    )
     const result = await runReceiverScenario(
-      new PlaywrightReceiverPort(consolePage, publicReceiverText(client.binding), onStage),
+      new PlaywrightReceiverPort(
+        consolePage,
+        publicReceiverText(client.binding),
+        onStage,
+        /* 缺owner或晚到違規都不得繼續送輸入。 */ () => {
+          if (!policy) throw new Error('receiver_unavailable')
+          policy.assertSingleAttempt()
+        },
+      ),
       publicReceiverText(client.binding),
     )
+    policy?.assertSingleAttempt()
     report = {
       ...report,
       identityVerified: result.identityVerified,
@@ -281,6 +318,8 @@ export async function executeReceiverCase(page: Page): Promise<void> {
     if (report) report.unavailable = true
   } finally {
     onStage('cleanup')
+    policy?.beginCleanup()
+    consolePage ??= policy?.page
     if (consolePage && !consolePage.isClosed()) {
       try {
         await consolePage.getByTestId('console-end').click({ timeout: 2000 })
@@ -294,7 +333,23 @@ export async function executeReceiverCase(page: Page): Promise<void> {
         cleanupSucceeded = false
       }
     } else if (!consolePage) cleanupSucceeded = false
+    if (policy) {
+      try {
+        if (!(await policy.dispose())) cleanupSucceeded = false
+      } catch {
+        cleanupSucceeded = false
+      }
+      if (report && !policy.valid()) {
+        report.scopeIntact = false
+        report.unavailable = true
+      }
+    }
     if (report) {
+      // 全程observer包含gate解除與關頁交錯，正常收尾不能掩蓋額外attempt。
+      if (resources.opened > 1 || resources.sockets > 1) {
+        report.scopeIntact = false
+        report.unavailable = true
+      }
       report.resourcesClosed =
         cleanupSucceeded && resources.opened === resources.closed && resources.wrongPrefix === 0
       report.unavailable = report.unavailable || !report.resourcesClosed

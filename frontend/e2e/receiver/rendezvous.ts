@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import {
   receiverUnavailable,
   validateReceiverBinding,
@@ -25,10 +25,39 @@ const REGISTER_PEER_INTERVAL_MS = 10000
 const MAX_FRAME_BYTES = 65552
 const MAX_RELAY_QUEUE_BYTES = 262144
 
+const READ_FAILURE_REASONS = [
+  'unknown',
+  'io_failed',
+  'eof',
+  'decode_rejected',
+  'budget_exceeded',
+  'aborted',
+] as const
+export type ReceiverReadFailureReason = (typeof READ_FAILURE_REASONS)[number]
+
+// 僅讀可信port的固定原因能力；缺失、非法值或拋錯均不猜測／不讀例外內容。
+export function readReceiverFailureReason(
+  source: { failureReason?: () => unknown } | null | undefined,
+): ReceiverReadFailureReason {
+  try {
+    const read = source?.failureReason
+    if (typeof read !== 'function') return 'unknown'
+    const reason: unknown = read.call(source)
+    return typeof reason === 'string' &&
+      READ_FAILURE_REASONS.includes(reason as ReceiverReadFailureReason)
+      ? (reason as ReceiverReadFailureReason)
+      : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 export interface ReceiverDuplex {
   send(bytes: Uint8Array): Promise<void>
   receive(): Promise<Uint8Array | null>
   close(): Promise<boolean>
+  // 只回本輪首次讀取失敗來源；null代表尚無失敗或主動收尾。
+  failureReason?(): ReceiverReadFailureReason | null
 }
 
 // 由Task29提供真Node adapter；本層只要求保存endpoint與單調clock，不自行撥號。
@@ -46,6 +75,8 @@ export interface ReceiverRelay {
   send(frame: Uint8Array): Promise<void>
   receive(): Promise<Uint8Array | null>
   close(): Promise<boolean>
+  // 不直接改整輪診斷；runtime確實消費異常讀取時才投影。
+  failureReason?(): ReceiverReadFailureReason | null
 }
 
 interface TimerHandle {
@@ -113,6 +144,7 @@ function createAttempt(
   let hbbr: ReceiverDuplex | null = null
   let relay: InternalRelay | null = null
   let phase: 'pk' | 'peer' | 'relay' = 'pk'
+  let relayResponseSent = false
   let serial = 1
   let finished = false
   let settled = false
@@ -222,10 +254,12 @@ function createAttempt(
     const waiters: ((value: Uint8Array | null) => void)[] = []
     let queuedBytes = 0
     let closed = false
+    let readFailure: ReceiverReadFailureReason | null = null
 
     // 終態清除半包、佇列與等待者，晚到資料不得恢復relay。
-    const terminate = (): void => {
+    const terminate = (reason: ReceiverReadFailureReason | null = null): void => {
       if (closed) return
+      readFailure = reason
       closed = true
       framer.dispose()
       queuedBytes = 0
@@ -235,30 +269,47 @@ function createAttempt(
 
     // 背景只讀完整frame；半包、超限或底層關閉都結束relay。
     const read = async (): Promise<void> => {
-      try {
-        for (;;) {
-          const chunk = await duplex.receive()
-          if (closed) return
-          if (chunk === null) {
-            terminate()
+      for (;;) {
+        let chunk: Uint8Array | null
+        try {
+          chunk = await duplex.receive()
+        } catch {
+          if (!closed) terminate('io_failed')
+          return
+        }
+        if (closed) return
+        if (chunk === null) {
+          let reason = readReceiverFailureReason(duplex)
+          if (reason === 'eof') {
+            try {
+              framer.finish()
+            } catch {
+              reason = 'decode_rejected'
+            }
+          }
+          terminate(reason)
+          return
+        }
+        let frames: Uint8Array[]
+        try {
+          frames = framer.push(chunk)
+        } catch {
+          terminate('decode_rejected')
+          return
+        }
+        for (const frame of frames) {
+          const waiter = waiters.shift()
+          if (waiter) {
+            waiter(frame)
+            continue
+          }
+          if (queuedBytes + frame.length > MAX_RELAY_QUEUE_BYTES) {
+            terminate('budget_exceeded')
             return
           }
-          for (const frame of framer.push(chunk)) {
-            const waiter = waiters.shift()
-            if (waiter) {
-              waiter(frame)
-              continue
-            }
-            if (queuedBytes + frame.length > MAX_RELAY_QUEUE_BYTES) {
-              terminate()
-              return
-            }
-            queue.push(frame)
-            queuedBytes += frame.length
-          }
+          queue.push(frame)
+          queuedBytes += frame.length
         }
-      } catch {
-        terminate()
       }
     }
 
@@ -284,14 +335,22 @@ function createAttempt(
     }
 
     void read()
-    return { send, receive, close: shutdown, terminate }
+    return {
+      send,
+      receive,
+      close: shutdown,
+      terminate,
+      // primitive副本不受後續close或底層來源變更影響。
+      failureReason: () => readFailure,
+    }
   }
 
   // 建立hbbr後才解析frame；只有完整、有效的控制才進入公開relay。
   async function establishRelay(socketAddr: Uint8Array): Promise<void> {
     if (finished || hbbr) return
     if (!hbbs) return failClosed()
-    const uuid = randomBytes(16).toString('hex')
+    // 正式Coordinator只接受Guid D格式；兩側配對始終使用同一個canonical UUID。
+    const uuid = randomUUID()
     let responseFrame: Uint8Array
     try {
       responseFrame = encodeControlFrame({
@@ -313,6 +372,8 @@ function createAttempt(
       fail('relay_response', 'io_failed')
       return
     }
+    if (finished) return
+    relayResponseSent = true
     hbbrTimer = arm(TCP_CONNECT_TIMEOUT_MS, () => fail('hbbr_open', 'deadline'))
     diagnostic?.acquire('hbbr')
     let duplex: ReceiverDuplex
@@ -386,7 +447,12 @@ function createAttempt(
           return fail('await_peer', 'io_failed')
         }
         if (finished) return
-        if (chunk === null) return fail('await_peer', 'eof')
+        if (chunk === null) {
+          if (!relayResponseSent) return fail('await_peer', 'eof')
+          // 固定hbbs轉送RelayResponse即正常關閉；只允許無殘包EOF，不代表配對成功。
+          framer.finish()
+          return
+        }
         for (const frame of framer.push(chunk)) {
           const control = decodeReceiverControl(frame)
           if (control.registerPeerResponse) {
