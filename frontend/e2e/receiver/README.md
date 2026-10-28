@@ -26,6 +26,8 @@
 
 終端只回固定code與安全布林：`receiver_match`／`receiver_mismatch`／`receiver_unavailable`，exit依序0／1／2。本地match尚須與同輪Console身份驗證、真首影像、加密前五鍵安全摘要及正常收尾join；不可用不能改判不符，也不能以此覆寫原HR失敗。
 
+來源版Windows PowerShell入口在載入同目錄守衛模組失敗時，只向stderr輸出固定`receiver_entry_load_unavailable`並exit 2；進入main後的拒絕仍為`receiver_unavailable`／exit 2。兩者都不輸出原始例外、路徑或秘密，也不代表連線成功。dot-source載入失敗仍拋出例外，不輸出此獨立分類。此區分僅適用含新版入口的來源／包；既有包不會自動更新，不能以舊包的共用錯誤行判定已到達main，亦不得為確認分類重播已使用輪次。
+
 預設整案180秒含最多2秒收尾，完整五鍵後receiver自行觀察5秒；Client不因本地5秒完成就主動斷線。上限／取消／異常及資料不足都保留失敗，沒有自動重連或重放。RAM-only不保證JS字串、GC、OS swap或crash dump能物理抹除，不為此改系統設定。
 
 ## 開發入口

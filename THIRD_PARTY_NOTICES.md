@@ -77,6 +77,16 @@ Windows x64診斷包包含未修改的官方 **Node.js v24.22.1 win-x64 `node.ex
 
 本工具及RustDesk生成schema沿用AGPL來源與本專案 `LICENSE`，不因bundle化而變更授權。此包僅供本輪診斷準備，不作公開發布；再散布時須同時滿足AGPL完整對應原始碼及其他授權義務，不以未提交workspace或Node官方簽章宣稱自製bundle已有公開版本或官方背書。
 
+## .NET 獨立監督程式的發布資源
+
+Windows x64獨立監督程式的self-contained發布資源固定為官方NuGet套件 **Microsoft.NETCore.App.Runtime.win-x64 10.0.14** 與 **Microsoft.NETCore.App.Host.win-x64 10.0.14**，不是應用程式直接引用的PackageReference。固定官方metadata／下載URL、原nupkg SHA-512及內含授權原文SHA-256見 `frontend/e2e/receiver/native-supervisor/dotnet-runtime-pin.json`；取得來源不等於已完成publish、Windows部署或原生驗收。
+
+- 兩套件nuspec均聲明MIT，repository實際為 https://github.com/dotnet/dotnet ，固定commit `0427b9abbead3fa64c6655eb4290c537397131fa`；包內 `Microsoft.NETCore.App.versions.txt`亦記相同commit及10.0.14。不以推測的其他repository tag代替實際來源revision。
+- 兩套件完整 `LICENSE.TXT`相同，SHA-256為 `d7a68596ab69b06f51ca278a6545148e4269a9381c26d597c13df5d88e08cf5b`；完整 `THIRD-PARTY-NOTICES.TXT`亦相同，SHA-256為 `6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21`。發行包必須逐byte保留兩份原文；不得只以MIT metadata、本文件摘要或部分notice取代內含第三方條款與版權聲明。
+- 自製監督程式與原PS／fixture仍沿本專案AGPL-3.0-or-later，後續散布須同時提供其完整對應來源與可重建方式，並保留.NET及Node各自完整授權義務，不將官方runtime來源pin當自製程式的簽章、發布背書或授權變更。
+
+獨立函數診斷包將原.NET多檔輸出、固定PS／公開Node fixture及未修改的官方Node組合交付，與上節receiver bundle不同；不包含receiver.mjs、TweetNaCl／protobuf.js／Long、RustDesk生成schema或影像素材。該包另附自製程式／建置工具的確切對應來源ZIP與發布locks，保留完整AGPL、Node及.NET原文授權；根文件其他產品聲明不代表那些成員被加進診斷包。重建流程與未驗邊界見`frontend/e2e/receiver/native-supervisor/README.md`，不以官方來源pin或簽章替自製發行包背書。
+
 ## M3-B2 公開影像測試素材
 
 WebCodecs 測試使用 web-platform-tests/wpt commit `521d168d63dbd206ea7fbe0b74ddd5760e6e668e` 的 `webcodecs/vp8.webm`、`vp9.mp4`、`av1.mp4`、`h264.annexb` 公開素材，依固定 SHA256／offset 切出 key／delta。只使用素材及 schema／offset 事實，不複製上游測試程式。完整來源、hash 與生成方式見 `frontend/src/rdweb/__fixtures__/CODEC_FIXTURES.md`；正式 app 不匯入素材或測試 harness。未新增 npm／NuGet／WASM 相依。

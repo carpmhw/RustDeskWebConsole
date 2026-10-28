@@ -82,10 +82,11 @@ function Claim-ReceiverLaunch([string]$Parent) {
     } finally { if ($null -ne $claim) { $claim.Dispose() } }
 }
 
-# 只以呼叫端提供的明確executable路徑啟動，不經PATH、cmd或shell搜尋。
-function Invoke-ReceiverChild([string]$NodePath, [string[]]$Arguments) {
+# 只用明確runtime路徑原生傳遞輸出；退出碼走獨立ref，不混進stdout或逐行重印。
+function Invoke-ReceiverChild([string]$NodePath, [string[]]$Arguments, [ref]$ExitCode) {
+    $ExitCode.Value = 2
     & $NodePath @Arguments
-    return $LASTEXITCODE
+    $ExitCode.Value = Get-ReceiverExitCode $LASTEXITCODE
 }
 
 # CLI只允許0／1／2；其他原生結束碼一律收斂成安全exit 2。
@@ -101,13 +102,14 @@ try {
     [void](Assert-RegularFile $receiverSupervisor)
     . $receiverSupervisor
 } catch {
-    # 正式入口只回固定分類；公開測試dot-source時保留例外以便定位。
-    if ($MyInvocation.InvocationName -ne '.') { [Console]::Error.WriteLine('receiver_unavailable'); exit 2 }
+    # 載入失敗使用獨立固定分類，與main拒絕分開；dot-source仍拋出例外。
+    if ($MyInvocation.InvocationName -ne '.') { [Console]::Error.WriteLine('receiver_entry_load_unavailable'); exit 2 }
     throw
 }
 
-# main先驗Parent與同目錄檔案，再建立單次claim／私有子目錄、複製設定並啟動Node。
-function Invoke-ReceiverStart([string]$Parent) {
+# main先驗私有來源再claim／copy／啟Node；輸出直通，ref退出碼在任何前置失敗時保守為2。
+function Invoke-ReceiverStart([string]$Parent, [ref]$ExitCode) {
+    $ExitCode.Value = 2
     $parentPath = Assert-LocalNtfsPath $Parent
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     try { $owner = $identity.User } finally { $identity.Dispose() }
@@ -125,14 +127,13 @@ function Invoke-ReceiverStart([string]$Parent) {
     Copy-PrivateSetting (Join-Path $parentPath 'binding.json') (Join-Path $runPath 'binding.json')
     Copy-PrivateSetting (Join-Path $parentPath 'connection.json') (Join-Path $runPath 'connection.json')
     $env:RDWEB_RECEIVER_PRIVATE_ENTRY = '1'
-    $code = Invoke-ReceiverChild $nodePath @($bundlePath, 'run', '--directory', $runPath)
-    return (Get-ReceiverExitCode $code)
+    Invoke-ReceiverChild -NodePath $nodePath -Arguments @($bundlePath, 'run', '--directory', $runPath) -ExitCode $ExitCode
 }
 
-# dot-source供公開測試呼叫函數；真正-File執行才進入main。
+# dot-source只定義／載入函數；main不得賦值捕獲stdout，僅以ref取得正規化退出碼。
 if ($MyInvocation.InvocationName -ne '.') {
     $code = 2
-    try { $code = Invoke-ReceiverStart $Parent }
+    try { Invoke-ReceiverStart -Parent $Parent -ExitCode ([ref]$code) }
     catch { [Console]::Error.WriteLine('receiver_unavailable'); $code = 2 }
     exit $code
 }
