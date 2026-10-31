@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="../Core/RdWeb.Receiver.NativeSupervisor.Core.csproj" />
     <InternalsVisibleTo Include="RdWeb.Receiver.NativeSupervisor.Core.Tests" />
+    <InternalsVisibleTo Include="RdWeb.Receiver.NativeBaseline.Windows" />
   </ItemGroup>
 </Project>

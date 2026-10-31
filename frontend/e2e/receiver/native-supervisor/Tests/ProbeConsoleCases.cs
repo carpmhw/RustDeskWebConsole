@@ -17,21 +17,33 @@ internal static class ProbeConsoleCases
     private static void Check(bool condition) => ProbeSourceCases.Require(condition);
 
     // 假host共用唯一clock，只有來源／Win32／sleep／stdout是替身，沒有fake run。
-    private sealed class FakeHost : IProbeConsoleHost, IDisposable
+    internal sealed class FakeHost : IProbeConsoleHost, IDisposable
     {
-        internal readonly FakeSourceApi Source = new();
+        internal readonly FakeSourceApi Source;
         internal readonly NativeSessionCases.FakeApi Native = new() { Signaled = true, Active = 0, Streams = [new(), new()] };
         internal readonly List<string> Writes = [];
         internal readonly List<(long Before, int Milliseconds)> Waits = [];
         internal Action? AfterWait;
         internal bool WaitOk = true, WriteOk = true, ThrowAcquire;
         internal int Acquires, NativeFactories;
+        internal int BaselineAcquires;
         public bool Supported { get; set; } = true;
         public long ElapsedMs => Source.ElapsedMs;
         public bool IsRunning => Source.IsRunning;
 
         // 預設只提供已知公開frame及正常EOF，實際collector／parser由產品程式執行。
-        internal FakeHost() => SetFrame(Frame);
+        internal FakeHost(bool baseline = false)
+        {
+            Source = new(baseline: baseline);
+            SetFrame(Frame);
+        }
+        // 新factory仍經真guard，不替換lease或run。
+        public OwnedProbeSources AcquireBaselineSources()
+        {
+            BaselineAcquires++;
+            if (ThrowAcquire) throw new IOException("PUBLIC_FAILURE");
+            return OwnedProbeSources.AcquireBaseline(Source, this, Source.Pins);
+        }
         // 所有測試重用同一公開來源fixture，不建立真檔案或marker。
         public OwnedProbeSources AcquireSources()
         {

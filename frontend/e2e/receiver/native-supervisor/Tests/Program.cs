@@ -13,9 +13,40 @@ internal static class Program
     // 只允許固定測試組；逐案收集失敗但不輸出例外、路徑或原始wire。
     private static int Main(string[] args)
     {
-        if (args.Length != 1 || args[0] is not ("wire" or "model" or "native-abi" or "native-session" or "child-wire" or "source-guard" or "run-session" or "claim" or "console" or "all")) return 2;
+        if (args.Length != 1 || args[0] is not ("wire" or "model" or "native-abi" or "native-session" or "child-wire" or "source-guard" or "run-session" or "claim" or "console" or "baseline-wire" or "baseline-child" or "baseline-artifact" or "baseline-run" or "baseline-console" or "all")) return 2;
         (string Group, string Name, Action Run)[] tests =
         [
+            ("baseline-wire", "UnknownCanonical", BaselineWireCases.UnknownCanonical),
+            ("baseline-console", "BaselineArguments", BaselineConsoleCases.BaselineArguments),
+            ("baseline-console", "LegacyArgumentsUnchanged", BaselineConsoleCases.LegacyArgumentsUnchanged),
+            ("baseline-console", "BaselineConsoleMatched", BaselineConsoleCases.BaselineConsoleMatched),
+            ("baseline-console", "BaselineConsoleIoExitTwo", BaselineConsoleCases.BaselineConsoleIoExitTwo),
+            ("baseline-console", "BaselineConsoleCancellation", BaselineConsoleCases.BaselineConsoleCancellation),
+            ("baseline-console", "ResultLineIsolation", BaselineConsoleCases.ResultLineIsolation),
+            ("baseline-console", "DiagnosticDoesNotFillCore", BaselineConsoleCases.DiagnosticDoesNotFillCore),
+            ("baseline-run", "FirstProblemIsSticky", BaselineRunCases.FirstProblemIsSticky),
+            ("baseline-run", "ThrownRawRemainsUnknown", BaselineRunCases.ThrownRawRemainsUnknown),
+            ("baseline-run", "IoExitTwoObservationOnly", BaselineRunCases.IoExitTwoObservationOnly),
+            ("baseline-run", "IoFrameAfterCleanupRejected", BaselineRunCases.IoFrameAfterCleanupRejected),
+            ("baseline-run", "LateOrDirtyFrameRejected", BaselineRunCases.LateOrDirtyFrameRejected),
+            ("baseline-run", "NoQueryIsUnknown", BaselineRunCases.NoQueryIsUnknown),
+            ("baseline-run", "DecisionWithoutTermination", BaselineRunCases.DecisionWithoutTermination),
+            ("baseline-run", "ChMismatchCancellationRemainsUnavailable", BaselineRunCases.ChMismatchCancellationRemainsUnavailable),
+            ("baseline-run", "LegacyRunUnaffected", BaselineRunCases.LegacyRunUnaffected),
+            ("baseline-artifact", "BaselineArtifactContract", () => BaselineArtifactCases.BaselineArtifactContract()),
+            ("baseline-artifact", "OriginalSourcesPreserved", () => BaselineArtifactCases.OriginalSourcesPreserved()),
+            ("baseline-artifact", "BaselineSourceLaunchPlan", () => BaselineArtifactCases.BaselineSourceLaunchPlan()),
+            ("baseline-artifact", "BaselineEnvironmentIsolation", BaselineArtifactCases.BaselineEnvironmentIsolation),
+            ("baseline-artifact", "BaselineSourceRefusal", BaselineArtifactCases.BaselineSourceRefusal),
+            ("baseline-child", "SevenMatchedNone", BaselineChildCases.SevenMatchedNone),
+            ("baseline-child", "MismatchE0", BaselineChildCases.MismatchE0),
+            ("baseline-child", "NativeStderrR", BaselineChildCases.NativeStderrR),
+            ("baseline-child", "IoThrewPrefix", BaselineChildCases.IoThrewPrefix),
+            ("baseline-child", "PurposeAndEntryIsolation", BaselineChildCases.PurposeAndEntryIsolation),
+            ("baseline-child", "ComparisonCasePairs", BaselineChildCases.ComparisonCasePairs),
+            ("baseline-wire", "E0ComparisonCanonical", BaselineWireCases.E0ComparisonCanonical),
+            ("baseline-wire", "MalformedAtomicUnknown", BaselineWireCases.MalformedAtomicUnknown),
+            ("baseline-wire", "CapacityAndForbiddenPayload", BaselineWireCases.CapacityAndForbiddenPayload),
             ("wire", "WireCanonical", WireCanonical),
             ("wire", "WirePolicyIsolation", WirePolicyIsolation),
             ("wire", "WireMalformed", WireMalformed),

@@ -3,10 +3,22 @@ namespace RdWeb.Receiver.NativeSupervisor.Windows;
 // 固定入口的序列driver；來源／採信／取消／Finish仍由既有owner及唯一Core決定。
 internal static class ProbeConsole
 {
+    // 獨立入口只接受固定baseline參數，驗參前不取得來源或native。
+    internal static int ExecuteBaseline(string[] args, IProbeConsoleHost host)
+    {
+        if (args.Length != 1 || args[0] != "--receiver-native-baseline-v1") return 2;
+        return Drive(host, true);
+    }
     // 錯參零副作用；任何缺證或handled邊界故障只安全不可用，不回顯動態資料。
     internal static int Execute(string[] args, IProbeConsoleHost host)
     {
         if (args.Length != 1 || args[0] != "--receiver-native-cases-v1") return 2;
+        return Drive(host, false);
+    }
+
+    // 兩個固定入口共用唯一owner與迴圈；模式不來自任意外部選項。
+    private static int Drive(IProbeConsoleHost host, bool baseline)
+    {
         OwnedProbeSources? sources = null;
         OwnedProbeRun? run = null;
         var value = ProbeWire.Unknown();
@@ -18,9 +30,10 @@ internal static class ProbeConsole
         {
             if (host.Supported)
             {
-                sources = host.AcquireSources();
+                sources = baseline ? host.AcquireBaselineSources() : host.AcquireSources();
                 var api = host.CreateNativeApi();
-                if (OwnedProbeRun.TryCreate(sources, api, out run) && run!.Prepare())
+                var created = baseline ? OwnedProbeRun.TryCreateBaseline(sources, api, out run) : OwnedProbeRun.TryCreate(sources, api, out run);
+                if (created && run!.Prepare())
                 {
                     var launched = false;
                     while (!run.NeedsCleanup)
@@ -55,7 +68,14 @@ internal static class ProbeConsole
         try
         {
             var result = ProbeWire.FormatResult(failed ? ProbeWire.Unknown() : value);
-            if (!host.WriteResult(result.Wire)) return 2;
+            var wire = result.Wire;
+            if (baseline)
+            {
+                if (!BaselineWire.TryFormat(run?.BaselineSnapshot() ?? new(), out var observation)) return 2;
+                wire += observation;
+                if (wire.Length > 8192) return 2;
+            }
+            if (!host.WriteResult(wire)) return 2;
             return result.Status switch { ProbeStatus.Observed => 0, ProbeStatus.DefectObserved => 1, _ => 2 };
         }
         catch (Exception error) when (error is not (OutOfMemoryException or AccessViolationException)) { return 2; }

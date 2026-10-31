@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import stat
 import struct
@@ -93,6 +94,319 @@ def dotnet_fixture():
   return home, stage, feed, pin, files
 
 
+# 公開baseline metadata／PE與舊fixture共用假官方材料，不啟loader或SDK。
+def baseline_dotnet_fixture():
+  home, stage, feed, pin, files = dotnet_fixture()
+  companions = {n: files.pop(n) for n in ["RdWeb.Receiver.NativeSupervisor.Windows.exe", "RdWeb.Receiver.NativeSupervisor.Windows.deps.json", "RdWeb.Receiver.NativeSupervisor.Windows.runtimeconfig.json"]}
+  for name in companions:
+    (stage / name).unlink()
+  entry = "RdWeb.Receiver.NativeBaseline.Windows"
+  files.update({entry + ".dll": b"public baseline managed entry", entry + ".exe": pe() + (entry + ".dll").encode() + b"\0",
+                entry + ".runtimeconfig.json": companions["RdWeb.Receiver.NativeSupervisor.Windows.runtimeconfig.json"],
+                entry + ".deps.json": json.dumps({"runtimeTarget": {"name": ".NETCoreApp,Version=v10.0/win-x64"}, "libraries": {
+                  "RdWeb.Receiver.NativeSupervisor.Core/1.0.0": {}, "RdWeb.Receiver.NativeSupervisor.Windows/1.0.0": {},
+                  entry + "/1.0.0": {}, "runtimepack.Microsoft.NETCore.App.Runtime.win-x64/10.0.14": {}}}).encode()})
+  for name, data in files.items():
+    (stage / name).write_bytes(data)
+  return home, stage, feed, pin, files, companions
+
+
+# 把預期缺少正向行為的安全拒絕轉成明確斷言FAIL，而非語法／import錯誤。
+def positive(function, *args, **kwargs):
+  try:
+    return function(*args, **kwargs)
+  except (ValueError, OSError) as error:
+    raise AssertionError("public_positive_boundary_rejected") from error
+
+
+class BaselineArtifactTests(unittest.TestCase):
+  # 真validator必須接受獨立手寫195檔，拒絕缺檔／錯target／metadata或官方bytes。
+  def test_baseline_exact_members_and_metadata(self):
+    inspect = api("inspect_dotnet")
+    home, stage, feed, pin, files, _ = baseline_dotnet_fixture()
+    expected = {f"runtime{i}.dll" for i in range(187)} | {"LICENSE.DotNet.txt", "THIRD-PARTY-NOTICES.DotNet.txt",
+      "RdWeb.Receiver.NativeSupervisor.Core.dll", "RdWeb.Receiver.NativeSupervisor.Windows.dll",
+      "RdWeb.Receiver.NativeBaseline.Windows.dll", "RdWeb.Receiver.NativeBaseline.Windows.exe",
+      "RdWeb.Receiver.NativeBaseline.Windows.deps.json", "RdWeb.Receiver.NativeBaseline.Windows.runtimeconfig.json"}
+    self.assertEqual(set(positive(inspect, stage, feed, pin, baseline=True)), expected)
+    self.assertEqual(len(expected), 195)
+    for name, data in [("unknown.dll", b"extra"), ("baseline.pdb", b"public symbols"), ("runtime0.dll", b"changed"),
+                       ("RdWeb.Receiver.NativeSupervisor.Windows.exe", pe()),
+                       ("RdWeb.Receiver.NativeBaseline.Windows.exe", pe() + b"RdWeb.Receiver.NativeSupervisor.Windows.dll\0")]:
+      (stage / name).write_bytes(data)
+      with self.assertRaises(ValueError):
+        inspect(stage, feed, pin, baseline=True)
+      if name in files:
+        (stage / name).write_bytes(files[name])
+      else:
+        (stage / name).unlink()
+    for name in ["RdWeb.Receiver.NativeSupervisor.Core.dll", "RdWeb.Receiver.NativeSupervisor.Windows.dll"]:
+      (stage / name).rename(home / "held")
+      with self.assertRaises(ValueError):
+        inspect(stage, feed, pin, baseline=True)
+      (home / "held").rename(stage / name)
+    for suffix in ["runtimeconfig.json", "deps.json"]:
+      name = "RdWeb.Receiver.NativeBaseline.Windows." + suffix
+      original = files[name]
+      for data in [original.replace(b"10.0.14", b"10.0.13"), original.replace(b"win-x64", b"linux-x64"), b"{}"]:
+        if data == original:
+          continue
+        (stage / name).write_bytes(data)
+        with self.assertRaises((ValueError, KeyError)):
+          inspect(stage, feed, pin, baseline=True)
+      (stage / name).write_bytes(original)
+    self.assertEqual(positive(inspect, stage, feed, pin, baseline=True), files)
+
+  # 只有三組明列raw布局可投影canonical，未知或損壞companion不得被靜默丟棄。
+  def test_baseline_raw_companion_sets(self):
+    inspect = api("inspect_baseline_publish")
+    for count in [0, 2, 3]:
+      _, stage, feed, pin, files, companions = baseline_dotnet_fixture()
+      selected = {n: b for n, b in companions.items() if count == 3 or (count == 2 and not n.endswith(".exe"))}
+      for name, data in selected.items():
+        (stage / name).write_bytes(data)
+      self.assertEqual(positive(inspect, stage, feed, pin), files)
+      self.assertEqual(len(list(stage.iterdir())), 195 + count)
+      for name in selected:
+        (stage / name).write_bytes(b"broken metadata")
+        with self.assertRaises((ValueError, KeyError)):
+          inspect(stage, feed, pin)
+        (stage / name).write_bytes(selected[name])
+      (stage / "unknown.dll").write_bytes(b"public")
+      with self.assertRaises(ValueError):
+        inspect(stage, feed, pin)
+    for name in ["RdWeb.Receiver.NativeSupervisor.Windows.exe", "RdWeb.Receiver.NativeSupervisor.Windows.deps.json", "RdWeb.Receiver.NativeSupervisor.Windows.runtimeconfig.json", "RUNTIME0.DLL"]:
+      _, stage, feed, pin, _, companions = baseline_dotnet_fixture()
+      (stage / name).write_bytes(companions.get(name, b"public"))
+      with self.assertRaises(ValueError):
+        inspect(stage, feed, pin)
+
+  # 模式不可從檔名猜測或自動升級；canonical入口不收raw companion。
+  def test_baseline_profile_isolation(self):
+    inspect = api("inspect_dotnet")
+    _, stage, feed, pin, _, companions = baseline_dotnet_fixture()
+    self.assertEqual(len(positive(inspect, stage, feed, pin, baseline=True)), 195)
+    with self.assertRaises(ValueError):
+      inspect(stage, feed, pin)
+    for name, data in companions.items():
+      (stage / name).write_bytes(data)
+    with self.assertRaises(ValueError):
+      inspect(stage, feed, pin, baseline=True)
+    _, stage, feed, pin, files = dotnet_fixture()
+    self.assertEqual(inspect(stage, feed, pin), files)
+    with self.assertRaises(ValueError):
+      inspect(stage, feed, pin, baseline=True)
+
+
+# 與產品常數分開手寫的來源預期，能抓到完整對應來源遺漏而非自我比對。
+PUBLIC_SOURCE_NAMES = tuple("""Core/ChildProbeFrame.cs
+Core/ChildProbeWire.cs
+Core/ProbeDiagnostic.cs
+Core/ProbeModel.cs
+Core/ProbeWire.cs
+Core/RdWeb.Receiver.NativeSupervisor.Core.csproj
+Core/packages.lock.json
+Fixtures/PUBLIC 空格 繁體/receiver-native-case.mjs
+Fixtures/receiver-native-child.ps1
+NuGet.Config
+Tests/ChildArtifactCases.cs
+Tests/ChildProbeWireCases.cs
+Tests/FakeSourceApi.cs
+Tests/NativeAbiCases.cs
+Tests/NativeSessionCases.cs
+Tests/ProbeClaimCases.cs
+Tests/ProbeConsoleCases.cs
+Tests/ProbeRunCases.cs
+Tests/ProbeSourceCases.cs
+Tests/Program.cs
+Tests/RdWeb.Receiver.NativeSupervisor.Core.Tests.csproj
+Tests/SourceNativeAbiCases.cs
+Tests/packages.lock.json
+Windows/NativeAbi.cs
+Windows/OwnedNativeResources.cs
+Windows/OwnedPipe.cs
+Windows/OwnedProbeRun.cs
+Windows/OwnedProbeSession.cs
+Windows/OwnedProbeSources.cs
+Windows/ProbeConsole.cs
+Windows/ProbeConsoleHost.cs
+Windows/ProbeNativeContracts.cs
+Windows/ProbeSourceContracts.cs
+Windows/ProbeSourcePins.cs
+Windows/Program.cs
+Windows/RdWeb.Receiver.NativeSupervisor.Windows.csproj
+Windows/SourceNativeAbi.cs
+Windows/WindowsNativeApi.cs
+Windows/WindowsSourceApi.cs
+Windows/packages.lock.json
+dotnet-runtime-pin.json""".splitlines())
+BASELINE_ADDITIONAL_NAMES = tuple("""Baseline/Program.cs
+Baseline/RdWeb.Receiver.NativeBaseline.Windows.csproj
+Baseline/packages.lock.json
+Core/BaselineObservation.cs
+Core/BaselineWire.cs
+Core/BaselineChildWire.cs
+Fixtures/receiver-native-baseline-child.ps1
+Tests/BaselineWireCases.cs
+Tests/BaselineChildCases.cs
+Tests/BaselineArtifactCases.cs
+Tests/BaselineRunCases.cs
+Tests/BaselineConsoleCases.cs
+Windows/BaselineCapture.cs
+Windows/BaselineSourcePins.cs""".splitlines())
+PUBLIC_EXTRAS = ("frontend/e2e/receiver/native-supervisor/README.md", "frontend/scripts/build_receiver_native_supervisor.py",
+  "frontend/e2e/scripts/test_build_receiver_native_supervisor.py", "frontend/e2e/scripts/start-windows-test-receiver.ps1",
+  "frontend/e2e/scripts/windows-host-observer-supervisor.ps1", "frontend/e2e/receiver/node-runtime-pin.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "Directory.Build.props", "global.json")
+
+
+# 獨立計算公開fixture輸入pin，只在修改fixture前取一次，不呼被測摘要helper。
+def fixture_source_digest(repo, names):
+  material = bytearray()
+  for name in sorted(names):
+    material.extend(name.encode() + b"\0" + (repo / "frontend/e2e/receiver/native-supervisor" / name).read_bytes() + b"\0")
+  return hashlib.sha256(material).hexdigest()
+
+
+# 只複製明列公開來源到新自有目錄；手寫發布inputs不是實際SDK生成的locks。
+def source_fixture(baseline=True, runtime_pin=None):
+  repo = root() / "repo"
+  real = Path(__file__).resolve().parents[3]
+  names = PUBLIC_SOURCE_NAMES + (BASELINE_ADDITIONAL_NAMES if baseline else ())
+  for name in ["frontend/e2e/receiver/native-supervisor/" + n for n in names] + list(PUBLIC_EXTRAS):
+    destination = repo / name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes((real / name).read_bytes())
+  if runtime_pin is not None:
+    (repo / "frontend/e2e/receiver/native-supervisor/dotnet-runtime-pin.json").write_text(json.dumps(runtime_pin))
+  release = repo / "rebuild-inputs"
+  release.mkdir()
+  (release / "global.json").write_text(json.dumps({"sdk": {"version": "10.0.114" if baseline else "10.0.113", "rollForward": "disable"}}))
+  (release / "NuGet.Config").write_bytes(b'<configuration><packageSources><clear/><add key="receiver-native-local" value="../local-feed"/></packageSources><auditSources><clear/><add key="nuget-audit" value="https://api.nuget.org/v3/index.json"/></auditSources><fallbackPackageFolders><clear/></fallbackPackageFolders></configuration>')
+  graphs = {"Core": {}, "Windows": {"rdweb.receiver.nativesupervisor.core": {"type": "Project"}}}
+  if baseline:
+    graphs["Baseline"] = {"rdweb.receiver.nativesupervisor.core": {"type": "Project"}, "rdweb.receiver.nativesupervisor.windows": {"type": "Project", "dependencies": {"RdWeb.Receiver.NativeSupervisor.Core": "[1.0.0, )"}}}
+  for kind, graph in graphs.items():
+    (release / kind).mkdir()
+    (release / kind / "packages.lock.json").write_text(json.dumps({"version": 1, "dependencies": {"net10.0": graph, "net10.0/win-x64": {}}}))
+    for name in names:
+      if name.startswith(kind + "/") and name.endswith((".cs", ".csproj")):
+        (release / name).write_bytes((repo / "frontend/e2e/receiver/native-supervisor" / name).read_bytes())
+  (release / "Directory.Build.props").write_bytes((repo / "Directory.Build.props").read_bytes())
+  return repo, release, fixture_source_digest(repo, names)
+
+
+class BaselineSourceTests(unittest.TestCase):
+  # dd核准來源必須以固定pin接受；完整snapshot逐byte包含來源與發布控制檔。
+  def test_baseline_dd_frozen_source(self):
+    repo, release, _ = source_fixture()
+    names = PUBLIC_SOURCE_NAMES + BASELINE_ADDITIONAL_NAMES
+    self.assertEqual(fixture_source_digest(repo, names), "23d6d0453cc79c176ed09ac87a117dd4a03cffb0fc3bfa3525497d2f973d1a56")
+    prefix = "frontend/e2e/receiver/native-supervisor/"
+    expected_sources = {name: (repo / prefix / name).read_bytes() for name in names}
+    self.assertEqual(len(expected_sources), 55)
+    self.assertEqual(positive(api("freeze_sources"), repo, baseline=True), expected_sources)
+    expected = {prefix + name: data for name, data in expected_sources.items()}
+    expected.update({name: (repo / name).read_bytes() for name in PUBLIC_EXTRAS})
+    for name in ["global.json", "NuGet.Config", "Core/packages.lock.json", "Windows/packages.lock.json", "Baseline/packages.lock.json"]:
+      expected["rebuild-inputs/" + name] = (release / name).read_bytes()
+    self.assertEqual(len(expected), 70)
+    self.assertEqual(positive(api("source_snapshot"), repo, release, baseline=True), expected)
+
+  # 核准的六份dd來源仍是凍結輸入；任一額外byte都不能被新版pin默默接受。
+  def test_baseline_dd_rejects_changed_source(self):
+    freeze = api("freeze_sources")
+    snapshot = api("source_snapshot")
+    for name in ("Windows/OwnedProbeSources.cs", "Windows/ProbeConsoleHost.cs", "Tests/BaselineArtifactCases.cs",
+                 "Tests/BaselineRunCases.cs", "Tests/ProbeConsoleCases.cs", "Tests/Program.cs"):
+      with self.subTest(source=name):
+        repo, release, _ = source_fixture()
+        self.assertEqual(len(positive(freeze, repo, baseline=True)), 55)
+        path = repo / "frontend/e2e/receiver/native-supervisor" / name
+        path.write_bytes(path.read_bytes() + b"\n")
+        with self.assertRaisesRegex(ValueError, "^original_source_hash_rejected$"):
+          freeze(repo, baseline=True)
+        with self.assertRaisesRegex(ValueError, "^original_source_hash_rejected$"):
+          snapshot(repo, release, baseline=True)
+
+  # 兩個模式只接受自己的固定SDK，不能交叉套用或允許roll-forward。
+  def test_release_sdk_versions_are_profile_specific(self):
+    read = api("release_inputs")
+    for baseline in [True, False]:
+      _, release, _ = source_fixture(baseline)
+      for version in ["10.0.113", "10.0.114"]:
+        with self.subTest(baseline=baseline, version=version):
+          (release / "global.json").write_text(json.dumps({"sdk": {"version": version, "rollForward": "disable"}}))
+          if (baseline, version) in [(True, "10.0.114"), (False, "10.0.113")]:
+            self.assertEqual(len(positive(read, release, baseline=baseline)), 5 if baseline else 4)
+          else:
+            with self.assertRaisesRegex(ValueError, "^release_sdk_rejected$"):
+              read(release, baseline=baseline)
+      (release / "global.json").write_text(json.dumps({"sdk": {"version": "10.0.114" if baseline else "10.0.113", "rollForward": "latestPatch"}}))
+      with self.assertRaisesRegex(ValueError, "^release_sdk_rejected$"):
+        read(release, baseline=baseline)
+
+  # 發布source多出的隱含編譯輸入不能被漏出對應來源ZIP。
+  def test_baseline_release_source_rejects_extra_compile_input(self):
+    snapshot = api("source_snapshot")
+    for name in ["Core/Unlisted.cs", "Directory.Build.targets"]:
+      repo, release, _ = source_fixture()
+      (release / name).write_bytes(b"PUBLIC_EXTRA_COMPILE_INPUT")
+      with self.assertRaises(ValueError):
+        snapshot(repo, release, baseline=True)
+
+  # 來源closure必須包含新project／wrapper／測試與發布locks，任一byte不同都拒絕。
+  def test_baseline_source_closure_and_freeze(self):
+    snapshot = api("source_snapshot")
+    repo, release, _ = source_fixture()
+    src = repo / "frontend/e2e/receiver/native-supervisor"
+    (repo / "private-secret").write_bytes(b"PUBLIC_NOT_INCLUDED")
+    actual = positive(snapshot, repo, release, baseline=True)
+    expected = {"frontend/e2e/receiver/native-supervisor/" + n for n in PUBLIC_SOURCE_NAMES + BASELINE_ADDITIONAL_NAMES} | set(PUBLIC_EXTRAS) | {
+      "rebuild-inputs/global.json", "rebuild-inputs/NuGet.Config", "rebuild-inputs/Core/packages.lock.json", "rebuild-inputs/Windows/packages.lock.json", "rebuild-inputs/Baseline/packages.lock.json"}
+    self.assertEqual(set(actual), expected)
+    self.assertEqual(len(actual), 70)
+    for path in [src / "Baseline/Program.cs", src / "Fixtures/receiver-native-baseline-child.ps1", release / "Baseline/Program.cs", release / "Directory.Build.props"]:
+      original = path.read_bytes()
+      path.write_bytes(original + b"changed")
+      with self.assertRaises(ValueError):
+        snapshot(repo, release, baseline=True)
+      path.write_bytes(original)
+    missing = release / "Baseline/packages.lock.json"
+    missing.rename(release / "Baseline/held")
+    with self.assertRaises((ValueError, FileNotFoundError)):
+      snapshot(repo, release, baseline=True)
+
+  # dev圖、錯project依賴或放寬來源不得當成正式發布inputs。
+  def test_baseline_release_inputs_are_fixed(self):
+    read = api("release_inputs")
+    _, release, _ = source_fixture()
+    self.assertEqual(len(positive(read, release, baseline=True)), 5)
+    for name, data in [("global.json", b'{"sdk":{"version":"10.0.112","rollForward":"disable"}}'),
+                       ("Baseline/packages.lock.json", b'{"version":1,"dependencies":{"net10.0":{}}}'),
+                       ("Core/packages.lock.json", b'{"version":1,"dependencies":{"net10.0":{"external":{"type":"Direct"}},"net10.0/win-x64":{}}}'),
+                       ("Windows/packages.lock.json", b'{"version":1,"dependencies":{"net10.0":{},"net10.0/win-x64":{}}}'),
+                       ("NuGet.Config", b'<configuration><packageSources><clear/></packageSources></configuration>')]:
+      path = release / name
+      original = path.read_bytes()
+      path.write_bytes(data)
+      with self.assertRaises((ValueError, TypeError)):
+        read(release, baseline=True)
+      path.write_bytes(original)
+
+  # 當前來源不能追認為舊凍結包；另用明確fixture pin檢查舊正向與改byte拒絕。
+  def test_legacy_snapshot_fixture_and_current_refusal(self):
+    snapshot = api("source_snapshot")
+    repo, release, fixture_pin = source_fixture(False)
+    with self.assertRaises(ValueError):
+      snapshot(repo, release)
+    with mock.patch.dict(snapshot.__globals__, {"LEGACY_SOURCE_DIGEST": fixture_pin}):
+      actual = snapshot(repo, release)
+      self.assertEqual(len(actual), 55)
+      (repo / "frontend/e2e/receiver/native-supervisor/Core/ProbeWire.cs").write_bytes(b"changed public input")
+      with self.assertRaises(ValueError):
+        snapshot(repo, release)
+
+
 class BundleTests(unittest.TestCase):
   # 若忽略hash／普通單link／容量檢查，這些讀檔會被錯誤接受。
   def test_plain_file_boundary(self):
@@ -178,42 +492,22 @@ class BundleTests(unittest.TestCase):
   # 對應來源不能從HEAD取舊檔，也不能漏掉發布lock或順帶打包cache。
   def test_source_snapshot_has_release_inputs_and_rejects_missing(self):
     snapshot = api("source_snapshot")
-    repo = Path(__file__).resolve().parents[3]
-    home = root()
-    for name in ["frontend/e2e/receiver/native-supervisor", "frontend/e2e/scripts/start-windows-test-receiver.ps1", "frontend/e2e/scripts/windows-host-observer-supervisor.ps1", "frontend/e2e/receiver/node-runtime-pin.json", "frontend/scripts/build_receiver_native_supervisor.py", "frontend/e2e/scripts/test_build_receiver_native_supervisor.py", "Directory.Build.props", "global.json", "LICENSE", "THIRD_PARTY_NOTICES.md"]:
-      destination = home / name
-      destination.parent.mkdir(parents=True, exist_ok=True)
-      if (repo / name).is_dir():
-        shutil.copytree(repo / name, destination)
-      else:
-        shutil.copyfile(repo / name, destination)
-    (home / "frontend/e2e/receiver/native-supervisor/README.md").write_bytes(b"public usage")
-    release = home / "release"
-    release.mkdir()
+    home, release, fixture_pin = source_fixture(False)
     source = home / "frontend/e2e/receiver/native-supervisor"
-    for kind in ["Core", "Windows"]:
-      (release / kind).mkdir()
-      for path in (source / kind).iterdir():
-        if path.suffix in (".cs", ".csproj"):
-          shutil.copyfile(path, release / kind / path.name)
-      framework = {} if kind == "Core" else {"rdweb.receiver.nativesupervisor.core": {"type": "Project"}}
-      (release / kind / "packages.lock.json").write_text(json.dumps({"version": 1, "dependencies": {"net10.0": framework, "net10.0/win-x64": {}}}))
-    shutil.copyfile(home / "Directory.Build.props", release / "Directory.Build.props")
-    (release / "global.json").write_bytes(b'{"sdk":{"version":"10.0.113","rollForward":"disable"}}')
-    (release / "NuGet.Config").write_bytes(b'<configuration><packageSources><clear/><add key="receiver-native-local" value="../local-feed"/></packageSources><auditSources><clear/><add key="nuget-audit" value="https://api.nuget.org/v3/index.json"/></auditSources><fallbackPackageFolders><clear/></fallbackPackageFolders></configuration>')
     (home / "private-secret").write_bytes(b"must not be copied")
-    files = snapshot(home, release)
-    self.assertEqual(len(files), 55)
-    self.assertNotIn("private-secret", files)
-    self.assertEqual(files["rebuild-inputs/global.json"], (release / "global.json").read_bytes())
-    self.assertNotEqual(files["rebuild-inputs/global.json"], files["global.json"])
-    (release / "Windows/packages.lock.json").rename(release / "Windows/held-lock")
-    with self.assertRaises((ValueError, FileNotFoundError)):
-      snapshot(home, release)
-    (release / "Windows/held-lock").rename(release / "Windows/packages.lock.json")
-    (source / "Core/ProbeWire.cs").write_bytes(b"changed public source")
-    with self.assertRaises(ValueError):
-      snapshot(home, release)
+    with mock.patch.dict(snapshot.__globals__, {"LEGACY_SOURCE_DIGEST": fixture_pin}):
+      files = snapshot(home, release)
+      self.assertEqual(len(files), 55)
+      self.assertNotIn("private-secret", files)
+      self.assertEqual(files["rebuild-inputs/global.json"], (release / "global.json").read_bytes())
+      self.assertNotEqual(files["rebuild-inputs/global.json"], files["global.json"])
+      (release / "Windows/packages.lock.json").rename(release / "Windows/held-lock")
+      with self.assertRaises((ValueError, FileNotFoundError)):
+        snapshot(home, release)
+      (release / "Windows/held-lock").rename(release / "Windows/packages.lock.json")
+      (source / "Core/ProbeWire.cs").write_bytes(b"changed public source")
+      with self.assertRaises(ValueError):
+        snapshot(home, release)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -411,10 +705,12 @@ class RebuildTests(unittest.TestCase):
     # 模擬的副作用只落在被測函數指定的新目錄，不吞掉真驗證邏輯。
     def runner(args, **kwargs):
       calls.append(args)
+      self.assertEqual(args[0], "dotnet")
       self.assertEqual(kwargs["cwd"], output / "source")
       self.assertEqual(kwargs["env"]["NUGET_PACKAGES"], str(output / "packages"))
       if "--version" in args:
-        return subprocess.CompletedProcess(args, 0, "10.0.112\n" if failure == "version" else "10.0.113\n", "")
+        version = {"version": "10.0.112\n", "version114": "10.0.114\n"}.get(failure, "10.0.113\n")
+        return subprocess.CompletedProcess(args, 0, version, "")
       for property_value in ["-p:RuntimeFrameworkVersion=10.0.14", "-p:DisableTransitiveFrameworkReferenceDownloads=true", "-p:SelfContained=true", "-p:UseAppHost=true", "-p:PublishAot=false", "-p:PublishTrimmed=false", "-p:PublishSingleFile=false", "-p:PublishReadyToRun=false", "-p:DebugType=None", "-p:UseSharedCompilation=false"]:
         self.assertIn(property_value, args)
       if "restore" in args:
@@ -469,13 +765,327 @@ class RebuildTests(unittest.TestCase):
   # restore錯誤、lock變動或第三包需求一律停在publish之前且保留新root。
   def test_rebuild_stops_after_failed_gate(self):
     rebuild = api("rebuild")
-    for failure, count in [("version", 1), ("restore", 2), ("extra", 2), ("lock", 2), ("publish", 3)]:
+    for failure, count in [("version", 1), ("version114", 1), ("restore", 2), ("extra", 2), ("lock", 2), ("publish", 3)]:
       repo, feed, output, runner, calls = self.fixture(failure)
       with self.assertRaises(ValueError):
         rebuild(repo, feed, output, runner=runner)
       self.assertEqual(len(calls), count)
       self.assertFalse((output / "staging").exists())
       self.assertTrue((output / "source").is_dir())
+
+
+# 假SDK提供完整三project restore圖與raw publish；真builder負責所有gate及寫檔。
+def baseline_rebuild_fixture(failure=None, companions_count=3):
+  _, _, feed, pin, files, companions = baseline_dotnet_fixture()
+  repo, release, fixture_pin = source_fixture(runtime_pin=pin)
+  output = repo.parent / "rebuilt"
+  dotnet = repo.parent / "SDK 空格" / "dotnet"
+  dotnet.parent.mkdir()
+  dotnet.write_bytes(b"PUBLIC_FAKE_SDK_NOT_EXECUTABLE_CONTENT")
+  dotnet.chmod(0o700)
+  calls = []
+  names = {"Core": "RdWeb.Receiver.NativeSupervisor.Core", "Windows": "RdWeb.Receiver.NativeSupervisor.Windows", "Baseline": "RdWeb.Receiver.NativeBaseline.Windows"}
+  dependencies = {"Core": [], "Windows": ["Core"], "Baseline": ["Core", "Windows"]}
+
+  # 只替換process；一旦命令序列／屬性錯誤就斷言，不幫builder補成功。
+  def runner(args, **kwargs):
+    calls.append(args)
+    assert args[0] == str(dotnet)
+    assert kwargs["cwd"] == output / "source"
+    assert kwargs["env"]["NUGET_PACKAGES"] == str(output / "packages")
+    assert kwargs["env"]["DOTNET_ROOT"] == str(dotnet.parent)
+    assert kwargs["env"]["DOTNET_ROOT_X64"] == str(dotnet.parent)
+    assert kwargs["env"]["DOTNET_HOST_PATH"] == str(dotnet)
+    if "--version" in args:
+      version = {"version": "10.0.112\n", "version113": "10.0.113\n", "version115": "10.0.115\n"}.get(failure, "10.0.114\n")
+      return subprocess.CompletedProcess(args, 1 if failure == "version_exit" else 0, version, "")
+    assert args[2] == "Baseline/RdWeb.Receiver.NativeBaseline.Windows.csproj"
+    for prop in ["-p:RuntimeFrameworkVersion=10.0.14", "-p:RuntimeIdentifier=win-x64", "-p:SelfContained=true", "-p:UseAppHost=true", "-p:PublishAot=false", "-p:PublishTrimmed=false", "-p:PublishSingleFile=false", "-p:PublishReadyToRun=false", "-p:UseSharedCompilation=false", "-p:DisableTransitiveFrameworkReferenceDownloads=true", "-p:DebugType=None"]:
+      assert prop in args
+    if "restore" in args:
+      assert "--locked-mode" in args and "--use-lock-file" not in args
+      if failure == "restore":
+        return subprocess.CompletedProcess(args, 1, "", "public failure")
+      projects = {}
+      paths = {k: str(output / "source" / k / (v + ".csproj")) for k, v in names.items()}
+      downloads = [{"name": "Microsoft.NETCore.App.Host.win-x64", "version": "[10.0.14, 10.0.14]"}, {"name": "Microsoft.NETCore.App.Runtime.win-x64", "version": "[10.0.14, 10.0.14]"}]
+      for kind in names:
+        project = {"frameworks": {"net10.0": {"frameworkReferences": {"Microsoft.NETCore.App": {"privateAssets": "all"}}, "downloadDependencies": list(downloads)}},
+          "runtimes": {"win-x64": {}}, "restore": {"projectPath": paths[kind], "sources": {str(output / "local-feed"): {}},
+            "frameworks": {"net10.0": {"projectReferences": {paths[k]: {"projectPath": paths[k]} for k in dependencies[kind]}}},
+            "restoreAuditProperties": {"enableAudit": "true", "auditLevel": "low", "auditMode": "all"}}}
+        projects[kind] = project
+      for kind, name in names.items():
+        obj = output / "artifacts/obj" / name
+        obj.mkdir(parents=True)
+        libraries = {names[k] + "/1.0.0": {"type": "project"} for k in dependencies[kind]}
+        assets = {"project": projects[kind], "libraries": libraries, "targets": {"net10.0": {}, "net10.0/win-x64": {}}}
+        graph = {paths[k]: projects[k] for k in [kind] + dependencies[kind]}
+        if kind == "Baseline":
+          if failure == "extra":
+            projects[kind]["frameworks"]["net10.0"]["downloadDependencies"].append({"name": "Microsoft.AspNetCore.App.Runtime.win-x64", "version": "[10.0.14, 10.0.14]"})
+          if failure == "audit":
+            projects[kind]["restore"]["restoreAuditProperties"]["enableAudit"] = "false"
+          if failure == "sources":
+            projects[kind]["restore"]["sources"]["https://example.invalid"] = {}
+          if failure == "rid":
+            projects[kind]["runtimes"] = {"linux-x64": {}}
+          if failure == "project":
+            graph[str(output / "source/extra.csproj")] = projects[kind]
+          if failure == "library":
+            libraries["external/1.0.0"] = {"type": "package"}
+          if failure == "references":
+            projects[kind]["restore"]["frameworks"]["net10.0"]["projectReferences"] = {}
+        if not (kind == "Baseline" and failure == "assets"):
+          (obj / "project.assets.json").write_text(json.dumps(assets))
+        if not (kind == "Baseline" and failure == "dgspec"):
+          (obj / (name + ".csproj.nuget.dgspec.json")).write_text(json.dumps({"projects": graph}))
+      for path in feed.iterdir():
+        identifier = path.name.removesuffix(".10.0.14.nupkg")
+        dest = output / "packages" / identifier / "10.0.14"
+        dest.mkdir(parents=True)
+        shutil.copyfile(path, dest / path.name)
+      if failure == "package":
+        (output / "packages/extra-package").mkdir()
+      if failure == "lock":
+        (output / "source/Baseline/packages.lock.json").write_bytes(b"changed")
+    elif "publish" in args:
+      assert "--no-restore" in args and "--self-contained" in args
+      assert Path(args[args.index("-o") + 1]) == output / "raw-publish"
+      if failure == "publish":
+        return subprocess.CompletedProcess(args, 1, "", "public publish failure")
+      raw = output / "raw-publish"
+      raw.mkdir()
+      for name, data in files.items():
+        if name not in ("LICENSE.DotNet.txt", "THIRD-PARTY-NOTICES.DotNet.txt"):
+          (raw / name).write_bytes(data)
+      for name, data in companions.items():
+        if companions_count == 3 or (companions_count == 2 and not name.endswith(".exe")):
+          (raw / name).write_bytes(data)
+      if failure == "raw":
+        (raw / "unknown.dll").write_bytes(b"public")
+    else:
+      raise AssertionError("unexpected_public_sdk_command")
+    return subprocess.CompletedProcess(args, 0, "", "")
+  return repo, feed, output, runner, calls, fixture_pin, dotnet
+
+
+class BaselineRebuildTests(unittest.TestCase):
+  # 相對或無效入口必須在建立output及呼process前拒絕，不能自動改走PATH。
+  def test_baseline_sdk_path_rejected_before_output(self):
+    rebuild = api("rebuild_baseline")
+    for kind in ["relative", "missing", "directory", "symlink", "nonexecutable"]:
+      with self.subTest(kind=kind):
+        repo, feed, output, runner, calls, _, dotnet = baseline_rebuild_fixture()
+        path = dotnet
+        if kind == "relative":
+          path = Path("PUBLIC/dotnet")
+        elif kind == "missing":
+          path = dotnet.parent / "missing"
+        elif kind == "directory":
+          path = dotnet.parent
+        elif kind == "symlink":
+          path = dotnet.parent / "linked-dotnet"
+          path.symlink_to(dotnet)
+        else:
+          dotnet.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "^baseline_sdk_path_rejected$"):
+          rebuild(repo, feed, output, runner=runner, dotnet=path)
+        self.assertEqual(calls, [])
+        self.assertFalse(output.exists())
+    repo, feed, output, runner, calls, _, _ = baseline_rebuild_fixture()
+    with self.assertRaises(TypeError):
+      rebuild(repo, feed, output, runner=runner)
+    self.assertEqual(calls, [])
+    self.assertFalse(output.exists())
+
+  # 每次命令都使用帶空格的明確入口，並覆蓋繼承到的錯誤SDK環境。
+  def test_baseline_sdk_path_and_environment_are_fixed(self):
+    rebuild = api("rebuild_baseline")
+    repo, feed, output, runner, calls, fixture_pin, dotnet = baseline_rebuild_fixture()
+    inherited = {"DOTNET_ROOT": "/wrong/root", "DOTNET_ROOT_X64": "/wrong/x64", "DOTNET_HOST_PATH": "/wrong/dotnet"}
+    with mock.patch.dict(os.environ, inherited), mock.patch.dict(rebuild.__globals__, {"BASELINE_SOURCE_DIGEST": fixture_pin}):
+      stage = positive(rebuild, repo, feed, output, runner=runner, dotnet=dotnet)
+    self.assertEqual(len(list(stage.iterdir())), 195)
+    self.assertEqual([args[1] for args in calls], ["--version", "restore", "publish"])
+
+  # 錯版或version失敗只能留下新output，不得進restore或publish。
+  def test_baseline_sdk_version_stops_before_restore(self):
+    rebuild = api("rebuild_baseline")
+    for failure in ["version113", "version115", "version_exit"]:
+      with self.subTest(failure=failure):
+        repo, feed, output, runner, calls, fixture_pin, dotnet = baseline_rebuild_fixture(failure)
+        with mock.patch.dict(rebuild.__globals__, {"BASELINE_SOURCE_DIGEST": fixture_pin}):
+          with self.assertRaisesRegex(ValueError, "^rebuild_sdk_rejected$"):
+            rebuild(repo, feed, output, runner=runner, dotnet=dotnet)
+        self.assertEqual(calls, [[str(dotnet), "--version"]])
+        self.assertTrue(output.is_dir())
+        self.assertFalse((output / "raw-publish").exists())
+        self.assertFalse((output / "staging").exists())
+
+  # 真對應來源的rebuild-inputs只有控制檔，不能要求原碼再複製一份在該目錄。
+  def test_baseline_rebuild_accepts_control_only_inputs(self):
+    rebuild = api("rebuild_baseline")
+    repo, feed, output, runner, calls, fixture_pin, dotnet = baseline_rebuild_fixture()
+    release = repo / "rebuild-inputs"
+    for path in list(release.rglob("*.cs")) + list(release.rglob("*.csproj")) + [release / "Directory.Build.props"]:
+      path.unlink()
+    self.assertEqual(len([p for p in release.rglob("*") if p.is_file()]), 5)
+    with mock.patch.dict(rebuild.__globals__, {"BASELINE_SOURCE_DIGEST": fixture_pin}):
+      stage = positive(rebuild, repo, feed, output, runner=runner, dotnet=dotnet)
+    self.assertEqual(len(list(stage.iterdir())), 195)
+    self.assertEqual(len(calls), 3)
+
+  # 真流程須驗三份locks與source closure，保留raw並另建唯一canonical stage。
+  def test_baseline_rebuild_uses_fixed_project_and_locks(self):
+    rebuild = api("rebuild_baseline")
+    for count in [0, 2, 3]:
+      repo, feed, output, runner, calls, fixture_pin, dotnet = baseline_rebuild_fixture(companions_count=count)
+      with mock.patch.dict(rebuild.__globals__, {"BASELINE_SOURCE_DIGEST": fixture_pin}):
+        result = positive(rebuild, repo, feed, output, runner=runner, dotnet=dotnet)
+      self.assertEqual(result, output / "staging")
+      self.assertEqual(len(list(result.iterdir())), 195)
+      self.assertEqual(len(list((output / "raw-publish").iterdir())), 195 + count)
+      self.assertEqual(len(calls), 3)
+      self.assertFalse((result / "RdWeb.Receiver.NativeSupervisor.Windows.exe").exists())
+      self.assertFalse((output / "source/Tests").exists())
+      for kind in ["Core", "Windows", "Baseline"]:
+        self.assertEqual((output / "source" / kind / "packages.lock.json").read_bytes(), (repo / "rebuild-inputs" / kind / "packages.lock.json").read_bytes())
+      with self.assertRaises(FileExistsError):
+        rebuild(repo, feed, output, runner=runner, dotnet=dotnet)
+      self.assertEqual(len(calls), 3)
+
+  # 單個錯圖／第三包／audit關閉均須先於publish拒絕，失敗root不清理或自動重試。
+  def test_baseline_rebuild_stops_before_publish(self):
+    rebuild = api("rebuild_baseline")
+    for failure in ["version", "restore", "lock", "assets", "dgspec", "extra", "audit", "sources", "rid", "project", "library", "references", "package", "publish", "raw"]:
+      with self.subTest(failure=failure):
+        repo, feed, output, runner, calls, fixture_pin, dotnet = baseline_rebuild_fixture(failure)
+        with mock.patch.dict(rebuild.__globals__, {"BASELINE_SOURCE_DIGEST": fixture_pin}):
+          with self.assertRaises((ValueError, OSError)):
+            rebuild(repo, feed, output, runner=runner, dotnet=dotnet)
+        self.assertEqual(len(calls), 1 if failure == "version" else 3 if failure in ("publish", "raw") else 2)
+        self.assertTrue(output.is_dir())
+        self.assertFalse((output / "staging").exists())
+        self.assertEqual((output / "raw-publish").exists(), failure == "raw")
+
+
+# 新pack公開fixture保留所有真來源／staging gate，只有Node取得是外部替身。
+def baseline_pack_fixture():
+  _, stage, feed, pin, files, _ = baseline_dotnet_fixture()
+  repo, release, source_pin = source_fixture(runtime_pin=pin)
+  node = {"node.exe": pe(), "LICENSE.Node.txt": b"public full node license"}
+  return repo, release, source_pin, stage, feed, files, node
+
+
+class BaselinePackTests(unittest.TestCase):
+  # 兩份ZIP真回讀CRC／manifest／完整bytes；來源閉包與binary集合獨立明列。
+  def test_baseline_pack_exact_archives(self):
+    pack = api("pack_baseline")
+    repo, release, source_pin, stage, feed, files, node = baseline_pack_fixture()
+    output = repo.parent / "packed"
+    acquire = mock.Mock(return_value=node)
+    pins = pack.__globals__["BASELINE_SOURCE_PINS"] | {"node.exe": hashlib.sha256(node["node.exe"]).hexdigest()}
+    with mock.patch.dict(pack.__globals__, {"BASELINE_SOURCE_DIGEST": source_pin, "BASELINE_SOURCE_PINS": pins}):
+      result = positive(pack, repo, stage, feed, release, output, node_acquirer=acquire)
+    self.assertEqual(acquire.call_count, 1)
+    self.assertEqual(acquire.call_args.args[0], output)
+    self.assertEqual(set(result), {"receiver-native-baseline-win-x64.zip", "receiver-native-baseline-corresponding-source.zip"})
+    binary_names = set(files) | {"node.exe", "LICENSE.Node.txt", "start-windows-test-receiver.ps1", "windows-host-observer-supervisor.ps1",
+      "receiver-native-baseline-child.ps1", "PUBLIC 空格 繁體/receiver-native-case.mjs", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "integrity.json"}
+    source_names = {"frontend/e2e/receiver/native-supervisor/" + n for n in PUBLIC_SOURCE_NAMES + BASELINE_ADDITIONAL_NAMES} | set(PUBLIC_EXTRAS) | {
+      "rebuild-inputs/global.json", "rebuild-inputs/NuGet.Config", "rebuild-inputs/Core/packages.lock.json", "rebuild-inputs/Windows/packages.lock.json", "rebuild-inputs/Baseline/packages.lock.json", "integrity.json"}
+    self.assertEqual(len(binary_names), 205)
+    self.assertEqual(len(source_names), 71)
+    for name, expected in [("receiver-native-baseline-win-x64.zip", binary_names), ("receiver-native-baseline-corresponding-source.zip", source_names)]:
+      path = output / "archives" / name
+      self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), result[name])
+      with zipfile.ZipFile(path) as archive_file:
+        self.assertIsNone(archive_file.testzip())
+        self.assertEqual(set(archive_file.namelist()), expected)
+        manifest = json.loads(archive_file.read("integrity.json"))
+        self.assertEqual(manifest, {"schemaVersion": 1, "files": {n: hashlib.sha256(archive_file.read(n)).hexdigest() for n in expected if n != "integrity.json"}})
+        if "corresponding-source" not in name:
+          self.assertEqual(archive_file.read("receiver-native-baseline-child.ps1"), (repo / "frontend/e2e/receiver/native-supervisor/Fixtures/receiver-native-baseline-child.ps1").read_bytes())
+
+  # 任一前置錯誤須先於Node取得，保留失敗root；既存root不能讀檔或覆寫。
+  def test_baseline_pack_failure_preserves_root(self):
+    pack = api("pack_baseline")
+    for failure in ["source", "release", "pin", "stage", "digest"]:
+      with self.subTest(failure=failure):
+        repo, release, source_pin, stage, feed, _, node = baseline_pack_fixture()
+        output = repo.parent / "failed"
+        acquire = mock.Mock(return_value=node)
+        pins = pack.__globals__["BASELINE_SOURCE_PINS"] | {"node.exe": hashlib.sha256(node["node.exe"]).hexdigest()}
+        if failure == "source":
+          (repo / "frontend/e2e/receiver/native-supervisor/Baseline/Program.cs").write_bytes(b"changed public source")
+        if failure == "release":
+          (release / "Baseline/Program.cs").write_bytes(b"changed public release source")
+        if failure == "pin":
+          pins["receiver-native-baseline-child.ps1"] = "0" * 64
+        if failure == "stage":
+          (stage / "runtime0.dll").write_bytes(b"changed public runtime")
+        with mock.patch.dict(pack.__globals__, {"BASELINE_SOURCE_DIGEST": source_pin, "BASELINE_SOURCE_PINS": pins}):
+          with self.assertRaises(ValueError):
+            pack(repo, stage, feed, release, output, "0" * 64 if failure == "digest" else None, node_acquirer=acquire)
+        self.assertTrue(output.is_dir())
+        self.assertFalse((output / "archives").exists())
+        acquire.assert_not_called()
+    output = root()
+    with mock.patch.dict(pack.__globals__, {"read_plain": mock.Mock(side_effect=AssertionError("unexpected_read"))}):
+      try:
+        with self.assertRaises(FileExistsError):
+          pack(output, output, output, output, output)
+      except ValueError:
+        self.fail("exclusive_output_boundary_not_implemented")
+
+  # 完整參數只在同程序測dispatch，help／缺參不啟任何外部邊界。
+  def test_baseline_cli_dispatch(self):
+    main = api("main")
+    module = main.__globals__
+    for command, selected in [("rebuild", "rebuild"), ("rebuild-baseline", "rebuild_baseline"), ("pack", "pack"), ("pack-baseline", "pack_baseline")]:
+      functions = {n: mock.Mock(return_value={} if n.startswith("pack") else Path("PUBLIC")) for n in ["rebuild", "rebuild_baseline", "pack", "pack_baseline"]}
+      args = [command, "--repo", "PUBLIC_REPO", "--packages", "PUBLIC_FEED", "--output", "PUBLIC_OUTPUT"]
+      if command == "rebuild-baseline":
+        args += ["--dotnet", "/approved/isolated-sdk/dotnet"]
+      if command.startswith("pack"):
+        args += ["--staging", "PUBLIC_STAGE", "--release-source", "PUBLIC_SOURCE"]
+      with mock.patch.dict(module, functions), mock.patch("sys.stdout", new_callable=io.StringIO), mock.patch("sys.stderr", new_callable=io.StringIO):
+        try:
+          self.assertEqual(main(args), 0)
+        except SystemExit:
+          self.fail("fixed_baseline_command_not_registered")
+      self.assertEqual(functions[selected].call_count, 1)
+      if command == "rebuild-baseline":
+        functions[selected].assert_called_once_with(Path("PUBLIC_REPO"), Path("PUBLIC_FEED"), Path("PUBLIC_OUTPUT"), dotnet=Path("/approved/isolated-sdk/dotnet"))
+      elif command == "rebuild":
+        functions[selected].assert_called_once_with(Path("PUBLIC_REPO"), Path("PUBLIC_FEED"), Path("PUBLIC_OUTPUT"))
+      for name, function in functions.items():
+        if name != selected:
+          function.assert_not_called()
+    with mock.patch("sys.stdout", new_callable=io.StringIO), mock.patch("sys.stderr", new_callable=io.StringIO):
+      with self.assertRaises(SystemExit) as help_exit:
+        main(["--help"])
+      self.assertEqual(help_exit.exception.code, 0)
+      for args in [["pack-baseline"], ["rebuild-baseline"], ["pack-baseline", "--entry", "PUBLIC"], ["pack-baseline", "--profile", "PUBLIC"]]:
+        with self.assertRaises(SystemExit) as invalid:
+          main(args)
+        self.assertEqual(invalid.exception.code, 2)
+    for command in ["rebuild-baseline", "rebuild", "pack", "pack-baseline"]:
+      functions = {n: mock.Mock() for n in ["rebuild", "rebuild_baseline", "pack", "pack_baseline"]}
+      output = root() / "not-created"
+      args = [command, "--repo", "PUBLIC_REPO", "--packages", "PUBLIC_FEED", "--output", str(output)]
+      if command.startswith("pack"):
+        args += ["--staging", "PUBLIC_STAGE", "--release-source", "PUBLIC_SOURCE"]
+      if command != "rebuild-baseline":
+        args += ["--dotnet", "/approved/isolated-sdk/dotnet"]
+      with mock.patch.dict(module, functions), mock.patch("sys.stderr", new_callable=io.StringIO):
+        with self.assertRaises(SystemExit) as invalid:
+          main(args)
+      self.assertEqual(invalid.exception.code, 2)
+      for function in functions.values():
+        function.assert_not_called()
+      self.assertFalse(output.exists())
 
 
 class PackTests(unittest.TestCase):

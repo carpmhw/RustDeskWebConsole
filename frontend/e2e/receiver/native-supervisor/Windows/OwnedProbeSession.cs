@@ -18,6 +18,10 @@ internal sealed class OwnedProbeSession
     private long _lastTime;
     private bool _cleanupDone, _frameTaken;
     private uint _exitCode;
+    private readonly BaselineCapture? _baseline;
+    private BaselineChildFrame? _baselineFrame;
+    private bool? _psObserved;
+    private BaselineJobState _jobObserved;
     internal bool ResourcesClosed => _resourcesClosed;
     internal bool CleanupComplete => _cleanupDone;
     internal bool Failed => _failed;
@@ -26,8 +30,9 @@ internal sealed class OwnedProbeSession
     internal bool SourceReleaseSafe => _process == 0 || (_signalReported && (!_assigned || _treeReported));
 
     // 測試替身只能經friend使用；正式console經唯一run傳入固定來源plan，不收外部command。
-    internal OwnedProbeSession(IProbeNativeApi api, IProbeClock clock, ProbeModel model, ProbeLaunchPlan plan)
+    internal OwnedProbeSession(IProbeNativeApi api, IProbeClock clock, ProbeModel model, ProbeLaunchPlan plan, BaselineCapture? baseline = null)
     {
+        _baseline = baseline;
         _api = api;
         _clock = clock;
         _model = model;
@@ -86,10 +91,12 @@ internal sealed class OwnedProbeSession
     // 非阻塞公平poll；process signal、正常exit與job active查空分開取得證據。
     internal void Poll()
     {
+        _jobObserved = BaselineJobState.Unknown;
         if (_cleanupDone || !WithinBudget()) return;
         if (_process != 0 && !_signalReported)
         {
             var observation = _api.ObserveProcess(_process);
+            _psObserved = observation.Valid ? observation.Signaled : null;
             if (!observation.Valid) { Reject(); }
             else if (observation.Signaled && WithinBudget())
             {
@@ -101,10 +108,14 @@ internal sealed class OwnedProbeSession
         if (_signalReported && _assigned && !_treeReported && WithinBudget())
         {
             if (!_api.QueryActive(_job, out var active)) Reject();
-            else if (active == 0 && WithinBudget())
+            else if (WithinBudget())
             {
-                _treeReported = true;
-                _model.Observe(ProbeEvent.TreeEmpty, _clock.ElapsedMs, true);
+                _jobObserved = active == 0 ? BaselineJobState.Empty : BaselineJobState.Nonempty;
+                if (active == 0)
+                {
+                    _treeReported = true;
+                    _model.Observe(ProbeEvent.TreeEmpty, _clock.ElapsedMs, true);
+                }
             }
         }
         if (!WithinBudget()) return;
@@ -115,6 +126,24 @@ internal sealed class OwnedProbeSession
         ReportPipe(_stderr, false, ref _stderrReported);
     }
 
+    // 同一owned stdout只在正常期限及雙EOF後解碼；exit2只留觀察，不產生Core事件。
+    internal void CaptureBaselineChild()
+    {
+        if (_baseline is null || _baselineFrame is not null || _cleanupEnd is not null || _cancelIssued || _failed ||
+            !_signalReported || !_stdout.Eof || !_stderr.Eof || _stdout.Failed || _stderr.Failed || !WithinBudget()) return;
+        _baselineFrame = _stderr.Collected == 0 ? BaselineChildWire.Parse(_stdout.Bytes.Span) : new();
+        var cases = _baselineFrame.Cases;
+        if (!_baselineFrame.Accepted || !WithinBudget() || cases.ChildPolicyRestore != EvidenceState.Confirmed || cases.ChildResourcesClose != EvidenceState.Confirmed ||
+            !((_exitCode == 0 && cases.Reason is ProbeReason.None or ProbeReason.CaseMismatch or ProbeReason.NativeStderrInterrupted) ||
+              (_exitCode == 2 && cases.Reason == ProbeReason.IoFailed)))
+        {
+            _baseline.RejectChild();
+            _baselineFrame = new();
+            return;
+        }
+        _baseline.AcceptChild(_baselineFrame);
+    }
+
     // 唯一讀取child frame的接點，只可消費本輪兩路；沒有caller bytes／verified參數。
     internal bool TryTakeChildFrame(out ChildProbeFrame frame)
     {
@@ -123,7 +152,7 @@ internal sealed class OwnedProbeSession
             !_stdout.Eof || !_stderr.Eof || _stdout.Failed || _stderr.Failed || !WithinBudget()) return false;
         _frameTaken = true;
         if (_stderr.Collected != 0) return true;
-        var parsed = ChildProbeWire.Parse(_stdout.Bytes.Span);
+        var parsed = _baseline is null ? ChildProbeWire.Parse(_stdout.Bytes.Span) : _baselineFrame?.Cases ?? new();
         if (!parsed.Accepted || !WithinBudget() || parsed.ChildPolicyRestore != EvidenceState.Confirmed ||
             parsed.ChildResourcesClose != EvidenceState.Confirmed ||
             parsed.Reason is not (ProbeReason.None or ProbeReason.CaseMismatch or ProbeReason.NativeStderrInterrupted)) return true;
@@ -149,10 +178,13 @@ internal sealed class OwnedProbeSession
         Poll();
         if (!WithinBudget()) return _model.Snapshot();
         var needsCancel = decision.Target == CancelTarget.OwnedJob ? !_signalReported || !_treeReported : !_signalReported;
+        _baseline?.ObserveCancellationCheck(decision, _signalReported ? true : _psObserved, _jobObserved);
         if (!_cancelIssued && decision.Target != CancelTarget.None && needsCancel)
         {
             _cancelIssued = true;
+            _baseline?.TerminationStarting();
             var cancelled = decision.Target == CancelTarget.OwnedJob ? _api.TerminateJob(_job) : _api.TerminateProcess(_process);
+            _baseline?.TerminationReturned(cancelled);
             _model.Observe(ProbeEvent.Cancelled, _clock.ElapsedMs, cancelled);
         }
         _stdout.CloseWriter();

@@ -40,10 +40,11 @@ internal sealed class FakeSourceApi : IProbeSourceApi, IProbeClock
     public bool IsRunning { get; set; } = true;
 
     // 五份公開測試bytes的pin獨立於正式來源，不讀原包或runtime。
-    internal FakeSourceApi(string wrapper = "# PUBLIC\nexit 2\n", byte[]? wrapperBytes = null, Dictionary<string, byte[]>? files = null)
+    internal FakeSourceApi(string wrapper = "# PUBLIC\nexit 2\n", byte[]? wrapperBytes = null, Dictionary<string, byte[]>? files = null, bool baseline = false)
     {
         Files = files ?? new(StringComparer.OrdinalIgnoreCase);
         string[] names = ["start-windows-test-receiver.ps1", "windows-host-observer-supervisor.ps1", "node.exe", "PUBLIC 空格 繁體\\receiver-native-case.mjs", "receiver-native-child.ps1"];
+        if (baseline) names[^1] = "receiver-native-baseline-child.ps1";
         var pins = new List<SourcePin>();
         foreach (var name in names)
         {

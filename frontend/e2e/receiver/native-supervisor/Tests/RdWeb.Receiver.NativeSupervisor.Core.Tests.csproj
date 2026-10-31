@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="../Core/RdWeb.Receiver.NativeSupervisor.Core.csproj" />
     <ProjectReference Include="../Windows/RdWeb.Receiver.NativeSupervisor.Windows.csproj" />
+    <ProjectReference Include="../Baseline/RdWeb.Receiver.NativeBaseline.Windows.csproj" />
   </ItemGroup>
 </Project>

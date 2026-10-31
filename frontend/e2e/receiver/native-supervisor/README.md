@@ -25,6 +25,40 @@
 
 結果只有既有固定 v3 兩行終態；observed／defect／unavailable 對應 exit 0／1／2。完整輸出、真退出碼、期限與資源證據必須一起核對，不能靠 marker、port healthy 或 exit 0 單獨判成功。新輪的精確 root、政策／程序／claim 許可及接受條件須由操作者另外確認。
 
+## 診斷基線候選入口（未發布）
+
+`Baseline/RdWeb.Receiver.NativeBaseline.Windows.csproj` 是獨立候選入口，只接受 `--receiver-native-baseline-v1`。它保持原 CreateProcess 旗標、系統 PS5.1、原 `Invoke-ReceiverChild` 及固定七案；不加入 `CREATE_NO_WINDOW`、不更換終端或直接由 .NET 啟 Node。原入口仍只接受 `--receiver-native-cases-v1`。
+
+基線使用獨立 `receiver-native-baseline-child.ps1`／編譯 pins 與 `receiver_native_baseline_child_v1` purpose，輸出原 v3 兩行後再加 `receiver_native_baseline_observation,` 的固定 17 鍵觀察行。觀察只有首問題案、ref／raw 型別和值的安全分類、公開輸出是否符合及首次取消檢查快照；不輸出內容、原生錯誤文字或程序識別。未知值不推成成功；`io_failed` 加真 PS exit2 即使能採信診斷，也不能補成 Core 的案例、退出或政策成功證據。原 exit0／1／2 分類不變。
+
+基線來源 factory 只向自有 PS child 提供固定 `PATHEXT=.EXE`，另保留 `PSModulePath`、`RDWEB_NATIVE_PROBE_ROOT`、`SystemRoot`、`WINDIR` 四個原有值；不繼承呼叫端環境、不加入其他副檔名或 PATH／TEMP／USERPROFILE／COMSPEC。一般 probe 仍只提供原四變數，不隨基線候選改變。這是啟動配置差異，不代表 child 內環境已獨立量測或 Windows 原生驗證已完成。
+
+**這個候選未發布，也未完成 PS5.1／Windows 原生驗證。** 舊兩行 collector 不相容；新三行資料須由專用 consumer 核對，之後的外層四行 collector 仍待另行準備。builder 提供固定的 `rebuild-baseline`／`pack-baseline` 候選子命令；下述原 `rebuild`／`pack` 不會自動切換模式。不可將開發 build 當作 Windows self-contained 包，也不可用舊 ZIP／hash 替新來源背書。基線 SDK 固定 10.0.114，發布維持 runtime 10.0.14／Node 24.22.1 及原授權要求。
+
+### 基線發布工具的分界
+
+- `rebuild-baseline` 固定使用 Baseline project；參數為 repo／packages／output 及必填 `--dotnet`，沒有任意 entry／profile。SDK 入口必須是絕對路徑的普通、非 symlink、可執行檔，不自動下載 SDK，也不回落 PATH 的系統 dotnet。version／restore／publish 均使用同一入口，僅接受 SDK 10.0.114。需要正式三 project 的發布 locks、固定 SDK 10.0.114／rollForward=disable 的 global.json 與 local-feed／audit 設定；開發 locks 不可替代。來源包的 `rebuild-inputs` 只保存發布控制檔，編譯原碼仍從其原目錄按明列清單凍結。
+- SDK 原始輸出保留在 `raw-publish/`，只接受契約明列的 195／197／198 檔組合；存在的 Windows companion 也必須驗證。通過後另建固定 195 檔的 `staging/`，只交付 Baseline apphost、三份自製 DLL、Baseline deps／runtimeconfig 與原官方 runtime／完整授權。未知檔拒絕，不自動刪除來修布局。這些是工具接受契約，不是已驗證的真 SDK 發布布局。
+- `pack-baseline` 只接受 canonical staging，另需 release-source／可選 expected-staging-sha256。來源、發布 source 的精確成員與 bytes、wrapper pins、staging 全部先驗，才取得固定 Node 材料；不接受 raw 輸出、不補舊包缺檔。發布 source 若多出隱含編譯檔或 build targets 也拒絕。
+- 新產物名固定為 `receiver-native-baseline-win-x64.zip` 與 `receiver-native-baseline-corresponding-source.zip`；契約含 manifest 分別為 205／71 檔。來源清單包含全部相依 C#、wrapper、公開測試、工具、授權與發布控制檔，不以 Git HEAD 或包內 manifest 替 workspace bytes 背書。
+- 原模式保留原來源凍結摘要，因此不接受 cj 修改後的共享來源；不得更新舊摘要來把新來源追認為舊包。新模式使用獨立來源摘要及檔名，原兩 ZIP 不覆寫。
+
+上述工具只有公開假 SDK／下載邊界驗證；正式發布 locks 生成、真 self-contained publish、Node 取得／GPG、交付 ZIP 與來源重建仍須另外授權並驗證。公開假 PE／nupkg／ZIP fixtures 不可交付，工具通過也不是 Windows 執行許可。
+
+基線重建範例（須先備妥三 project 發布 locks，並另獲 SDK／audit 操作許可）：
+
+```sh
+python3 -B frontend/scripts/build_receiver_native_supervisor.py rebuild-baseline \
+  --repo "$PWD" \
+  --dotnet /approved/isolated-sdk/dotnet \
+  --packages /approved/new-dotnet-feed \
+  --output /approved/new-baseline-rebuild
+```
+
+工具以入口父目錄設定子程序的 `DOTNET_ROOT`／`DOTNET_ROOT_X64`，並以同一入口設定 `DOTNET_HOST_PATH`；不改持久 PATH／系統 SDK。入口與版本檢查不能代替 SDK 來源、完整性、安全更新及宿主相容性核對，目錄隔離也不是沙箱。
+
+發布、封裝、搬運與任何新 Windows 啟動均須另外授權；不重用或清除舊 claim、不重播舊輪，現有包與歷史結果保留。目錄隔離不是沙箱，新增觀察也不代表已確認或修復 ch 失敗的根因。
+
 ## 來源與授權
 
 自製監督程式、原 PS、公開 fixture 與建置工具沿根 `LICENSE` 的 **AGPL-3.0-or-later**；應與本次確切的完整對應來源 ZIP 一起交付，保留版權與適用條款，不以未提交 workspace 的位置或某個舊 commit 取代來源。
@@ -37,7 +71,7 @@
 
 ## Linux 建置與重建
 
-需要已安裝 Python 3.10 以上、`/usr/bin/gpg`；重建另需 **.NET SDK 10.0.113** 及其必要 targeting packs。工具不安裝任何依賴。以下從解壓後的**對應來源包根目錄**執行，路徑例子須換成此次明確核准的位置。
+需要已安裝 Python 3.10 以上、`/usr/bin/gpg`；原 `rebuild` 契約維持 **.NET SDK 10.0.113**，`rebuild-baseline` 則需 **10.0.114** 的明確絕對入口及相應 targeting packs。工具不安裝任何依賴。保留原契約不是建議執行未處置安全問題的 SDK／宿主；兩模式都須先核對當前安全修補、來源與宿主相容性，另獲執行及必要網路授權。以下原模式範例從解壓後的**對應來源包根目錄**執行，路徑例子須換成此次明確核准的位置。
 
 ### 1. 取得並核對兩個 .NET 原包
 

@@ -29,10 +29,16 @@ internal sealed class OwnedProbeSources
     // 正式來源僅使用編譯pins，不接受外部清單。
     internal static OwnedProbeSources Acquire(IProbeSourceApi api, IProbeClock clock) => Acquire(api, clock, ProbeSourcePins.All);
     // 組件內政策單元消費固定pins；friend只替換OS邊界與公開資料。
-    internal static OwnedProbeSources Acquire(IProbeSourceApi api, IProbeClock clock, IReadOnlyList<SourcePin> pins)
+    internal static OwnedProbeSources Acquire(IProbeSourceApi api, IProbeClock clock, IReadOnlyList<SourcePin> pins) => Acquire(api, clock, pins, false);
+    // 基線入口固定自己的編譯pins與EXE辨識環境，不接受外部環境設定。
+    internal static OwnedProbeSources AcquireBaseline(IProbeSourceApi api, IProbeClock clock) => AcquireBaseline(api, clock, BaselineSourcePins.All);
+    // friend只替換公開來源與OS邊界；基線環境政策仍固定。
+    internal static OwnedProbeSources AcquireBaseline(IProbeSourceApi api, IProbeClock clock, IReadOnlyList<SourcePin> pins) => Acquire(api, clock, pins, true);
+    // 兩種固定政策共用相同來源驗證與資源持有，不由來源內容推測模式。
+    private static OwnedProbeSources Acquire(IProbeSourceApi api, IProbeClock clock, IReadOnlyList<SourcePin> pins, bool baseline)
     {
         var owner = new OwnedProbeSources(api, clock);
-        owner._failed = !owner.Verify(pins);
+        owner._failed = !owner.Verify(pins, baseline);
         return owner;
     }
 
@@ -87,7 +93,7 @@ internal sealed class OwnedProbeSources
     }
 
     // 完整來源集合先驗pins，再stream hash；成功不會釋放用來穩定來源的handles。
-    private bool Verify(IReadOnlyList<SourcePin> pins)
+    private bool Verify(IReadOnlyList<SourcePin> pins, bool baseline)
     {
         if (!_api.Supported || !Within()) return false;
         var root = LocalPath(_api.PackageDirectory);
@@ -144,6 +150,7 @@ internal sealed class OwnedProbeSources
         if (command.Length > 32766 || !Within()) return false;
         var environment = "PSModulePath=" + system + "\\WindowsPowerShell\\v1.0\\Modules\0RDWEB_NATIVE_PROBE_ROOT=" + root +
             "\0SystemRoot=" + home + "\0WINDIR=" + home + "\0\0";
+        if (baseline) environment = "PATHEXT=.EXE\0" + environment;
         _plan = new(application, command, environment, root);
         _packageRoot = root;
         _ownerSid = identity.Sid;

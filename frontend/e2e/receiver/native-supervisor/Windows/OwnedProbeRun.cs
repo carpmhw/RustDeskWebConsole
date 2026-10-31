@@ -11,15 +11,17 @@ internal sealed class OwnedProbeRun
     private long _lastTime;
     private long? _cleanupEnd;
     private ProbeDiagnostic? _terminal;
+    private readonly BaselineCapture? _baseline;
 
     // 來源ownership已在TryCreate轉移；guard失敗仍保有來源供唯一cleanup。
-    private OwnedProbeRun(OwnedProbeSources sources, IProbeNativeApi api)
+    private OwnedProbeRun(OwnedProbeSources sources, IProbeNativeApi api, BaselineCapture? baseline = null)
     {
+        _baseline = baseline;
         _sources = sources;
         _clock = sources.Clock;
         var verified = sources.TryGetLaunchPlan(out var plan) && Within() && sources.TryClaim() && Within();
         _model.Observe(ProbeEvent.SupervisorBoundaryVerify, _clock.ElapsedMs, verified);
-        if (verified) _session = new(api, _clock, _model, plan!);
+        if (verified) _session = new(api, _clock, _model, plan!, baseline);
         else _failed = true;
     }
     internal bool IsTerminal => _terminal is not null;
@@ -35,6 +37,16 @@ internal sealed class OwnedProbeRun
         run = new(sources, api);
         return true;
     }
+    // 固定baseline factory仍移交同一lease及claim，不收任意命令或frame。
+    internal static bool TryCreateBaseline(OwnedProbeSources sources, IProbeNativeApi api, out OwnedProbeRun? run)
+    {
+        run = null;
+        if (!sources.TryTransferOwnership()) return false;
+        run = new(sources, api, new BaselineCapture());
+        return true;
+    }
+    // 獨立觀察不補原診斷缺失的證據。
+    internal BaselineObservation BaselineSnapshot() => _baseline?.Snapshot() ?? new();
     // 準備及啟動前重驗lease未被提早close或逾期；錯誤黏住。
     internal bool Prepare()
     {
@@ -58,6 +70,7 @@ internal sealed class OwnedProbeRun
         CaptureSourceLoss();
         _session?.Poll();
         CaptureSourceLoss();
+        if (_baseline is not null && _cleanupEnd is null && !_failed && Within()) _session?.CaptureBaselineChild();
         if (_cleanupEnd is not null || _failed || !Within() || _session is null || !_session.TryTakeChildFrame(out var frame)) return;
         if (!Within()) return;
         if (!frame.Accepted)

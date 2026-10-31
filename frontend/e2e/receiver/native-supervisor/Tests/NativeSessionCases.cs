@@ -396,6 +396,9 @@ internal static class NativeSessionCases
         internal IoResult ConnectResult = new(IoState.Complete);
         internal Action? AfterCreate;
         internal Action? AfterObserve;
+        internal Action? AfterQuery;
+        internal int QueryCalls;
+        internal bool QueryResult = true;
         internal Action<int>? AfterAcquire;
         internal Queue<(IoState State, byte[] Bytes)>[]? Streams;
         private readonly Dictionary<nint, int> _streamIndex = [];
@@ -529,7 +532,7 @@ internal static class NativeSessionCases
         // 假clock與signal都由公開fixture控制，無真process。
         public ProcessObservation ObserveProcess(nint process) { AfterObserve?.Invoke(); return new(true, Signaled, ExitCode); }
         // NULL job一定拒絕，避免不小心查caller job。
-        public bool QueryActive(nint job, out uint active) { Require(job != 0); active = Active; return true; }
+        public bool QueryActive(nint job, out uint active) { Require(job != 0); QueryCalls++; active = Active; AfterQuery?.Invoke(); return QueryResult; }
         // 只記錄本程式發出的互斥取消要求。
         public bool TerminateProcess(nint process) { ProcessKills++; Kill(); return true; }
         // 不殺真process，只回報模擬OS結果。
