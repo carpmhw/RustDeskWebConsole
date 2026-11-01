@@ -45,7 +45,7 @@ node frontend/scripts/prepare-codec-fixtures.mjs
 node --test frontend/e2e/scripts/test-e2e-layout.mjs frontend/e2e/scripts/test-m3b3-runner.mjs frontend/e2e/scripts/test-input-registration.mjs
 ```
 
-其他真實驗收入口為 `scripts/test-m3a-relay.sh`、`test-m3b1-login.sh`、`test-m3b2-video.sh`、`test-m3b3-input.sh` 與各 reconnect／probe runner。直接呼叫 Playwright 不會自動準備官方 runtime、登入憑證或隔離服務；Windows runtime 必須由操作者透過程序環境提供。Windows 受控端以新版記事本進行文字 oracle 時，須先在記事本設定關閉「拼字檢查」與「自動更正」；開啟時記事本會在英文字後接空白時偶發吞掉下一個字，與 RdWeb 傳送無關。`scripts/test-*.mjs` 包含需要 Docker、PowerShell 或真實 runtime 的診斷，不應將整個 glob 視為一般單元測試。
+其他真實驗收入口為 `scripts/test-m3a-relay.sh`、`test-m3b1-login.sh`、`test-m3b2-video.sh`、`test-m3b3-input.sh` 與各 reconnect／probe runner。直接呼叫 Playwright 不會自動準備官方 runtime、登入憑證或隔離服務；Windows runtime 必須由操作者透過程序環境提供。Windows 受控端以新版記事本進行文字 oracle 時，須先在記事本設定關閉「拼字檢查」與「自動更正」；開啟時記事本會在英文字後接空白時偶發吞掉下一個字，與 RdWeb 傳送無關。RustDesk 開源版受控端每次連線都會讓連線管理視窗搶前景，約 3 秒後自動縮小；Windows 路徑在影像就緒後固定等待 `WINDOWS_CM_SETTLE_MS`（`real/windows-timing.ts`）再操作記事本。記事本在點擊後套用 Ctrl+A 較慢，Windows oracle 的連續組合鍵之間固定間隔 `WINDOWS_CHORD_GAP_MS`，模擬真人按鍵節奏。同一點 500ms 內的連續點擊會被判為雙擊而選字，Windows oracle 每次點擊改用相距 40px 的錨點（`windowsClickAnchor`）。`scripts/test-*.mjs` 包含需要 Docker、PowerShell 或真實 runtime 的診斷，不應將整個 glob 視為一般單元測試。
 
 ## 路徑與安全界線
 

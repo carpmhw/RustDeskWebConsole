@@ -10,6 +10,7 @@ import {
 } from './fixtures'
 import { prepareWindowsTarget, prepareWindowsTargets } from './windows-fixtures'
 import { assertInputPeer } from './input-peer'
+import { cmSettleMs } from './windows-timing'
 import { OPERATION_CODES, type OperationCode } from '../../src/rdweb/interaction-types'
 import { clipboardOracleCode, type ClipboardOracleStage } from './clipboard-oracle'
 import { INPUT_DIAGNOSTIC_FIELDS } from './input-diagnostics'
@@ -145,7 +146,7 @@ export async function openConsoleLink(page: Page, fixture: InputFixture): Promis
   await result.bringToFront()
   return result
 }
-// safe PeerInfo與真Canvas內容共同驗首影像；Linux另需B2公開clock。
+// safe PeerInfo與真Canvas內容共同驗首影像；Linux另需B2公開clock，Windows另等連線管理視窗縮小。
 export async function waitForInputVideo(page: Page, fixture: InputFixture): Promise<void> {
   await expect(page.getByTestId('console-streaming')).toBeVisible({ timeout: 45000 })
   const metadata = await page.getByTestId('console-verified').textContent()
@@ -165,6 +166,9 @@ export async function waitForInputVideo(page: Page, fixture: InputFixture): Prom
   } catch {
     throw new Error('Public input surface unavailable')
   }
+  // Windows受控端等RustDesk連線管理視窗自動縮小，避免它在首次點擊後才搶走鍵盤焦點（見windows-timing）。
+  const settle = cmSettleMs(fixture.platform)
+  if (settle) await page.waitForTimeout(settle)
 }
 // client rect包含縮放與scroll；座標來源只有公开fixture幾何。
 export async function clickRemote(page: Page, x: number, y: number): Promise<void> {
