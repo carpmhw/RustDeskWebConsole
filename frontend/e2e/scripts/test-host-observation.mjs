@@ -568,6 +568,28 @@ test('validates host boolean evidence with clocks and matching request', () => {
     /^Error: host_observation_unavailable$/,
   )
 })
+// 控速切片使browser_main時間軸變長：256筆合法事件可接受，第257筆仍fail-closed。
+test('accepts 256 browser timeline events and rejects 257', () => {
+  const events = (count) =>
+    Array.from({ length: count }, (_, i) => ({
+      ordinal: i + 1,
+      kind: 'batch_submit',
+      tUs: i,
+      revision: 1,
+      generation: 1,
+      batchId: i + 1,
+      requestId: null,
+      code: 'observed',
+    }))
+  const timeline = (count) => ({
+    clockDomain: 'browser_main',
+    events: events(count),
+    overflow: false,
+    unavailable: false,
+  })
+  assert.equal(validateHostTimeline(timeline(256)).events.length, 256)
+  assert.throws(() => validateHostTimeline(timeline(257)), /^Error: host_observation_unavailable$/)
+})
 // 若validator把物件coerce成enum再serialize，toJSON就能帶出未知文字；必須完全拒絕且不呼方法。
 test('never coerces or serializes object-valued enums', () => {
   let calls = 0

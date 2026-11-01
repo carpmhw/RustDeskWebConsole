@@ -68,13 +68,25 @@ it('captures only owned submit/ack/pull/data/native metadata in monotonic order'
   expect(JSON.stringify(timeline)).not.toContain('Public')
   expect(port.takeTimeline().events).toEqual([])
 })
-// default-off／begin換輪不能沿用舊timeline，超限標不完整而不截斷成正常。
+// default-off／begin換輪不能沿用舊timeline；256筆內完整，第257筆標不完整而不截斷成正常。
 it('does not collect by default and bounds explicit timelines', () => {
   const { port, worker } = fixture()
   worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
   expect(port.takeTimeline().events).toEqual([])
   port.beginTimeline()
-  for (let n = 1; n <= 129; n++)
+  for (let n = 1; n <= 256; n++)
+    worker.postMessage({
+      type: 'input-batch',
+      revision: 1,
+      input_generation: 1,
+      batch_id: n,
+      events: [],
+    })
+  const full = port.takeTimeline()
+  expect(full).toMatchObject({ overflow: false })
+  expect(full.events).toHaveLength(256)
+  port.beginTimeline()
+  for (let n = 1; n <= 257; n++)
     worker.postMessage({
       type: 'input-batch',
       revision: 1,

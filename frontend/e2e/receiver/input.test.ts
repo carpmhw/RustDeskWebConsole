@@ -76,6 +76,41 @@ const SNAPSHOT_KEYS = [
   'unavailable',
 ]
 
+// Windows控速：四鍵後文字逐code point各一個Legacy Seq。
+function slicedSequence(slices: string[] = Array.from(expected)): Message[] {
+  return [...sequence().slice(0, 4), ...slices.map((text) => key({ seq: text, down: true }))]
+}
+
+// 切片串接等於expected仍是同一段文字，結果與單一Seq相同。
+it('accepts the five-key sequence with paced seq slices', async () => {
+  const f = await fixture()
+  for (const message of [mouse(), mouse({ mask: 9 }), mouse({ mask: 10 }), ...slicedSequence()])
+    f.input.record(message)
+  f.advance(4999)
+  expect(f.input.snapshot()).toMatchObject({
+    textSingle: true,
+    textExact: true,
+    sequenceComplete: true,
+    sequenceValid: true,
+    windowComplete: false,
+  })
+  f.advance(1)
+  expect(f.input.snapshot()).toMatchObject({ windowComplete: true })
+})
+
+// 錯片或完成後多出的片都必須毒化，不能被串接規則吞掉。
+it.each(['wrong-slice', 'after-completion'])('poisons a paced slice: %s', async (mode) => {
+  const f = await fixture()
+  const slices = Array.from(expected)
+  const messages =
+    mode === 'wrong-slice'
+      ? slicedSequence([...slices.slice(0, 5), 'X', ...slices.slice(6)])
+      : [...slicedSequence(), key({ seq: slices[0], down: true })]
+  for (const message of messages) f.input.record(message)
+  f.advance(5000)
+  expect(f.input.snapshot()).toMatchObject({ sequenceValid: false })
+})
+
 // 正向案：Ctrl前click、精確五鍵、獨立5000ms窗及固定snapshot形狀。
 it('accepts a pre-key click then the exact five-key sequence after 5000ms', async () => {
   const f = await fixture()
@@ -278,10 +313,10 @@ it('keeps an incomplete sequence unavailable and ignores late messages', async (
   })
 })
 
-// 使用者輸入最多64；第65個立即overflow並停止，不截斷成成功。
-it('accepts 64 inputs and rejects the 65th as overflow', async () => {
+// 使用者輸入最多256；第257個立即overflow並停止，不截斷成成功。
+it('accepts 256 inputs and rejects the 257th as overflow', async () => {
   const exact = await fixture()
-  for (let i = 0; i < 59; i++) exact.input.record(mouse())
+  for (let i = 0; i < 251; i++) exact.input.record(mouse())
   for (const message of sequence()) exact.input.record(message)
   exact.advance(5000)
   expect(exact.input.snapshot()).toMatchObject({
@@ -291,7 +326,7 @@ it('accepts 64 inputs and rejects the 65th as overflow', async () => {
     unavailable: false,
   })
   const over = await fixture()
-  for (let i = 0; i < 60; i++) over.input.record(mouse())
+  for (let i = 0; i < 252; i++) over.input.record(mouse())
   for (const message of sequence()) over.input.record(message)
   over.advance(5000)
   expect(over.input.snapshot()).toMatchObject({

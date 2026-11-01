@@ -303,6 +303,8 @@ export function installInputDiagnostics(): void {
     receiveInvalid = false,
     receivingStarted = false,
     textCount = 0,
+    textOffset = 0,
+    textDone = false,
     sequenceRejected = false,
     captureText = false,
     capturedText: string | null = null,
@@ -351,7 +353,7 @@ export function installInputDiagnostics(): void {
         return
       }
       timelineLast = tUs
-      if (timeline.events.length >= 128) {
+      if (timeline.events.length >= 256) {
         timeline.overflow = true
         timelineEnabled = false
         return
@@ -419,13 +421,40 @@ export function installInputDiagnostics(): void {
       mods.includes('Control')
     )
   }
+  // 一片文字須等於expected自目前位移起的同長子字串；整段到齊才標exact並清公開expected。
+  function textSlice(event: Record<string, unknown>): boolean {
+    const text = event.text,
+      mods = event.modifiers
+    const valid =
+      !!inputExpected &&
+      boundedInputText(text) &&
+      text.length > 0 &&
+      text === inputExpected.slice(textOffset, textOffset + text.length) &&
+      Array.isArray(mods) &&
+      mods.length <= 3 &&
+      new Set(mods).size === mods.length &&
+      mods.every(
+        /* Text不得挾帶hot modifier。 */ (m) => ['Shift', 'CapsLock', 'NumLock'].includes(m),
+      )
+    if (!valid) return false
+    textOffset += text.length
+    if (textOffset === inputExpected.length) {
+      textDone = true
+      evidence.textExactSubmitted = true
+      // 比對完成後清公開expected；native寫入的expected另有生命週期。
+      inputExpected = ''
+    }
+    return true
+  }
   // 被動逐event驗全文與初始／接收後chord；資料抵達後仍觀察keyup，不送指令或等待。
   function inspectEvent(event: Record<string, unknown>): boolean {
     if (!inspectInput) return false
-    if (textOnly && textCount > 0) {
+    if (textOnly && textDone) {
       postTextInput = true
       return false
     }
+    // Windows控速的文字段尚未完成時，任何非文字事件都破壞連續性。
+    if (textCount === 1 && !textDone && event.kind !== 'text') evidence.sequenceInvalid = true
     if (event.kind === 'move') return false
     if (event.kind === 'button') {
       if ((receivingStarted ? receiveStep : initialStep) % 4 !== 0) {
@@ -436,6 +465,15 @@ export function installInputDiagnostics(): void {
       return false
     }
     if (event.kind === 'text') {
+      // 未完成的文字段：後續片只延續同一段，以位移逐片比對，不另存收到的原文。
+      if (textCount === 1 && !textDone) {
+        if (!textSlice(event)) {
+          evidence.textExactSubmitted = false
+          evidence.sequenceInvalid = true
+          inputExpected = ''
+        }
+        return true
+      }
       textCount = Math.min(2, textCount + 1)
       evidence.textSingleSubmitted = textCount === 1
       evidence.textExactSubmitted = false
@@ -444,27 +482,8 @@ export function installInputDiagnostics(): void {
         inputExpected = ''
         return true
       }
-      try {
-        const text = event.text,
-          mods = event.modifiers
-        evidence.textExactSubmitted =
-          !!inputExpected &&
-          boundedInputText(text) &&
-          text === inputExpected &&
-          Array.isArray(mods) &&
-          mods.length <= 3 &&
-          new Set(mods).size === mods.length &&
-          mods.every(
-            /* Text不得挾帶hot modifier。 */ (m) => ['Shift', 'CapsLock', 'NumLock'].includes(m),
-          )
-        if (
-          !evidence.textExactSubmitted ||
-          !evidence.initialSelectChordSubmitted ||
-          receivingStarted
-        )
-          evidence.sequenceInvalid = true
-      } finally {
-        // 比對後清公開expected；native寫入的expected另有生命週期。
+      if (!textSlice(event) || !evidence.initialSelectChordSubmitted || receivingStarted) {
+        evidence.sequenceInvalid = true
         inputExpected = ''
       }
       return true
@@ -667,6 +686,7 @@ export function installInputDiagnostics(): void {
           receivingStarted ||
           !evidence.initialSelectChordSubmitted ||
           textCount !== 1 ||
+          !textDone ||
           inputScope?.split(':')[0] !== String(message.revision)
         )
           evidence.sequenceInvalid = true
@@ -809,7 +829,8 @@ export function installInputDiagnostics(): void {
       inspectClipboardPayload = inspectPayload
       inputScope = null
       lastInputBatch = 0
-      initialStep = receiveStep = textCount = 0
+      initialStep = receiveStep = textCount = textOffset = 0
+      textDone = false
       initialInvalid = receiveInvalid = receivingStarted = sequenceRejected = false
       captureText = capture
       capturedText = null

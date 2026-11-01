@@ -421,7 +421,9 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
     lastScope = 0,
     step = 0,
     count = 0,
-    texts = 0
+    texts = 0,
+    textOffset = 0,
+    textDone = false
   let port: MessagePort | null = null
   let captureText = false,
     capturedText: string | null = null
@@ -470,11 +472,11 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
     port = null
   }
   scope.__rdwebEncodedInputObserver = {
-    // 固定用途各追13或5鍵；mouse守衛分流，容量仍含所有input最多64。
+    // 固定用途各追13或5鍵（文字段可切片）；mouse守衛分流，容量含所有input最多256。
     record(value): void {
       if (!enabled) return
       evidence.observed = true
-      if (++count > 64) {
+      if (++count > 256) {
         evidence.overflow = true
         capturedText = null
         return
@@ -484,13 +486,33 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
           evidence.sequenceInvalid = true
         return
       }
+      // 文字段以位移逐片比對：未完成前的seq延續同段，完成後再來的seq才算第二段。
+      let sliceOk = false
       if (value.union === 'seq') {
         const seq = value.seq
-        texts++
-        evidence.textSingle = texts === 1
-        evidence.textExact = texts === 1 && seq === expected
-        capturedText = captureText && evidence.textExact ? seq : null
-        expected = ''
+        if (texts !== 1 || textDone) {
+          texts++
+          evidence.textSingle = texts === 1
+        }
+        sliceOk =
+          texts === 1 &&
+          !!expected &&
+          typeof seq === 'string' &&
+          seq.length > 0 &&
+          seq === expected.slice(textOffset, textOffset + seq.length)
+        if (sliceOk) {
+          textOffset += seq.length
+          if (textOffset === expected.length) {
+            textDone = true
+            evidence.textExact = true
+            capturedText = captureText ? expected : null
+            expected = ''
+          }
+        } else {
+          evidence.textExact = false
+          capturedText = null
+          expected = ''
+        }
       }
       if (evidence.sequenceInvalid || evidence.overflow) return
       const locks = [enums.capsLock, enums.numLock]
@@ -500,7 +522,7 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
       if (step === 4) {
         valid =
           value.union === 'seq' &&
-          evidence.textExact &&
+          sliceOk &&
           texts === 1 &&
           value.mode === enums.legacy &&
           value.down &&
@@ -533,6 +555,8 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
         evidence.sequenceInvalid = true
         return
       }
+      // 文字段未完成前停留在第4步，等最後一片才前進。
+      if (step === 4 && !textDone) return
       step++
       if (step === 4) evidence.initialSelectComplete = true
       if (step === 9) evidence.receiveSelectComplete = true
@@ -590,7 +614,8 @@ export function installWorkerEncodedInputDiagnostics(enums: InputPinnedEnums): v
         }
         expected = data.expected
         captureText = Object.hasOwn(data, 'captureText') && data.captureText === true
-        step = count = texts = 0
+        step = count = texts = textOffset = 0
+        textDone = false
         enabled = !!port
       } else if (data.scope === current && enabled && Object.keys(data).length === 3) {
         if (['take', 'takeWithText', 'takeInputOnly'].includes(data.action)) {

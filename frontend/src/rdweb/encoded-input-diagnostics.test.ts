@@ -253,7 +253,7 @@ it.each(['missing', 'mismatch', 'duplicate', 'overflow', 'fault'])(
     if (mode === 'duplicate') events.push(key('seq', sample, true))
     for (const event of events) f.observer.record(event)
     if (mode === 'overflow')
-      for (let i = 0; i < 65; i++) f.observer.record({ kind: 'mouse', mask: 0 })
+      for (let i = 0; i < 257; i++) f.observer.record({ kind: 'mouse', mask: 0 })
     if (mode === 'fault') f.observer.unavailable()
     f.control('takeWithText')
     expect(f.captured[0]?.preEncryptText).toBeNull()
@@ -374,10 +374,85 @@ it.each(['text', 'keyup', 'mode', 'vk', 'modifier', 'duplicate', 'mouse', 'incom
     if (mutation === 'duplicate') expect(f.posted[0]?.textSingle).toBe(false)
   },
 )
+// 容量256：第256則仍不溢出，第257則才標overflow。
+it('accepts 256 inputs and overflows on the 257th', () => {
+  const f = fixture()
+  for (let i = 0; i < 256; i++) f.observer.record({ kind: 'mouse', mask: 0 })
+  f.control('take')
+  expect(f.posted[0]?.overflow).toBe(false)
+  const g = fixture()
+  for (let i = 0; i < 257; i++) g.observer.record({ kind: 'mouse', mask: 0 })
+  g.control('take')
+  expect(g.posted[0]?.overflow).toBe(true)
+})
+// Windows控速：seq逐code point一片，串接後須等於expected。
+function slicedSequence(slices: string[] = Array.from(sample)): EncodedInputSnapshot[] {
+  return [...chord(65), ...slices.map((text) => key('seq', text, true)), ...chord(65), ...chord(67)]
+}
+// 切片串接完整且連續才算單一完整文字段，13鍵與input-only皆同。
+it('accepts paced seq slices that concatenate to the expected text', () => {
+  const f = fixture()
+  for (const value of slicedSequence()) f.observer.record(value)
+  f.control('take')
+  expect(f.posted[0]).toMatchObject({
+    textExact: true,
+    textSingle: true,
+    sequenceComplete: true,
+    sequenceInvalid: false,
+  })
+  const g = fixture(sample, false, 'input_only')
+  for (const value of [...chord(65), ...Array.from(sample).map((text) => key('seq', text, true))])
+    g.observer.record(value)
+  g.control('takeInputOnly')
+  expect(g.posted[0]).toMatchObject({
+    textExact: true,
+    sequenceComplete: true,
+    sequenceInvalid: false,
+  })
+})
+// 非前綴片、段內夾按鍵、完成後第二段都必須判無效。
+it.each(['non-prefix', 'interleaved', 'second-run'])('rejects a paced run with %s', (mode) => {
+  const f = fixture()
+  const slices = Array.from(sample)
+  let events: EncodedInputSnapshot[]
+  if (mode === 'non-prefix')
+    events = slicedSequence([...slices.slice(0, 3), 'X', ...slices.slice(4)])
+  else if (mode === 'interleaved')
+    events = [
+      ...chord(65),
+      ...slices.slice(0, 3).map((text) => key('seq', text, true)),
+      key('controlKey', 4, true),
+      ...slices.slice(3).map((text) => key('seq', text, true)),
+      ...chord(65),
+      ...chord(67),
+    ]
+  else events = slicedSequence([...slices, ...slices])
+  for (const value of events) f.observer.record(value)
+  f.control('take')
+  expect(f.posted[0]?.sequenceInvalid).toBe(true)
+  expect(f.posted[0]?.sequenceComplete).toBe(false)
+})
+// 段未完成前取證不得回文字；完成後才回已驗證的公開全文。
+it('captures the full verified text only after the run completes', () => {
+  const half = fixture(sample, true)
+  for (const value of [
+    ...chord(65),
+    ...Array.from(sample)
+      .slice(0, 5)
+      .map((t) => key('seq', t, true)),
+  ])
+    half.observer.record(value)
+  half.control('takeWithText')
+  expect(half.captured[0]?.preEncryptText).toBeNull()
+  const full = fixture(sample, true)
+  for (const value of slicedSequence()) full.observer.record(value)
+  full.control('takeWithText')
+  expect(full.captured[0]?.preEncryptText).toBe(sample)
+})
 // 超額不截斷當完整證據，callback故障明確標不可用。
 it('marks overflow and observer failure without preserving any payload', () => {
   const f = fixture()
-  for (let i = 0; i < 65; i++) f.observer.record({ kind: 'mouse', mask: 0 })
+  for (let i = 0; i < 257; i++) f.observer.record({ kind: 'mouse', mask: 0 })
   f.observer.unavailable()
   f.control('take')
   expect(f.posted[0]).toMatchObject({ overflow: true, unavailable: true, sequenceComplete: false })

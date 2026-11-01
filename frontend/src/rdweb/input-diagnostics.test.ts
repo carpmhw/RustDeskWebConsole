@@ -675,6 +675,123 @@ function completeSequence(
   worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
   worker.postMessage(batch(2, [...chord('a'), ...chord('c')]))
 }
+// Windows控速把公開文字逐code point各送一batch；回傳下一個可用batch id。
+function slicedText(
+  worker: ReturnType<typeof fixture>['worker'],
+  firstBatchId: number,
+  slices: string[] = Array.from(publicSample),
+): number {
+  let id = firstBatchId
+  for (const text of slices)
+    worker.postMessage(batch(id++, [{ kind: 'text', text, modifiers: [] }]))
+  return id
+}
+// 依序回覆1..last的matching ACK，模擬Worker逐batch提交。
+function ackAll(worker: ReturnType<typeof fixture>['worker'], last: number): void {
+  for (let batch_id = 1; batch_id <= last; batch_id++)
+    worker.reply({ type: 'input-ack', revision: 1, input_generation: 1, batch_id, sent: true })
+}
+// 切片串接等於expected才算單一完整文字段；ACK全到才算accepted。
+it('accepts a paced text run whose slices concatenate to the expected text', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, chord('a')))
+  const next = slicedText(worker, 2)
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(next, [...chord('a'), ...chord('c')]))
+  expect(port.snapshot()).toMatchObject({
+    textExactSubmitted: true,
+    textSingleSubmitted: true,
+    inputSequenceSubmitted: true,
+    inputSequenceAccepted: false,
+    sequenceInvalid: false,
+  })
+  ackAll(worker, next)
+  expect(port.snapshot().inputSequenceAccepted).toBe(true)
+})
+// 缺片、重片或片序顛倒都不得被串接規則誤判為完整。
+it.each([
+  ['missing', Array.from(publicSample).filter((_, i) => i !== 9)],
+  [
+    'duplicated',
+    [...Array.from(publicSample).slice(0, 10), 'R', ...Array.from(publicSample).slice(10)],
+  ],
+  [
+    'reordered',
+    [
+      ...Array.from(publicSample).slice(0, 7),
+      publicSample[8]!,
+      publicSample[7]!,
+      ...Array.from(publicSample).slice(9),
+    ],
+  ],
+])('rejects a paced run with a %s slice', (_name, slices) => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, chord('a')))
+  const next = slicedText(worker, 2, slices)
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  worker.postMessage(batch(next, [...chord('a'), ...chord('c')]))
+  expect(port.snapshot()).toMatchObject({
+    textExactSubmitted: false,
+    sequenceInvalid: true,
+    inputSequenceSubmitted: false,
+  })
+})
+// 文字段未完成前夾入任何非文字事件即破壞連續性。
+it.each([{ kind: 'move', x: 1, y: 1 }, chord('a')[0]])(
+  'rejects a non-text event inside an incomplete run: %#',
+  (event) => {
+    const { worker, port } = fixture()
+    port.begin(publicSample, false, true)
+    worker.postMessage(batch(1, chord('a')))
+    const slices = Array.from(publicSample)
+    let next = slicedText(worker, 2, slices.slice(0, 3))
+    worker.postMessage(batch(next++, [event]))
+    next = slicedText(worker, next, slices.slice(3))
+    worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+    worker.postMessage(batch(next, [...chord('a'), ...chord('c')]))
+    expect(port.snapshot()).toMatchObject({ sequenceInvalid: true, inputSequenceSubmitted: false })
+  },
+)
+// 接收開始時文字段必須已完成，不能以半段文字開始比對copy。
+it('rejects clipboard-pull before the run completes', () => {
+  const { worker, port } = fixture()
+  port.begin(publicSample, false, true)
+  worker.postMessage(batch(1, chord('a')))
+  const slices = Array.from(publicSample)
+  let next = slicedText(worker, 2, slices.slice(0, 20))
+  worker.postMessage({ type: 'clipboard-pull', revision: 1, request_id: 7 })
+  next = slicedText(worker, next, slices.slice(20))
+  worker.postMessage(batch(next, [...chord('a'), ...chord('c')]))
+  expect(port.snapshot()).toMatchObject({ sequenceInvalid: true, inputSequenceSubmitted: false })
+})
+// text-only prefix要求四edge加每一片都有matching ACK。
+it('accepts text-only prefix for a paced run only after every slice ACK', () => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  for (const [index, event] of chord('a').entries()) worker.postMessage(batch(index + 1, [event]))
+  const next = slicedText(worker, 5)
+  expect(port.textOnlySnapshot()).toMatchObject({
+    prefixSubmitted: true,
+    prefixAccepted: false,
+    postTextInput: false,
+  })
+  ackAll(worker, next - 2)
+  expect(port.textOnlySnapshot().prefixAccepted).toBe(false)
+  ackAll(worker, next - 1)
+  expect(port.textOnlySnapshot()).toMatchObject({ prefixAccepted: true, postTextInput: false })
+})
+// 段內後續片不是post input；段完成後任何事件才算干擾。
+it('marks postTextInput only after the run completes', () => {
+  const { worker, port } = fixture()
+  port.beginTextOnly(publicSample)
+  worker.postMessage(batch(1, chord('a')))
+  const next = slicedText(worker, 2)
+  expect(port.textOnlySnapshot().postTextInput).toBe(false)
+  worker.postMessage(batch(next, [{ kind: 'move', x: 1, y: 1 }]))
+  expect(port.textOnlySnapshot().postTextInput).toBe(true)
+})
 // 真observer比對單筆全文與兩次全選／完整copy；Main提交和Worker接受不能混成OS成功。
 it('inspects the exact full input sequence without claiming worker acceptance before ACK', () => {
   const { worker, port } = fixture()

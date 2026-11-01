@@ -398,9 +398,9 @@ export function validateHostResult(
 export function validateHostTimeline(value: unknown): HostMainTimeline {
   const v = fields(value, ['clockDomain', 'events', 'overflow', 'unavailable'])
   booleans(v, ['overflow', 'unavailable'])
-  if (v.clockDomain !== 'browser_main' || !Array.isArray(v.events) || v.events.length > 128)
+  if (v.clockDomain !== 'browser_main' || !Array.isArray(v.events) || v.events.length > 256)
     hostUnavailable()
-  v.events = list(v.events, 128)
+  v.events = list(v.events, 256)
   let previous = 0
   const events: Record<string, unknown>[] = []
   for (const [index, item] of (v.events as unknown[]).entries()) {

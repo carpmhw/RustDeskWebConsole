@@ -34,7 +34,7 @@ const CONTROL = 4,
   A_KEY = 65 * 65536,
   LEGACY = 0,
   TRANSLATE = 2,
-  MAX_INPUTS = 64,
+  MAX_INPUTS = 256,
   MAX_TEXT_BYTES = 4096,
   WINDOW_MS = 5000,
   ALLOWED_MODIFIERS = new Set([ALT, CAPS_LOCK, CONTROL, META, NUM_LOCK, SHIFT])
@@ -178,6 +178,8 @@ export function createReceiverInput(binding: ReceiverBinding, now: () => number)
     count = 0,
     lastClock = -Infinity,
     seqCount = 0,
+    textOffset = 0,
+    textDone = false,
     phase = 0,
     mouseDown = false,
     disposed = false,
@@ -249,6 +251,38 @@ export function createReceiverInput(binding: ReceiverBinding, now: () => number)
     }
   }
 
+  // Windows控速時文字逐片到達：首片即記文字步驟已出現（沿原complete語意），後續片延續同段並以位移比對；
+  // 整段到齊且每片相符才textExact，完成後或中斷後再來的Seq算第二段。
+  function recordSeq(input: Extract<ParsedInput, { kind: 'key' }>): void {
+    if (seqCount !== 1 || textDone) {
+      seqCount++
+      textSingle = seqCount === 1
+      if (seen.seq) poison()
+      seen.seq = true
+      if (phase !== 4) poison()
+      else phase++
+      completeIfReady()
+    }
+    const seq = input.seq ?? ''
+    const ok =
+      textSingle &&
+      seq.length > 0 &&
+      seq === expected.slice(textOffset, textOffset + seq.length) &&
+      input.mode === LEGACY &&
+      input.modifiers.length === 0 &&
+      !input.press
+    if (!ok) {
+      textExact = false
+      textDone = true
+      poison()
+      return
+    }
+    textOffset += seq.length
+    if (textOffset !== expected.length) return
+    textDone = true
+    textExact = true
+  }
+
   // 五鍵身份只由pinned欄位判定；錯誤mode仍算同類訊息但毒化序列。
   function recordKey(input: Extract<ParsedInput, { kind: 'key' }>): void {
     let kind: keyof typeof seen | null = null
@@ -261,30 +295,27 @@ export function createReceiverInput(binding: ReceiverBinding, now: () => number)
       poison()
       return
     }
+    if (kind === 'seq') {
+      recordSeq(input)
+      return
+    }
     const first = !seen[kind]
     if (!first) poison()
     seen[kind] = true
     if (input.press) poison()
-    if (kind === 'seq') {
-      seqCount++
-      textSingle = seqCount === 1
-      textExact = textSingle && input.seq === expected
-      if (!textExact || input.mode !== LEGACY || input.modifiers.length !== 0) poison()
-    } else {
-      // Ctrl鍵不得宣告自己；A鍵必須帶Ctrl；只允許被動lock。
-      const wantsControl = kind === 'aDown' || kind === 'aUp',
-        hasControl = input.modifiers.includes(CONTROL),
-        locks = passiveLocks(
-          input.modifiers.filter(/* 分開hot modifier與lock。 */ (m) => m !== CONTROL),
-        )
-      if (
-        (wantsControl ? !hasControl : hasControl) ||
-        !locks ||
-        input.mode !== (wantsControl ? TRANSLATE : LEGACY)
+    // Ctrl鍵不得宣告自己；A鍵必須帶Ctrl；只允許被動lock。
+    const wantsControl = kind === 'aDown' || kind === 'aUp',
+      hasControl = input.modifiers.includes(CONTROL),
+      locks = passiveLocks(
+        input.modifiers.filter(/* 分開hot modifier與lock。 */ (m) => m !== CONTROL),
       )
-        poison()
-    }
-    const expectedPhase = { ctrlDown: 0, aDown: 1, aUp: 2, ctrlUp: 3, seq: 4 }[kind]
+    if (
+      (wantsControl ? !hasControl : hasControl) ||
+      !locks ||
+      input.mode !== (wantsControl ? TRANSLATE : LEGACY)
+    )
+      poison()
+    const expectedPhase = { ctrlDown: 0, aDown: 1, aUp: 2, ctrlUp: 3 }[kind]
     if (phase !== expectedPhase) poison()
     else phase++
     completeIfReady()
