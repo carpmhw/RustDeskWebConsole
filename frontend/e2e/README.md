@@ -45,7 +45,7 @@ node frontend/scripts/prepare-codec-fixtures.mjs
 node --test frontend/e2e/scripts/test-e2e-layout.mjs frontend/e2e/scripts/test-m3b3-runner.mjs frontend/e2e/scripts/test-input-registration.mjs
 ```
 
-其他真實驗收入口為 `scripts/test-m3a-relay.sh`、`test-m3b1-login.sh`、`test-m3b2-video.sh`、`test-m3b3-input.sh` 與各 reconnect／probe runner。直接呼叫 Playwright 不會自動準備官方 runtime、登入憑證或隔離服務；Windows runtime 必須由操作者透過程序環境提供。`scripts/test-*.mjs` 包含需要 Docker、PowerShell 或真實 runtime 的診斷，不應將整個 glob 視為一般單元測試。
+其他真實驗收入口為 `scripts/test-m3a-relay.sh`、`test-m3b1-login.sh`、`test-m3b2-video.sh`、`test-m3b3-input.sh` 與各 reconnect／probe runner。直接呼叫 Playwright 不會自動準備官方 runtime、登入憑證或隔離服務；Windows runtime 必須由操作者透過程序環境提供。Windows 受控端以新版記事本進行文字 oracle 時，須先在記事本設定關閉「拼字檢查」與「自動更正」；開啟時記事本會在英文字後接空白時偶發吞掉下一個字，與 RdWeb 傳送無關。`scripts/test-*.mjs` 包含需要 Docker、PowerShell 或真實 runtime 的診斷，不應將整個 glob 視為一般單元測試。
 
 ## 路徑與安全界線
 

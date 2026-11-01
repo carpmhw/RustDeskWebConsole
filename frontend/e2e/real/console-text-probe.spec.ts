@@ -15,6 +15,7 @@ import {
   type TextProbeCode,
 } from './text-probe-control'
 import { readTextProbeRuntime } from './text-probe-runtime'
+import { pacedTextBudgetMs } from './text-pacing-budget'
 const runtime = readTextProbeRuntime()
 // 僅固定boolean，不因page／native例外回傳原exception或文字。
 function emptyEvidence(): TextOnlyEvidence {
@@ -86,7 +87,8 @@ test('diagnostic Windows text-only observation over tcp (not native verification
         )
       },
       undefined,
-      { timeout: 2000 },
+      // Windows控速逐字送出，等待上限依字數與間隔計算。
+      { timeout: pacedTextBudgetMs(sample) },
     )
     evidence = await currentEvidence(consolePage)
     if (

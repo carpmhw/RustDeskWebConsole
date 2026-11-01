@@ -17,6 +17,7 @@ import {
 import { createClipboardTextLogger, type ClipboardTextRecord } from './clipboard-text-log'
 import { installInputDiagnostics, installKeyboardEmissionDiagnostics } from './input-diagnostics'
 import { textReturnCleanupCode, textReturnLogCode } from './text-return-cleanup'
+import { pacedTextBudgetMs } from './text-pacing-budget'
 import {
   attachEncodedInputDiagnostics,
   prepareEncodedInputWorker,
@@ -91,6 +92,12 @@ test('Windows remote input clipboard return over tcp', async ({ page, browser })
       await clickRemote(consolePage, fixture.editor.x + 20, fixture.editor.y + 30)
       await consolePage.keyboard.press('Control+a')
       await consolePage.keyboard.insertText(expected)
+      // Windows控速逐字送出：整段文字提交後才開始接收剪貼簿；逾時仍歸入原輸入失敗分類。
+      await consolePage.waitForFunction(
+        () => window.__rdwebInputDiagnostics?.snapshot().textExactSubmitted === true,
+        undefined,
+        { timeout: pacedTextBudgetMs(expected) },
+      )
     } catch {
       throw new Error('text_return_probe_input_unavailable')
     }

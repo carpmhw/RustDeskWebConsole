@@ -18,6 +18,7 @@ import {
 import { inputPlatforms } from './windows-runtime'
 import { prepareWindowsTargets } from './windows-fixtures'
 import { installInputDiagnostics } from './input-diagnostics'
+import { pacedTextBudgetMs } from './text-pacing-budget'
 import { createClipboardTextLogger, type ClipboardTextRecord } from './clipboard-text-log'
 import type { ClipboardOracleStage } from './clipboard-oracle'
 const platforms = inputPlatforms()
@@ -493,6 +494,12 @@ if (platforms.includes('windows')) {
           await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
           await consolePage.keyboard.press('Control+a')
           await consolePage.keyboard.insertText(sample)
+          // Windows控速逐字送出：先以條件等待整段文字已提交，再開始接收剪貼簿（非固定sleep）。
+          await consolePage.waitForFunction(
+            () => window.__rdwebInputDiagnostics?.snapshot().textExactSubmitted === true,
+            undefined,
+            { timeout: pacedTextBudgetMs(sample) },
+          )
           await consolePage.evaluate(
             // 本機公開sentinel避免舊localclipboard冒充native輸入結果。
             () => navigator.clipboard.writeText('Public local sentinel'),
