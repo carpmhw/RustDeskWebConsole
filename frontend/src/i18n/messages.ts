@@ -36,6 +36,7 @@ export const messages = {
       input: '遠端文字輸入',
       operations: {
         input_text_too_large: '輸入文字超過 4 KiB，請分次輸入。',
+        input_text_busy: '文字傳送中，請稍候再輸入。',
         input_unsupported: '此輸入操作目前無法使用。',
         clipboard_unavailable: '剪貼簿目前無法使用，請使用文字框。',
         clipboard_permission_denied: '瀏覽器拒絕剪貼簿存取，請使用文字框。',
@@ -305,6 +306,7 @@ export const messages = {
       input: 'Remote text input',
       operations: {
         input_text_too_large: 'Input text exceeds 4 KiB. Send it in smaller parts.',
+        input_text_busy: 'Text is still being typed. Please wait.',
         input_unsupported: 'This input operation is unavailable.',
         clipboard_unavailable: 'Clipboard is unavailable. Use the text field.',
         clipboard_permission_denied: 'The browser denied clipboard access. Use the text field.',

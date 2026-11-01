@@ -93,6 +93,7 @@ function ensureInput(revision: number): void {
       if (channel === owned) host.failInput(revision)
     },
     now,
+    { issue: operationIssue },
   )
   channel = owned
   input = new InputController(canvas.value, ime.value, owned, operationIssue)

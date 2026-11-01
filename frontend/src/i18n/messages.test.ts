@@ -65,3 +65,11 @@ it('has matching message keys and safe locale preferences', () => {
   ).toBe('zh-TW')
   expect(formatTimestamp('2026-10-07T16:00:00Z', 'Asia/Taipei', 'en')).toContain('00:00:00')
 })
+
+// Windows控速中佇列滿的拒收提示必須兩語系都有，不能顯示未翻譯key。
+it('provides the paced text busy hint in both locales', () => {
+  expect(messages['zh-TW'].consoleUI.operations.input_text_busy).toBe('文字傳送中，請稍候再輸入。')
+  expect(messages.en.consoleUI.operations.input_text_busy).toBe(
+    'Text is still being typed. Please wait.',
+  )
+})

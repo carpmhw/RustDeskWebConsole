@@ -1,5 +1,11 @@
 import { expect, it, vi } from 'vitest'
-import { utf8, int32, textFromBytes, interactionClock } from './interaction-limits'
+import {
+  utf8,
+  int32,
+  textFromBytes,
+  interactionClock,
+  INTERACTION_LIMITS,
+} from './interaction-limits'
 
 // UTF-8 限額以 bytes 而非字元數計，禁止無效 scalar 與 NUL。
 it('bounds exact UTF8 bytes without replacing malformed scalars', () => {
@@ -43,4 +49,10 @@ it('never rewinds elapsed time and includes wallclock sleep', () => {
     p.mockRestore()
     d.mockRestore()
   }
+})
+
+// Windows文字控速間隔由實機校準與使用者決定為20ms（設計§8），且常數不可被改寫。
+it('pins the Windows text gap to the calibrated 20ms', () => {
+  expect(INTERACTION_LIMITS.textGapMs).toBe(20)
+  expect(Object.isFrozen(INTERACTION_LIMITS)).toBe(true)
 })

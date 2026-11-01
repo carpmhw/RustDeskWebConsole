@@ -109,6 +109,7 @@ export interface InputAck extends InputTag {
 }
 export const OPERATION_CODES = [
   'input_text_too_large',
+  'input_text_busy',
   'input_unsupported',
   'clipboard_unavailable',
   'clipboard_permission_denied',

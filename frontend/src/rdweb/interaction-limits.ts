@@ -18,6 +18,8 @@ export const INTERACTION_LIMITS = Object.freeze({
   retryMs: 120000,
   stableMs: 60000,
   activityMs: 30000,
+  // Windows 文字逐字控速間隔；依新版記事本預設設定實機校準並由使用者選定（設計 §8）。
+  textGapMs: 20,
 })
 // 編碼前驗 Unicode scalar 與 bytes，不截斷或替換使用者文字。
 export function utf8(value: string, max: number, code: string): Uint8Array {
