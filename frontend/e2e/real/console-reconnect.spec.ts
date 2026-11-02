@@ -14,6 +14,7 @@ import {
 } from './input-fixtures'
 import { inputPlatforms } from './windows-runtime'
 import { installInputDiagnostics } from './input-diagnostics'
+import { closeCodes, installCloseCodeDiagnostics } from './close-code-diagnostics'
 import { pacedTextBudgetMs } from './text-pacing-budget'
 import { WINDOWS_CHORD_GAP_MS, windowsClickAnchor, windowsTitleBarAnchor } from './windows-timing'
 import type { ReconnectLease, TunnelHandle } from './reconnect-proxy-types'
@@ -222,6 +223,8 @@ async function nativeCase(
         fixture = await prepareInputTarget(platform, transport)
         // Windows以被動診斷條件等待控速文字提交；需在開啟console前安裝，重連的新Worker同樣被觀察。
         if (platform === 'windows') await page.context().addInitScript(installInputDiagnostics)
+        // 被動收集產品Worker的原生close code，直接驗透明代理切斷為1006。
+        await installCloseCodeDiagnostics(page.context())
         lease = control.begin(fixture.targetId)
         const accepted = next(lease, controller.signal)
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -244,6 +247,10 @@ async function nativeCase(
         await expect
           .poll(/* 真close而不是函數回傳。 */ () => resources.closed)
           .toBe(resources.opened)
+        // 每次真interrupt都必須在產品socket觀測到原生1006；按結束先解除onclose，不得多出紀錄。
+        await expect
+          .poll(/* BroadcastChannel為非同步送達。 */ () => closeCodes(consolePage!))
+          .toEqual(Array(cuts).fill(1006))
         record('PASS', label, platform, transport, lease, resources, cuts)
       })(),
     ])

@@ -16,6 +16,7 @@ import {
   type InputFixture,
 } from './input-fixtures'
 import { observeConsole, openOfficialConsole } from './fixtures'
+import { closeCodes, installCloseCodeDiagnostics } from './close-code-diagnostics'
 import { createLongrunPageProbe, type LongrunPageProbe } from './reconnect-longrun-page'
 import { startIngressWatch, type IngressWatch } from './reconnect-ingress-watch'
 import { ingressPagePorts, observeIngressHttp } from './reconnect-ingress-page'
@@ -73,6 +74,8 @@ async function cleanup(operation: () => Promise<unknown>): Promise<void> {
     clearTimeout(timer)
   }
 }
+// 本案產品socket實際觀測到的原生close code；尚未觀測前維持not-observed。
+let observedCloseCode: number | 'not-observed' = 'not-observed'
 // 只輸出安全計數／時間，不讀ticket、key、frame或畫面內容。
 function record(
   stage: string,
@@ -91,7 +94,7 @@ function record(
       platform: 'linux',
       base: '/rdweb',
       mode: 'preserve',
-      nativeCloseCode: 'not-observed',
+      nativeCloseCode: observedCloseCode,
       budget: controller.summary(),
       ...(lease ? { summary: lease.summary() } : {}),
       ...(resources ? { resources: { ...resources } } : {}),
@@ -132,6 +135,7 @@ async function ingress(
     }
   }
   page.context().on('response', response)
+  observedCloseCode = 'not-observed'
   record('begin', which, controller)
   console.info('Ingress browser: ' + browser.version())
   try {
@@ -145,6 +149,8 @@ async function ingress(
       lease = control.begin(fixture.targetId)
       const first = lease.nextAccepted(abort.signal)
       void first.catch(/* 取消後等待不可unhandled。 */ () => {})
+      // 被動收集產品Worker原生close code；ingress重啟須為1006或1012才可走network重連。
+      await installCloseCodeDiagnostics(page.context())
       remote = await openOfficialConsole(page, fixture)
       live(abort.signal)
       const initialHandle = await first
@@ -222,6 +228,12 @@ async function ingress(
                 row.meAt <= row.ticketAt &&
                 row.ticketAt <= row.acceptedAt,
             ).toBe(true)
+          await expect
+            .poll(/* BroadcastChannel非同步送達。 */ async () => (await closeCodes(remote!)).length)
+            .toBe(1)
+          const [code] = await closeCodes(remote!)
+          expect([1006, 1012]).toContain(code)
+          observedCloseCode = code!
           record('recovered', which, controller, lease, resources, receipt)
           watch!.beginEnd()
           live(abort.signal)
