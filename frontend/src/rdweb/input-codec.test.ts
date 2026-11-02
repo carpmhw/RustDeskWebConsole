@@ -101,9 +101,47 @@ it('preserves other Windows hot modifiers on explicit modifier down', () => {
     )[0]!.keyEvent?.modifiers,
   ).toEqual([29, 1])
 })
+// pinned rdev keycodes/windows.rs 的 E0 掃描碼；上游遇 0xE0 前綴才設 KEYEVENTF_EXTENDEDKEY。
+const WINDOWS_EXTENDED: Partial<Record<ControlName, number>> = {
+  LeftArrow: 0xe04b,
+  RightArrow: 0xe04d,
+  UpArrow: 0xe048,
+  DownArrow: 0xe050,
+  Home: 0xe047,
+  End: 0xe04f,
+  PageUp: 0xe049,
+  PageDown: 0xe051,
+  Insert: 0xe052,
+  Delete: 0xe053,
+}
+// Windows extended 鍵 down／up 皆以 Translate＋E0 掃描碼送出，Linux 與其他功能鍵不變。
+it('sends Windows extended keys as E0 scan codes in Translate mode', () => {
+  for (const [key, chr] of Object.entries(WINDOWS_EXTENDED) as [ControlName, number][]) {
+    for (const down of [true, false])
+      for (const [mods, wire] of [
+        [['Shift'], [29]],
+        [[], []],
+      ] as [Modifier[], number[]][]) {
+        expect(encodeInput({ kind: 'key', key, down, modifiers: mods }, meta)[0]!.keyEvent).toEqual(
+          { chr, down, press: false, mode: hbb.KeyboardMode.Translate, modifiers: wire },
+        )
+        expect(
+          encodeInput(
+            { kind: 'key', key, down, modifiers: mods },
+            { ...meta, platform: 'linux', sas: false },
+          )[0]!.keyEvent,
+        ).toEqual({ controlKey: hbb.ControlKey[key], down, press: false, mode: 0, modifiers: wire })
+      }
+  }
+  for (const key of ['F5', 'Escape', 'Backspace'] as ControlName[])
+    expect(encodeInput({ kind: 'key', key, down: true, modifiers: [] }, meta)[0]!.keyEvent).toEqual(
+      { controlKey: hbb.ControlKey[key], down: true, press: false, mode: 0, modifiers: [] },
+    )
+})
 // 白名單每個 control key 都保留 enum 值與 up 語意。
 it('maps the complete control whitelist and ASCII virtual punctuation', () => {
-  for (const key of CONTROL_NAMES) {
+  // Windows extended 鍵改走 Translate 掃描碼，由獨立案例驗證。
+  for (const key of CONTROL_NAMES.filter((name) => !(name in WINDOWS_EXTENDED))) {
     expect(
       encodeInput({ kind: 'key', key, down: false, modifiers: ['Shift'] }, meta)[0]!.keyEvent,
     ).toEqual({

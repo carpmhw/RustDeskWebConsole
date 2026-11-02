@@ -19,6 +19,21 @@ const EXPLICIT_MODIFIER_FAMILY: Partial<Record<ControlName, Modifier>> = {
   Meta: 'Meta',
   RWin: 'Meta',
 }
+// Windows extended 鍵的 E0 掃描碼（pinned rdev keycodes/windows.rs）。上游 Legacy 經 enigo 注入時
+// 掃描碼缺 E0、不設 KEYEVENTF_EXTENDEDKEY，被當成 NumLock 下的數字鍵盤鍵而抵銷 Shift；
+// Translate 掃描碼走 rdev RawKey::ScanCode，遇 0xE0 前綴會自動設 extended。
+const WINDOWS_EXTENDED_SCAN: Partial<Record<ControlName, number>> = {
+  LeftArrow: 0xe04b,
+  RightArrow: 0xe04d,
+  UpArrow: 0xe048,
+  DownArrow: 0xe050,
+  Home: 0xe047,
+  End: 0xe04f,
+  PageUp: 0xe049,
+  PageDown: 0xe051,
+  Insert: 0xe052,
+  Delete: 0xe053,
+}
 // 僅接受白名單修飾鍵，禁止重複及非陣列資料。
 export function modifiers(value: Modifier[]): number[] {
   if (
@@ -104,6 +119,19 @@ export function encodeInput(v: InputIntent, meta: PeerInputMetadata): hbb.IMessa
   }
   if (v.kind === 'key') {
     if (!CONTROL_NAMES.includes(v.key)) throw new Error('protocol_error')
+    const scan = meta.platform === 'windows' ? WINDOWS_EXTENDED_SCAN[v.key] : undefined
+    if (scan !== undefined)
+      return [
+        {
+          keyEvent: {
+            chr: scan,
+            down: v.down,
+            press: false,
+            mode: hbb.KeyboardMode.Translate,
+            modifiers: mods,
+          },
+        },
+      ]
     // Windows Legacy會在事件尾放開暫加modifier；明確down的自身家族不能被暫加。
     const own = EXPLICIT_MODIFIER_FAMILY[v.key]
     const keyMods =
