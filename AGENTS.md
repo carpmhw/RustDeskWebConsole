@@ -15,19 +15,12 @@
 
 ## 工作流程與紀錄
 
-- 同一任務以 Superpowers 或 OpenSpec 擇一為主要流程；已有進行中的流程就沿用，不另外建立另一套平行規格、計畫或進度紀錄。
-- 只建立所選流程要求的必要文件，設計、任務、決策與進度直接更新該流程的既有文件。簡單修正或文件調整直接處理，不為套流程而新增設計或計畫。
-- 不額外建立或同步獨立的進度帳本、決策日誌、驗收報告、操作卡、自審摘要、驗證 JSON 或任務來源雜湊清單；即使放在流程目錄內，也不新增框架未要求的紀錄。這項約定取代舊計畫中要求重複留存工作紀錄的做法，不降低既有驗證或資安標準。
-- 驗證結果、未驗項目、阻塞與操作授權範圍直接在對話回報；需要持續追蹤時更新所選流程的既有任務文件，不再另寫一份報告。測試原始輸出沿用工具既有機制，不另製多份摘要或副本。
-- 舊文件可先將有效需求、重要決策、必要限制、PASS／FAIL 結果與未完成項目摘要整合至所選流程的既有文件；核對無遺漏並更新引用後，可刪除已被摘要取代的舊文件，不另建摘要檔，也不得改判或隱去歷史失敗與阻塞。
-- 實際刪除範圍須明確，未指定具體文件時先確認，不憑檔名或日期批次清除。仍在使用的規格、測試 fixture、必要原始證據及授權／來源資料，不視為可自動刪除的舊文件。
-- 產品使用文件、必要授權／第三方來源聲明與 pinned 協定雜湊仍依實際變更維護，不屬於額外工作紀錄。
-
-### README 維護界線
-
-- `README.md` 維護產品介紹、功能與支援限制、架構、啟動與設定方式、開發／測試入口及必要來源連結。
-- 除使用者明確要求外，不將單次驗證結果、測試通過數量、執行日期、原始報告保存狀態或驗收歷程寫入 README，也不因測試通過而自動追加或同步這些紀錄。
-- 驗證結果依上述規則在對話回報；需要持續追蹤時，更新所選流程的既有任務文件。README 的功能與支援限制只在實際行為或支援範圍變更時更新，不用歷史測試結果代替支援說明。
+- 同一任務以 Superpowers 或 OpenSpec 擇一為主要流程；已有進行中的流程就沿用，不另建平行規格、計畫或進度紀錄。只建立所選流程要求的必要文件，簡單修正或文件調整直接處理。
+- 不額外建立進度帳本、決策日誌、驗收報告、操作卡、自審摘要、驗證 JSON 或任務來源雜湊清單。驗證結果、未驗項目、阻塞與操作授權範圍直接在對話回報；需要持續追蹤的設計、決策、協定／版本證據與驗證結論，更新所選流程的既有文件，不另同步 `docs/DECISIONS.md`、`docs/PROTOCOL_NOTES.md` 或獨立驗收文件。測試原始輸出沿用工具既有機制，不另製摘要或副本。此約定不降低既有驗證或資安標準。
+- 舊文件須先將有效需求、重要決策、必要限制、PASS／FAIL 結果與未完成項目摘要整合至所選流程的既有文件，核對無遺漏並更新引用後才可刪除；不另建摘要檔，不得改判或隱去歷史失敗與阻塞。刪除範圍須明確，未指定具體文件時先確認，不憑檔名或日期批次清除；仍在使用的規格、fixture、必要原始證據及授權／來源資料不屬可刪舊文件。
+- 一次性診斷、校準或探針腳本放 `artifacts/`（Git 忽略），不進 repo；只有長期由 CI 或 runner 使用的工具才放 `frontend/e2e/scripts/` 或 `tools/`。診斷結論整合至所選流程文件。
+- `README.md` 只維護產品介紹、功能與支援限制、架構、啟動與設定、開發／測試入口及必要來源連結；除使用者明確要求外，不寫入單次驗證結果、通過數量、執行日期或驗收歷程，功能與支援限制只在實際行為或支援範圍變更時更新。產品使用文件、授權／第三方來源聲明與 pinned 協定雜湊依實際變更維護。
+- `docs/`、`openspec/` 與代理工具資料夾依現有 `.gitignore` 留本機，不強制加入 Git，也不為交付改動忽略規則。
 
 ## 目錄導覽
 
@@ -47,6 +40,7 @@
 | `frontend/e2e/`                                   | E2E 案例、設定、fixture、runner 與專用容器      |
 | `deploy/dev/`                                     | 共用開發 Compose、API／web 映像及 Redis 測試    |
 | `tools/`                                          | 共用 fixture、回歸及授權檢查工具                |
+| `artifacts/`、`frontend/.cache/`                  | 本機診斷腳本／產出與私有 E2E 紀錄（Git 忽略）   |
 | `.github/workflows/ci.yml`                        | CI 分流、日常檢查與發布前 E2E                   |
 
 `deploy/dev/` 是開發與驗收環境；正式部署能力須依 M4 計畫與驗收確認。
@@ -88,56 +82,35 @@
 - 依賴／鎖檔／第三方來源有變更時，執行相關 audit 與授權檢查；純文件修改只檢查內容、引用與格式。
 - 全面回歸只在里程碑驗收、跨模組廣泛影響、針對性結果顯示可能有廣泛回歸，或使用者明確要求時執行；執行前說明擴大範圍的理由。CI 依 `frontend/e2e/README.md` 的日常／發布前策略執行，不將 CI 的代表性路徑覆蓋稱為原六組完整功能矩陣。
 - 必要檢查通過後即可交付；沒有新修改、失敗或未解疑慮時，不重複或擴大測試。保留必要負向案例與 fixture，並如實回報未執行的驗證範圍。
+- 測試等待優先使用條件等待。固定等待只限模擬已有證據（原始碼或隔離實驗）的第三方／作業系統計時行為，須為具名常數、註解寫明依據並取得使用者同意；不得用以掩蓋產品缺陷或放寬判定。
 
-以下為按需選用的指令參考，不是每次修改必跑清單，皆在儲存庫根目錄執行。使用 .NET 10 SDK（依 `global.json`）、Node.js 24／Corepack、`frontend/package.json` 指定的 pnpm，以及 Docker Compose。
+### 常用指令
 
-### 還原依賴
+所有指令與工具測試（含 `node --test`）皆在儲存庫根目錄執行，與 CI 相同。使用 .NET 10 SDK（依 `global.json`）、Node.js 24／Corepack、`frontend/package.json` 指定的 pnpm 與 Docker Compose。以下僅列常用入口，完整檢查集合（fixture 完整性、fzstd patch、授權、E2E 工具回歸等）以 `.github/workflows/ci.yml` 為準。
 
 ```sh
-dotnet tool restore
-dotnet restore RdWeb.sln --locked-mode
+# 還原依賴：不可刪除鎖檔或取消 locked／frozen 模式解決還原失敗
+dotnet tool restore && dotnet restore RdWeb.sln --locked-mode
 (cd frontend && corepack pnpm install --frozen-lockfile)
-```
 
-首次 build／test 可能下載 pinned proto；離線快取仍須通過雜湊驗證。不可刪除鎖檔或取消 locked／frozen 模式解決還原失敗。
-
-### 後端檢查指令
-
-局部測試以 `--filter` 選取相關測試類別／案例；以下測試指令涵蓋全部一般後端測試。只在選定測試需要 Redis 時啟動 Redis stack；使用 `--no-build` 前須已建置目前修改。
-
-```sh
-docker compose -f deploy/dev/docker-compose.redis-test.yml up -d --wait
+# 後端：局部以 --filter 選測；--no-build 前須已建置目前修改。真實 Redis 契約測試須提供 TEST_REDIS_URL，
+# 需要時才啟動 deploy/dev/docker-compose.redis-test.yml，本次啟動者用畢 down
 dotnet build RdWeb.sln -c Release --no-restore
 TEST_REDIS_URL=redis://127.0.0.1:16379 dotnet test RdWeb.sln -c Release --no-build --filter "Category!=RustDeskReal"
 dotnet format RdWeb.sln --verify-no-changes --no-restore
-dotnet list RdWeb.sln package --vulnerable --include-transitive
-```
 
-真實 Redis 契約測試必須提供 `TEST_REDIS_URL`。完成後，若 Redis stack 是本次啟動，執行 `docker compose -f deploy/dev/docker-compose.redis-test.yml down`。
-
-### 前端檢查指令
-
-局部測試可用 `(cd frontend && corepack pnpm test src/相關檔案.test.ts)`；以下 `test`／`lint` 指令涵蓋整個前端，依本次影響範圍選用。
-
-```sh
-node tools/test-url-lint.mjs
+# 前端：局部用 (cd frontend && corepack pnpm test src/相關檔案.test.ts)
 (cd frontend && corepack pnpm lint)
-(cd frontend && corepack pnpm test)
-(cd frontend && corepack pnpm build)
-(cd frontend && corepack pnpm audit --audit-level high)
-```
+(cd frontend && corepack pnpm test)    # 含 proto 生成與 Vitest
+(cd frontend && corepack pnpm build)   # 含 proto 生成、vue-tsc 與 Vite
 
-`build` 包含 proto 生成、`vue-tsc --noEmit` 與 Vite；`test` 包含 proto 生成與 Vitest。變更 codec、剪貼簿或 fzstd 時，另跑相關 fixture 完整性／patch 回歸，指令見 CI。
-
-### 工具、依賴與文件
-
-```sh
+# 工具與文件
 frontend/node_modules/.bin/eslint tools
-node tools/licenses.mjs
 git diff --check
 ```
 
-依變更範圍執行：工具修改跑 ESLint、對應 `tools/test-*.mjs` 或 `frontend/e2e/scripts/test-*.mjs` 與指定檔案的 Prettier；依賴或第三方來源修改跑 audit、授權檢查並更新 `THIRD_PARTY_NOTICES.md`。純 Markdown 修改檢查內容、路徑／指令及 `frontend/node_modules/.bin/prettier --check <修改的檔案>`，無須啟動完整應用測試。
+- 首次 build／test 可能下載 pinned proto；離線快取仍須通過雜湊驗證。
+- 工具修改跑 ESLint、對應 `tools/test-*.mjs` 或 `frontend/e2e/scripts/test-*.mjs` 與指定檔案的 Prettier；依賴或第三方來源修改跑 `pnpm audit`、`dotnet list RdWeb.sln package --vulnerable --include-transitive`、`node tools/licenses.mjs` 並更新 `THIRD_PARTY_NOTICES.md`；純 Markdown 修改只跑 `frontend/node_modules/.bin/prettier --check <修改的檔案>`。
 
 ### 真實整合與瀏覽器驗收
 
@@ -155,12 +128,11 @@ git diff --check
 - 管理 E2E 使用隔離 stack 與正式安全限制；直接執行 `pnpm e2e` 不會自動具備 runner 的環境。
 - 維持測試的敏感資料防護，不開啟可能保存認證頁面或真實內容的 trace／screenshot／video／自動 DOM snapshot；公開 fixture 的專用驗收依既有規則處理。
 - 只清理本次啟動且擁有的容器／程序，預設保留測試 volumes。不得清除宿主 RustDesk 設定、使用廣泛的 Docker prune，或未經確認執行 `down -v`。
+- Windows 真機前置（記事本設定與座標量測、受控端無其他控制連線、測試中不操作受控端等）見 `frontend/e2e/README.md`。
 - 單組診斷不等於完整矩陣；port／process healthy 不等於收到影像，Linux 結果不等於 Windows 真機結果。本機通過不代表遠端 CI 已執行。
 
 ## 完成與交付
 
-- 依「先確認影響範圍，再選擇檢查」完成本次必要驗證；不將全面測試或所有檢查種類視為每次交付的固定門檻。不可用刪除失敗案例或跳過必要 fixture 宣稱通過。
-- 回報變更檔案、實際執行的檢查與結果，以及未驗證項目／阻塞；不要沿用舊紀錄中的通過數量作本次結果。
-- 需要保留的決策、協定／版本證據與驗證結論整合至所選 Superpowers／OpenSpec 流程的既有文件，不再另外同步 `docs/DECISIONS.md`、`docs/PROTOCOL_NOTES.md` 或獨立驗收文件；第三方來源與授權聲明仍依實際變更維護。
-- `docs/`、`openspec/` 與代理工具資料夾依現有 `.gitignore` 留本機，不強制加入 Git，也不為交付而改動忽略規則。
+- 依「先確認影響範圍，再選擇檢查」完成本次必要驗證；不可用刪除失敗案例或跳過必要 fixture 宣稱通過。
+- 回報變更檔案、實際執行的檢查與結果，以及未驗證項目／阻塞；不沿用舊紀錄中的通過數量作本次結果。
 - 提交／推送依使用者當次授權。獲准提交時按任務拆分，使用 `feat(scope): ...`、`fix(scope): ...`、`test(scope): ...` 或 `docs(scope): ...`，明確指定本次檔案 stage，避免夾帶既有工作。
