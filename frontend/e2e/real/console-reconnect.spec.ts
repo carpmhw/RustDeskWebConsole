@@ -13,12 +13,17 @@ import {
   type InputFixture,
 } from './input-fixtures'
 import { inputPlatforms } from './windows-runtime'
+import { installInputDiagnostics } from './input-diagnostics'
+import { pacedTextBudgetMs } from './text-pacing-budget'
+import { WINDOWS_CHORD_GAP_MS, windowsClickAnchor, windowsTitleBarAnchor } from './windows-timing'
 import type { ReconnectLease, TunnelHandle } from './reconnect-proxy-types'
 import { prepareReconnectCut } from './reconnect-preparation'
 
 type CaseControl = { begin(target: string): ReconnectLease }
 type Resources = ReturnType<typeof observeConsole>
 let invocationCuts = 0
+// Windows點擊錨點輪替序號：相鄰點擊不同點，避免500ms內同點被判為雙擊。
+let windowsClicks = 0
 
 // 每案只重建console stack，不重置同案中的actor／quota或原生target來掩蓋失敗。
 test.beforeEach(() => resetStack())
@@ -27,6 +32,7 @@ test.beforeEach(() => resetStack())
 function record(
   stage: string,
   label: string,
+  platform: string,
   transport: string,
   lease?: ReconnectLease,
   resources?: Resources,
@@ -38,7 +44,7 @@ function record(
       utc: new Date().toISOString(),
       stage,
       case: label,
-      platform: 'linux',
+      platform,
       transport,
       base,
       mode: process.env.PREFIX_MODE,
@@ -61,6 +67,7 @@ function cut(
   lease: ReconnectLease,
   handle: TunnelHandle,
   label: string,
+  platform: string,
   transport: string,
   count: number,
 ): void {
@@ -68,7 +75,15 @@ function cut(
     throw new Error('reconnect_cut_budget')
   lease.interrupt(handle)
   invocationCuts++
-  record('cut', label, transport, lease, undefined, count)
+  record('cut', label, platform, transport, lease, undefined, count)
+}
+
+// 點回遠端畫面取得鍵盤焦點：Windows點記事本標題列輪替錨點，不讓點擊取消全選；Linux沿用原編輯區點。
+async function clickBack(page: Page, fixture: InputFixture): Promise<void> {
+  if (fixture.platform === 'windows') {
+    const a = windowsTitleBarAnchor(fixture.editor, windowsClicks++ % 3)
+    await clickRemote(page, a.x, a.y)
+  } else await clickRemote(page, fixture.editor.x + 80, fixture.editor.y + 30)
 }
 
 // 公開樣本文字只在短命browser RAM與完整相等oracle使用，不進report。
@@ -78,21 +93,43 @@ async function readRemote(page: Page, fixture: InputFixture, expected: string): 
       navigator.clipboard.writeText('Public reconnect sentinel'),
   )
   await startReceiving(page)
-  await clickRemote(page, fixture.editor.x + 80, fixture.editor.y + 30)
+  await clickBack(page, fixture)
   await page.keyboard.press('Control+a')
+  // 記事本點擊後全選較慢，Windows組合鍵間隔模擬真人節奏（見windows-timing）。
+  if (fixture.platform === 'windows') await page.waitForTimeout(WINDOWS_CHORD_GAP_MS)
   await page.keyboard.press('Control+c')
   await assertPublicClipboard(page, expected, 'Public reconnect sentinel', 'remote_input')
   await expect(page.getByTestId('console-clipboard-waiting')).toHaveCount(0)
 }
 
-// Linux Xaw用Ctrl+W刪選取；Windows尚未另獲操作許可，不以此helper冒充其oracle。
+// Linux Xaw用Ctrl+W刪選取；Windows記事本Ctrl+A後輸入即取代，並以診斷條件等待控速文字全數提交。
 async function replaceAndRead(page: Page, fixture: InputFixture, expected: string): Promise<void> {
-  if (fixture.platform !== 'linux') throw new Error('reconnect_native_platform_pending')
-  await clickRemote(page, fixture.editor.x + 80, fixture.editor.y + 30)
-  await expect(page.getByTestId('console-input-active')).toBeVisible()
-  await page.keyboard.press('Control+a')
-  await page.keyboard.press('Control+w')
-  await page.keyboard.insertText(expected)
+  if (fixture.platform === 'windows') {
+    await page.evaluate(
+      /* 新Worker重連後重新綁定診斷；只比對公開樣本，不保存文字。 */ (publicExpected) => {
+        if (!window.__rdwebInputDiagnostics)
+          throw new Error('input_clipboard_diagnostics_unavailable')
+        window.__rdwebInputDiagnostics.begin(publicExpected, false, true)
+      },
+      expected,
+    )
+    const a = windowsClickAnchor(fixture.editor, windowsClicks++ % 2)
+    await clickRemote(page, a.x, a.y)
+    await expect(page.getByTestId('console-input-active')).toBeVisible()
+    await page.keyboard.press('Control+a')
+    await page.keyboard.insertText(expected)
+    await page.waitForFunction(
+      () => window.__rdwebInputDiagnostics?.snapshot().textExactSubmitted === true,
+      undefined,
+      { timeout: pacedTextBudgetMs(expected) },
+    )
+  } else {
+    await clickRemote(page, fixture.editor.x + 80, fixture.editor.y + 30)
+    await expect(page.getByTestId('console-input-active')).toBeVisible()
+    await page.keyboard.press('Control+a')
+    await page.keyboard.press('Control+w')
+    await page.keyboard.insertText(expected)
+  }
   await readRemote(page, fixture, expected)
 }
 
@@ -156,7 +193,6 @@ async function nativeCase(
     first: TunnelHandle
   }) => Promise<number>,
 ): Promise<void> {
-  if (platform !== 'linux') throw new Error('reconnect_native_platform_pending')
   let fixture: InputFixture | undefined,
     consolePage: Page | undefined,
     lease: ReconnectLease | undefined
@@ -177,13 +213,15 @@ async function nativeCase(
   }
   page.context().on('response', response)
   let cuts = 0
-  record('begin', label, transport)
+  record('begin', label, platform, transport)
   console.info('Reconnect browser: ' + browser.version())
   try {
     await Promise.race([
       limited,
       (async () => {
         fixture = await prepareInputTarget(platform, transport)
+        // Windows以被動診斷條件等待控速文字提交；需在開啟console前安裝，重連的新Worker同樣被觀察。
+        if (platform === 'windows') await page.context().addInitScript(installInputDiagnostics)
         lease = control.begin(fixture.targetId)
         const accepted = next(lease, controller.signal)
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -191,7 +229,7 @@ async function nativeCase(
         const first = await accepted
         await waitForInputVideo(consolePage, fixture)
         await expect(consolePage.getByTestId('console-auto-reconnect')).toBeChecked()
-        record('initial_streaming', label, transport, lease, resources)
+        record('initial_streaming', label, platform, transport, lease, resources)
         cuts = await body({
           page: consolePage,
           fixture,
@@ -206,7 +244,7 @@ async function nativeCase(
         await expect
           .poll(/* 真close而不是函數回傳。 */ () => resources.closed)
           .toBe(resources.opened)
-        record('PASS', label, transport, lease, resources, cuts)
+        record('PASS', label, platform, transport, lease, resources, cuts)
       })(),
     ])
   } finally {
@@ -236,7 +274,7 @@ async function nativeCase(
             ?.summary()
             .attempts.filter(/* 只計已由真interrupt標記的首次cut。 */ (row) => row.cutAt !== null)
             .length ?? 0
-        record('finally', label, transport, lease, resources, performed)
+        record('finally', label, platform, transport, lease, resources, performed)
       }
     }
   }
@@ -257,7 +295,7 @@ for (const platform of inputPlatforms()) {
         const oldWorker = remote.workers()[0]
         expect(!!oldWorker).toBe(true)
         await startReceiving(remote)
-        await clickRemote(remote, fixture.editor.x + 80, fixture.editor.y + 30)
+        await clickBack(remote, fixture)
         const prepared = await prepareReconnectCut(remote)
         expect(prepared).toEqual({
           focused: true,
@@ -276,7 +314,7 @@ for (const platform of inputPlatforms()) {
         )
         const recovered = next(lease, signal)
         const at = performance.now()
-        cut(lease, first, 'A', transport, 1)
+        cut(lease, first, 'A', platform, transport, 1)
         // 所有清理必須同時在1秒內、首2秒retry前觀測，不能等receive自然5秒到期。
         await expect
           .poll(
@@ -340,7 +378,7 @@ for (const platform of inputPlatforms()) {
               /* 不回草稿文字。 */ (node) => (node as HTMLTextAreaElement).value.length > 0,
             ),
         ).toBe(true)
-        cut(lease, second, 'A', transport, 2)
+        cut(lease, second, 'A', platform, transport, 2)
         await expect(remote.getByTestId('console-reconnect')).toBeVisible({ timeout: 1000 })
         await expect(remote.getByTestId('console-clipboard-dialog')).not.toBeVisible({
           timeout: 1000,
@@ -377,13 +415,13 @@ for (const platform of inputPlatforms()) {
           let handle = first
           for (let retry = 1; retry <= 3; retry++) {
             const pending = next(lease, signal)
-            cut(lease, handle, 'B', transport, retry)
+            cut(lease, handle, 'B', platform, transport, retry)
             handle = await pending
             await expect(remote.getByTestId('console-reconnect')).toHaveText(
               '重新連線第 ' + retry + '／3 次',
             )
           }
-          cut(lease, handle, 'B', transport, 4)
+          cut(lease, handle, 'B', platform, transport, 4)
           await expect(remote.locator('[data-error-code="reconnect_exhausted"]')).toBeVisible({
             timeout: 10000,
           })
