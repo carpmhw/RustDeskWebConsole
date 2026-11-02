@@ -32,9 +32,14 @@ it('preserves a safe fixed rate-limit terminal and fails closed for all other HT
 it('classifies only approved native close sources as unexpected network', () => {
   for (const code of [1006, 1012])
     expect(closedTerminal(code, false)).toEqual({ cause: 'network', code: 'connection_failed' })
-  for (const code of [1000, 1001, 1008, 1011, 3000, NaN])
-    expect(closedTerminal(code, false).cause).toBe('fatal')
+  for (const code of [1000, 1001, 1011, 3000, NaN])
+    expect(closedTerminal(code, false)).toEqual({ cause: 'fatal', code: 'connection_failed' })
   expect(closedTerminal(1006, true)).toEqual({ cause: 'stopped', code: 'connection_failed' })
+})
+// 後端撤銷授權以 1008 關閉，須成為不重連的 access_revoked；使用者停止仍優先。
+it('maps policy-violation close to a fatal access_revoked terminal', () => {
+  expect(closedTerminal(1008, false)).toEqual({ cause: 'fatal', code: 'access_revoked' })
+  expect(closedTerminal(1008, true)).toEqual({ cause: 'stopped', code: 'connection_failed' })
 })
 // typed fault 是本機 class，message與內部snapshot都是固定來源，不讓原DTO晚改。
 it('copies authoritative typed faults and carries no native error text', () => {

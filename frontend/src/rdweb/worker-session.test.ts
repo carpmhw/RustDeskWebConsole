@@ -334,7 +334,14 @@ it('gives policy close and authoritative backend error priority over network can
         await vi.advanceTimersByTimeAsync(250)
         expect(
           p.messages.filter(/* authority不因genericUIcode改變。 */ (m) => m.type === 'failure'),
-        ).toEqual([{ type: 'failure', revision: 1, code: 'connection_failed', cause: 'fatal' }])
+        ).toEqual([
+          {
+            type: 'failure',
+            revision: 1,
+            code: cause === 'policy' ? 'access_revoked' : 'connection_failed',
+            cause: 'fatal',
+          },
+        ])
       } finally {
         p.session.dispose()
         p.key.fill(0)
@@ -628,10 +635,10 @@ it('closes the public probe when returning capabilities cannot transfer it', asy
 it('reports native close codes to an optional observer before classifying', async () => {
   vi.useFakeTimers()
   try {
-    for (const [code, cause] of [
-      [1006, 'network'],
-      [1012, 'network'],
-      [1008, 'fatal'],
+    for (const [code, cause, failure] of [
+      [1006, 'network', 'connection_failed'],
+      [1012, 'network', 'connection_failed'],
+      [1008, 'fatal', 'access_revoked'],
     ] as const) {
       const codes: number[] = []
       const p = await encryptedFixture(undefined, {
@@ -642,7 +649,7 @@ it('reports native close codes to an optional observer before classifying', asyn
         await vi.advanceTimersByTimeAsync(250)
         expect(codes).toEqual([code])
         expect(p.messages.filter((m) => m.type === 'failure')).toEqual([
-          { type: 'failure', revision: 1, code: 'connection_failed', cause },
+          { type: 'failure', revision: 1, code: failure, cause },
         ])
       } finally {
         p.session.dispose()

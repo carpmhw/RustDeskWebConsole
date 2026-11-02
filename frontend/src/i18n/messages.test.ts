@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { messages } from './messages'
 import { readLocale } from './index'
 import { formatTimestamp } from '../utils/dateTime'
+import { FAILURE_CODES } from '../rdweb/types'
 
 // 匿名外觀入口與收合導覽必須在兩語系可辨識，不能留下未翻譯的key。
 it('provides appearance and navigation controls in both locales', () => {
@@ -71,5 +72,15 @@ it('provides the paced text busy hint in both locales', () => {
   expect(messages['zh-TW'].consoleUI.operations.input_text_busy).toBe('文字傳送中，請稍候再輸入。')
   expect(messages.en.consoleUI.operations.input_text_busy).toBe(
     'Text is still being typed. Please wait.',
+  )
+})
+
+// 每個固定失敗碼在兩語系都必須有主控台訊息，權限撤銷須明確告知連線已被中斷。
+it('translates every console failure code including access revocation', () => {
+  for (const locale of [messages['zh-TW'], messages.en])
+    expect(Object.keys(locale.consoleUI.errors).sort()).toEqual([...FAILURE_CODES].sort())
+  expect(messages['zh-TW'].consoleUI.errors.access_revoked).toBe('存取權限已變更，連線已中斷')
+  expect(messages.en.consoleUI.errors.access_revoked).toBe(
+    'Access changed; the connection was closed',
   )
 })

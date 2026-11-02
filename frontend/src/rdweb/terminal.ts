@@ -7,9 +7,10 @@ export function httpTerminal(status: number, code: string): Terminal {
     return { cause: 'temporary', code: 'connection_failed' }
   return { cause: 'fatal', code: 'connection_failed' }
 }
-// 只接受核准的原生異常來源，正常／policy／未知 close 不推測 network。
+// 只接受核准的原生異常來源，正常／未知 close 不推測 network；1008 為後端撤銷授權。
 export function closedTerminal(code: number, stopped: boolean): Terminal {
   if (stopped) return { cause: 'stopped', code: 'connection_failed' }
+  if (code === 1008) return { cause: 'fatal', code: 'access_revoked' }
   return { cause: [1006, 1012].includes(code) ? 'network' : 'fatal', code: 'connection_failed' }
 }
 export class TransportFault extends Error {
