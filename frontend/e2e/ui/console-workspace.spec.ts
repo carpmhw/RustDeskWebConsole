@@ -236,3 +236,39 @@ test('console surface fills the available space at 1920x1080', async ({ page }) 
   await page.getByTestId('console-focus-mode').click()
   await expect.poll(async () => (await viewport.boundingBox())!.height).toBeGreaterThanOrEqual(930)
 })
+
+// 放大並捲動後點可見區右下角組字，真實 offsetParent 與尺寸下組字列仍完整落在 viewport 內。
+test('composition strip stays inside a scrolled zoomed viewport near its corner', async ({
+  page,
+}) => {
+  // 窄頁面讓 200% 公開畫面在兩個方向都可捲動。
+  await page.setViewportSize({ width: 560, height: 700 })
+  await page.goto(fixture)
+  await page.getByTestId('console-zoom').selectOption('2')
+  const viewport = page.getByTestId('console-viewport')
+  await expect
+    .poll(() =>
+      viewport.evaluate(
+        (node) =>
+          node.scrollWidth > node.clientWidth + 60 && node.scrollHeight > node.clientHeight + 30,
+      ),
+    )
+    .toBe(true)
+  await viewport.evaluate((node) => {
+    node.scrollLeft = 60
+    node.scrollTop = 30
+  })
+  const box = (await viewport.boundingBox())!
+  const size = await viewport.evaluate((node) => ({ w: node.clientWidth, h: node.clientHeight }))
+  await page.mouse.click(box.x + size.w - 5, box.y + size.h - 5)
+  const ime = page.getByTestId('console-ime')
+  await expect(ime).toBeFocused()
+  await ime.evaluate((node) => node.dispatchEvent(new CompositionEvent('compositionstart')))
+  await expect(ime).toHaveClass(/console-ime--composing/)
+  const strip = (await ime.boundingBox())!
+  expect(strip.width).toBeGreaterThan(1)
+  expect(strip.x).toBeGreaterThanOrEqual(box.x)
+  expect(strip.y).toBeGreaterThanOrEqual(box.y)
+  expect(strip.x + strip.width).toBeLessThanOrEqual(box.x + size.w)
+  expect(strip.y + strip.height).toBeLessThanOrEqual(box.y + size.h)
+})
