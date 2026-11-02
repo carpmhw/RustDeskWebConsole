@@ -104,12 +104,15 @@ export class InputController {
     })
     // 非活躍 composition 只清本機 DOM 文字。
     this.listen(this.ime, 'compositionstart', () => {
-      if (this.focused) this.keyboard.compositionStart()
-      else this.ime.value = ''
+      if (this.focused) {
+        this.keyboard.compositionStart()
+        this.showComposition()
+      } else this.ime.value = ''
     })
     // 確認結果只在仍活躍 scope 提交一次。
     this.listen(this.ime, 'compositionend', (raw) => {
       if (this.focused) this.keyboard.compositionEnd((raw as CompositionEvent).data)
+      this.hideComposition()
       this.ime.value = ''
     })
     // 普通文字單一路徑，IME 中間值不 preventDefault。
@@ -135,6 +138,30 @@ export class InputController {
     this.listen(this.canvas, 'contextmenu', (e) => {
       if (this.focused) e.preventDefault()
     })
+  }
+  // 組字期間讓本機組字列可見，並含捲動量夾回 viewport 可見範圍內 8px。
+  private showComposition(): void {
+    this.ime.classList.add('console-ime--composing')
+    const viewport = this.ime.offsetParent as HTMLElement | null
+    if (!viewport) return
+    const clamp = (value: string, scroll: number, client: number, size: number) =>
+      `${Math.max(scroll + 8, Math.min(parseFloat(value) || 0, scroll + client - size - 8))}px`
+    this.ime.style.left = clamp(
+      this.ime.style.left,
+      viewport.scrollLeft,
+      viewport.clientWidth,
+      this.ime.offsetWidth,
+    )
+    this.ime.style.top = clamp(
+      this.ime.style.top,
+      viewport.scrollTop,
+      viewport.clientHeight,
+      this.ime.offsetHeight,
+    )
+  }
+  // 確認、取消或釋放時恢復 1px 隱藏外觀，不保留組字內容。
+  private hideComposition(): void {
+    this.ime.classList.remove('console-ime--composing')
   }
   // 同值 snapshot 不失焦，真正 state 變動才停止輸入。
   setState(value: InputState): void {
@@ -226,6 +253,7 @@ export class InputController {
   }
   // release 先清 Main ledger／pending，再停止 scope；capture 失效只最佳努力。
   private release(): void {
+    this.hideComposition()
     this.channel.blur()
     this.keyboard.reset()
     this.active = false

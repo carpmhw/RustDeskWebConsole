@@ -204,3 +204,25 @@ test('console fixture has no network or system clipboard operations', async ({ p
     await page.evaluate(() => (window as Window & { clipboardCalls?: number }).clipboardCalls),
   ).toBe(0)
 })
+
+// 合成組字事件只驗本機組字列可見與夾限，不代表真 IME 已驗收。
+test('composition strip becomes visible inside the viewport and hides after commit', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  await center(page)
+  const ime = page.getByTestId('console-ime')
+  await expect(ime).toBeFocused()
+  await ime.evaluate((node) => node.dispatchEvent(new CompositionEvent('compositionstart')))
+  await expect(ime).toHaveClass(/console-ime--composing/)
+  const box = (await ime.boundingBox())!
+  const viewport = (await page.getByTestId('console-viewport').boundingBox())!
+  expect(box.width).toBeGreaterThan(1)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.x + viewport.width)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.y + viewport.height)
+  await ime.evaluate((node) =>
+    node.dispatchEvent(new CompositionEvent('compositionend', { data: '' })),
+  )
+  await expect(ime).not.toHaveClass(/console-ime--composing/)
+  expect((await ime.boundingBox())!.width).toBeLessThanOrEqual(1)
+})

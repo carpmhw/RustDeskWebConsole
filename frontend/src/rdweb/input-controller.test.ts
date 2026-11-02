@@ -28,6 +28,21 @@ function fixture() {
     captures = new Set<number>()
     offsetLeft = 0
     offsetTop = 0
+    offsetWidth = 0
+    offsetHeight = 0
+    offsetParent: {
+      clientWidth: number
+      clientHeight: number
+      scrollLeft: number
+      scrollTop: number
+    } | null = null
+    // 只記 class 名，驗 controller 對組字列外觀的切換。
+    classes = new Set<string>()
+    classList = {
+      add: (name: string) => void this.classes.add(name),
+      remove: (name: string) => void this.classes.delete(name),
+      contains: (name: string) => this.classes.has(name),
+    }
     // 假 focus port 僅驗 controller，不能冒充原生 browser behavior。
     focus(): void {
       doc.activeElement = this
@@ -239,4 +254,42 @@ it('cleans listeners, composition and buttons for cancellation, hidden and dispo
   dispatch(f.win, 'blur')
   expect(f.enqueue).toHaveBeenCalledTimes(count)
   expect(f.ime.value).toBe('')
+})
+
+// 活躍組字顯示本機組字列，確認或取消後恢復隱藏且送出次數不變。
+it('shows the composition strip only while an active composition is open', () => {
+  const f = fixture()
+  dispatch(f.ime, 'compositionstart')
+  expect(f.ime.classList.contains('console-ime--composing')).toBe(false)
+  dispatch(f.canvas, 'pointerdown')
+  f.enqueue.mockClear()
+  dispatch(f.ime, 'compositionstart')
+  expect(f.ime.classList.contains('console-ime--composing')).toBe(true)
+  dispatch(f.ime, 'compositionend', { data: '中文' })
+  expect(f.ime.classList.contains('console-ime--composing')).toBe(false)
+  expect(f.enqueue).toHaveBeenCalledExactlyOnceWith({ kind: 'text', text: '中文', modifiers: [] })
+  dispatch(f.ime, 'compositionstart')
+  f.ime.blur()
+  expect(f.ime.classList.contains('console-ime--composing')).toBe(false)
+  dispatch(f.canvas, 'pointerdown')
+  dispatch(f.ime, 'compositionstart')
+  dispatch(f.canvas, 'pointercancel')
+  expect(f.ime.classList.contains('console-ime--composing')).toBe(false)
+  f.controller.dispose()
+})
+
+// 組字列超出 viewport 右下可見範圍時，以含捲動量的 8px 內縮夾回。
+it('clamps the composition strip inside the scrolled viewport', () => {
+  const f = fixture()
+  f.ime.offsetParent = { clientWidth: 400, clientHeight: 300, scrollLeft: 100, scrollTop: 50 }
+  f.ime.offsetWidth = 200
+  f.ime.offsetHeight = 32
+  f.canvas.offsetLeft = 300
+  f.canvas.offsetTop = 200
+  dispatch(f.canvas, 'pointerdown', { clientX: 180, clientY: 150 })
+  expect(f.ime.style.left).toBe('460px')
+  dispatch(f.ime, 'compositionstart')
+  expect(f.ime.style.left).toBe('292px')
+  expect(f.ime.style.top).toBe('310px')
+  f.controller.dispose()
 })
