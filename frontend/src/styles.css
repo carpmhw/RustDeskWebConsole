@@ -958,9 +958,14 @@ textarea {
   gap: var(--space-2);
   flex: 1;
   width: 100%;
-  max-width: 1600px;
+  max-width: none;
   min-height: 440px;
   margin-top: var(--space-3);
+}
+/* 專注模式貼齊頁面上緣並縮小區塊間距，把高度讓給遠端畫面。 */
+.console-workspace--focused {
+  gap: var(--space-1);
+  margin-top: 0;
 }
 .console-workspace-heading {
   display: flex;
@@ -971,7 +976,23 @@ textarea {
   min-width: 0;
 }
 .console-workspace-heading h1 {
-  font-size: 24px;
+  font-size: 18px;
+}
+.console-workspace-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* 專注模式只視覺隱藏標題，保留每頁一個 h1 與報讀器標題。 */
+.console-workspace--focused .console-workspace-heading h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .console-workspace-heading p {
   margin: 0;
@@ -985,7 +1006,7 @@ textarea {
   min-width: 0;
 }
 .console-workspace-toolbar {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3);
   background: var(--raised);
   border-radius: var(--panel-radius) var(--panel-radius) 0 0;
   border-bottom: 1px solid var(--soft-line);
@@ -1002,20 +1023,34 @@ textarea {
   gap: var(--space-1);
   min-width: 0;
 }
-.console-toolgroup label {
-  margin: 0;
+.console-toolgroup {
+  align-items: center;
 }
-.console-toolgroup p {
-  flex-basis: 100%;
+/* 主控台工具列的標籤與控制項同列，維持單列高度。 */
+.console-workspace .console-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
-  font-size: 13px;
-  color: var(--muted);
+  white-space: nowrap;
+}
+/* 視覺隱藏但保留給 aria-describedby 與報讀器。 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .console-workspace-status {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
-  padding: var(--space-1) var(--space-3);
+  padding: 4px var(--space-3);
   font-size: 13px;
   min-width: 0;
   overflow-wrap: anywhere;

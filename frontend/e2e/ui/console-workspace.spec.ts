@@ -226,3 +226,13 @@ test('composition strip becomes visible inside the viewport and hides after comm
   await expect(ime).not.toHaveClass(/console-ime--composing/)
   expect((await ime.boundingBox())!.width).toBeLessThanOrEqual(1)
 })
+
+// 1920×1080 下畫面用滿寬度，專注模式取得大部分高度。
+test('console surface fills the available space at 1920x1080', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto(fixture)
+  const viewport = page.getByTestId('console-viewport')
+  expect((await viewport.boundingBox())!.width).toBeGreaterThanOrEqual(1860)
+  await page.getByTestId('console-focus-mode').click()
+  await expect.poll(async () => (await viewport.boundingBox())!.height).toBeGreaterThanOrEqual(930)
+})

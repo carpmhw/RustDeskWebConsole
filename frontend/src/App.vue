@@ -51,7 +51,7 @@ watch(
   <RouterView v-else v-slot="{ Component }">
     <component :is="Component" @focus-mode-change="setConsoleFocusMode" />
   </RouterView>
-  <footer class="app-footer">
+  <footer v-show="!consoleFocusMode" class="app-footer">
     <span>{{ t('utc') }}</span
     ><a href="https://github.com/carpmhw/RustDeskWebConsole" rel="noopener noreferrer">{{
       t('source')

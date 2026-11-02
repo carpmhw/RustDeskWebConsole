@@ -446,6 +446,7 @@ onBeforeUnmount(() => {
       <div>
         <h1>{{ t('consoleUI.title') }}</h1>
         <p>{{ name }}</p>
+        <RouterLink :to="{ name: 'targets' }">{{ t('targets') }}</RouterLink>
       </div>
     </template>
     <template #status>
@@ -506,12 +507,13 @@ onBeforeUnmount(() => {
             type="button"
             data-testid="console-clipboard-copy"
             aria-describedby="console-clipboard-help"
+            :title="t('consoleUI.clipboardHelp')"
             :disabled="!clipboardAvailable || !inputState?.keyboard"
             @click="copyRemoteClipboard"
           >
             {{ t('consoleUI.clipboardCopy') }}
           </button>
-          <p id="console-clipboard-help" data-testid="console-clipboard-help">
+          <p id="console-clipboard-help" class="sr-only" data-testid="console-clipboard-help">
             {{ t('consoleUI.clipboardHelp') }}
           </p>
         </div>
@@ -636,17 +638,10 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </dialog>
-    <div class="button-row">
-      <button
-        v-if="phase === 'failed' || phase === 'closed'"
-        type="button"
-        class="primary"
-        data-testid="console-retry"
-        @click="start"
-      >
+    <div v-if="phase === 'failed' || phase === 'closed'" class="button-row">
+      <button type="button" class="primary" data-testid="console-retry" @click="start">
         {{ t('consoleUI.retry') }}
       </button>
-      <RouterLink :to="{ name: 'targets' }">{{ t('targets') }}</RouterLink>
     </div>
   </ConsoleWorkspace>
 </template>

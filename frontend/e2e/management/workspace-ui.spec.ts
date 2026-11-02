@@ -342,3 +342,64 @@ test('console chrome restores navigation without a remote attempt', async ({ pag
     await fixture.context.dispose()
   }
 })
+
+// 真實Console.vue在1920×1080：工具列單列、畫面用滿；專注模式隱藏頁尾但保留h1、目標主機與結束。
+test('console surface fills 1920x1080 and focus mode hides the footer', async ({ page }) => {
+  const fixture = await createFixture()
+  let attempts = 0
+  let workers = 0
+  // 任何WS均先攔截，版面案例不得建立真串流。
+  await page.routeWebSocket('**', (socket) => {
+    attempts++
+    socket.close()
+  })
+  // 只允許登入與列表metadata，其餘API拒絕並計數。
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (
+      path.includes('/api/v1/auth/') ||
+      path.endsWith('/api/v1/health') ||
+      path.endsWith('/api/v1/targets') ||
+      path.endsWith('/api/v1/servers/available')
+    )
+      await route.continue()
+    else {
+      attempts++
+      await route.abort()
+    }
+  })
+  // 只留Worker個數，不讀內容。
+  page.on('worker', () => {
+    workers++
+  })
+  try {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await loginUi(page, fixture.user.username)
+    await page.goto(base + '/console/not-a-uuid')
+    await expect(page.locator('[data-error-code="connection_failed"]')).toBeVisible()
+    const viewport = page.getByTestId('console-viewport')
+    expect((await viewport.boundingBox())!.width).toBeGreaterThanOrEqual(1860)
+    expect(
+      (await page.locator('.console-workspace-toolbar').boundingBox())!.height,
+    ).toBeLessThanOrEqual(64)
+    // 錯誤狀態含錯誤框與重試列，門檻依2026-11-03實測（623）校準；串流狀態門檻由UI harness驗。
+    const normal = (await viewport.boundingBox())!.height
+    expect(normal).toBeGreaterThanOrEqual(600)
+    await expect(page.locator('.app-footer')).toBeVisible()
+    await page.getByTestId('console-focus-mode').click()
+    await expect(page.locator('.app-footer')).not.toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    expect(
+      (await page.getByRole('heading', { level: 1 }).boundingBox())!.width,
+    ).toBeLessThanOrEqual(1)
+    await expect(page.getByRole('link', { name: '目標主機', exact: true })).toBeVisible()
+    await expect(page.getByTestId('console-end')).toBeVisible()
+    await expect
+      .poll(async () => (await viewport.boundingBox())!.height)
+      .toBeGreaterThanOrEqual(normal + 150)
+    expect(attempts).toBe(0)
+    expect(workers).toBe(0)
+  } finally {
+    await fixture.context.dispose()
+  }
+})
