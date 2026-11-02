@@ -1,4 +1,4 @@
-import { request, type APIRequestContext } from '@playwright/test'
+import { request, type APIRequestContext, type Page, type Response } from '@playwright/test'
 import { test, expect } from './reconnect-fixtures'
 import { resetStack, password, base } from '../management/helpers/fixtures'
 import { createReconnectSecurityProbe } from './reconnect-security-probe'
@@ -6,7 +6,7 @@ import { prepareOfficialTarget, openOfficialConsole, observeConsole } from './fi
 import { prepareLinuxInputTarget, waitForInputVideo } from './input-fixtures'
 import type { ReconnectProxy } from './reconnect-proxy-types'
 
-// 五案各自隔離backend資料與quota；不降低正式限制或重置同案中的auth／KV。
+// 六案各自隔離backend資料與quota；不降低正式限制或重置同案中的auth／KV。
 test.beforeEach(() => resetStack())
 
 // 純auth安全案不建立target／observer，也不先做其他正式login。
@@ -217,6 +217,101 @@ test('logout stops pending retry', async ({ page, browser, reconnectCase, reconn
       } finally {
         await fixture.context.dispose()
       }
+    }
+  }
+})
+
+// 以正式UI連線耗用login-assist每分鐘5次額度，第5次串流後切斷；自動重試第6次收到真429即須停止，不再排程。
+test('retry rate limit stops reconnect', async ({
+  page,
+  browser,
+  reconnectCase,
+  reconnectProxy,
+}) => {
+  const before = counters(reconnectProxy),
+    resources = observeConsole(page.context())
+  const fixture = await prepareLinuxInputTarget('tcp')
+  const lease = reconnectCase.begin(fixture.targetId),
+    abort = new AbortController()
+  let limited = 0
+  // 只計login-assist的status，不保存URL、body或credential。
+  const response = (value: Response): void => {
+    if (value.status() === 429 && new URL(value.url()).pathname.endsWith('/login-assist')) limited++
+  }
+  page.context().on('response', response)
+  let remote: Page | undefined
+  let firstAssistAt = 0
+  // 父tab已登入後直接點targets連線link，不重複loginUi以免先耗盡登入額度。
+  const reopen = async (): Promise<Page> => {
+    await page.goto(base + '/targets')
+    const popup = page.context().waitForEvent('page')
+    await page
+      .locator('tbody tr')
+      .filter({ hasText: fixture.name })
+      .getByRole('link', { name: '連線', exact: true })
+      .click()
+    const opened = await popup
+    await opened.bringToFront()
+    return opened
+  }
+  try {
+    for (let cycle = 1; cycle <= 4; cycle++) {
+      const consolePage = cycle === 1 ? await openOfficialConsole(page, fixture) : await reopen()
+      await expect(consolePage.getByTestId('console-streaming')).toBeVisible({ timeout: 45000 })
+      if (cycle === 1) firstAssistAt = performance.now()
+      await consolePage.getByTestId('console-end').click()
+      await expect(consolePage.getByTestId('console-phase')).toHaveText('連線已取消／關閉')
+      await consolePage.close()
+    }
+    expect(lease.summary().routes.assist.requested).toBe(4)
+    const accepted = lease.nextAccepted(abort.signal)
+    void accepted.catch(/* finally取消時不留下unhandled waiter。 */ () => {})
+    remote = await reopen()
+    const handle = await accepted
+    await waitForInputVideo(remote, fixture)
+    expect(lease.summary().routes.assist.requested).toBe(5)
+    // 額度視窗60秒；超過50秒就無法證明第6次落在同視窗，固定失敗而非重試。
+    if (performance.now() - firstAssistAt > 50000) throw new Error('retry_quota_window_exceeded')
+    lease.interrupt(handle)
+    console.info(
+      JSON.stringify({
+        event: 'reconnect_security_cut',
+        case: 'retry_rate_limit',
+        cuts: 1,
+        utc: new Date().toISOString(),
+        browser: browser.version(),
+      }),
+    )
+    await expect(remote.locator('[data-error-code="rate_limited"]')).toBeVisible({ timeout: 15000 })
+    expect(limited).toBe(1)
+    await expect(remote.getByTestId('console-reconnect')).toHaveCount(0)
+    await expect.poll(/* 所有Worker都須真正關閉。 */ () => resources.closed).toBe(resources.opened)
+    const settled = lease.summary()
+    const deadline = performance.now() + 10500
+    do {
+      const state = lease.summary()
+      expect({
+        accepted: state.accepted,
+        tickets: state.routes.ticket.requested,
+        assist: state.routes.assist.requested,
+        limited,
+      }).toEqual({
+        accepted: settled.accepted,
+        tickets: settled.routes.ticket.requested,
+        assist: 6,
+        limited: 1,
+      })
+      await remote.waitForTimeout(Math.min(100, Math.max(1, deadline - performance.now())))
+    } while (performance.now() < deadline)
+    expect(resources.wrongPrefix).toBe(0)
+    record('retry_rate_limit', reconnectProxy, before)
+  } finally {
+    abort.abort()
+    page.context().off('response', response)
+    try {
+      if (remote && !remote.isClosed()) await remote.close()
+    } finally {
+      await fixture.context.dispose()
     }
   }
 })
