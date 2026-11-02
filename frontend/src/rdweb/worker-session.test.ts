@@ -624,3 +624,65 @@ it('closes the public probe when returning capabilities cannot transfer it', asy
   expect(value.deps.socket).not.toHaveBeenCalled()
   session.dispose()
 })
+// 預設關閉的close觀測接點只收原生整數code，且在分類前觀測；分類與終態不受影響。
+it('reports native close codes to an optional observer before classifying', async () => {
+  vi.useFakeTimers()
+  try {
+    for (const [code, cause] of [
+      [1006, 'network'],
+      [1012, 'network'],
+      [1008, 'fatal'],
+    ] as const) {
+      const codes: number[] = []
+      const p = await encryptedFixture(undefined, {
+        socketCloseObserver: () => ({ record: (value: number) => codes.push(value) }),
+      })
+      try {
+        p.socket.onclose?.({ code })
+        await vi.advanceTimersByTimeAsync(250)
+        expect(codes).toEqual([code])
+        expect(p.messages.filter((m) => m.type === 'failure')).toEqual([
+          { type: 'failure', revision: 1, code: 'connection_failed', cause },
+        ])
+      } finally {
+        p.session.dispose()
+        p.key.fill(0)
+      }
+    }
+  } finally {
+    vi.useRealTimers()
+  }
+})
+// 觀測接點故障只能被吞下，不能改變終態或資源釋放。
+it('keeps close classification when the close observer throws', async () => {
+  vi.useFakeTimers()
+  const p = await encryptedFixture(undefined, {
+    socketCloseObserver: () => ({
+      record: () => {
+        throw new Error('observer broken')
+      },
+    }),
+  })
+  try {
+    p.socket.onclose?.({ code: 1006 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(p.messages.filter((m) => m.type === 'failure')).toEqual([
+      { type: 'failure', revision: 1, code: 'connection_failed', cause: 'network' },
+    ])
+  } finally {
+    p.session.dispose()
+    p.key.fill(0)
+    vi.useRealTimers()
+  }
+})
+// 主動結束先解除onclose，之後的close不應被觀測或分類。
+it('does not observe closes after the session stops', async () => {
+  const codes: number[] = []
+  const p = await encryptedFixture(undefined, {
+    socketCloseObserver: () => ({ record: (value: number) => codes.push(value) }),
+  })
+  p.session.dispose()
+  p.key.fill(0)
+  expect(p.socket.onclose).toBeNull()
+  expect(codes).toEqual([])
+})

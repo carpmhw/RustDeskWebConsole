@@ -1,4 +1,4 @@
-import { ProtocolWorkerSession, type SocketPort } from './worker-session'
+import { ProtocolWorkerSession, type SocketPort, type SocketCloseObserver } from './worker-session'
 import { createNativeDecoder } from './decoder'
 import type { VideoMainEvent, VideoWorkerEvent } from './video-types'
 import { interactionClock } from './interaction-limits'
@@ -10,6 +10,7 @@ const scope = self as unknown as {
   onmessage: ((event: MessageEvent<VideoMainEvent>) => void) | null
   __rdwebEncodedInputObserver?: EncodedInputObserver
   __rdwebIncomingClipboardObserver?: IncomingClipboardObserver
+  __rdwebSocketCloseObserver?: SocketCloseObserver
 }
 const now = interactionClock()
 const session = new ProtocolWorkerSession(
@@ -27,6 +28,8 @@ const session = new ProtocolWorkerSession(
     encodedInputObserver: () => scope.__rdwebEncodedInputObserver,
     // 原Worker可晚安裝；正式沒有collector，缺接點不額外讀clipboard payload。
     incomingClipboardObserver: () => scope.__rdwebIncomingClipboardObserver,
+    // E2E可在原Worker啟動後安裝；正式沒有collector，close只照原路徑分類。
+    socketCloseObserver: () => scope.__rdwebSocketCloseObserver,
     // 公開probe及nativeoutput都必須是真VideoFrame。
     isFrame: (value): value is VideoFrame =>
       typeof VideoFrame !== 'undefined' && value instanceof VideoFrame,

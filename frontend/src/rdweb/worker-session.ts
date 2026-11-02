@@ -35,6 +35,11 @@ export interface WorkerDependencies {
   isFrame: (value: FrameResource) => value is VideoFrame
   encodedInputObserver?: EncodedInputObserverSource
   incomingClipboardObserver?: IncomingClipboardObserverSource
+  socketCloseObserver?: () => SocketCloseObserver | undefined
+}
+// E2E 專用被動接點：只借用原生 close 整數 code，正式環境沒有 collector。
+export interface SocketCloseObserver {
+  record(code: number): void
 }
 export class ProtocolWorkerSession {
   #revision = 0
@@ -283,7 +288,15 @@ export class ProtocolWorkerSession {
     // 不暴露原生URL／header或exception。
     this.#socket.onerror = () => this.networkCandidate()
     // 正常／policy／unknown不猜network，第一個authoritative source優先。
-    this.#socket.onclose = (event) => this.finish(closedTerminal(event.code, false))
+    this.#socket.onclose = (event) => {
+      // 分類前先交可選觀測接點；接點故障只吞下，不改分類、順序或釋放。
+      try {
+        this.dependencies.socketCloseObserver?.()?.record(event.code)
+      } catch {
+        /* 診斷不可用不影響正式路徑。 */
+      }
+      this.finish(closedTerminal(event.code, false))
+    }
     this.post({ type: 'phase', revision: this.#revision, phase: 'awaiting_ready' })
   }
   // 所有media控制都回同一crypto channel，不另建WS或降級。
