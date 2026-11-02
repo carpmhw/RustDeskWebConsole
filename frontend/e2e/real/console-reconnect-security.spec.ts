@@ -1,12 +1,14 @@
 import { request, type APIRequestContext, type Page, type Response } from '@playwright/test'
 import { test, expect } from './reconnect-fixtures'
-import { resetStack, password, base } from '../management/helpers/fixtures'
+import { resetStack, password, base, api } from '../management/helpers/fixtures'
+import { randomUUID } from 'node:crypto'
+import { closeCodes, installCloseCodeDiagnostics } from './close-code-diagnostics'
 import { createReconnectSecurityProbe } from './reconnect-security-probe'
 import { prepareOfficialTarget, openOfficialConsole, observeConsole } from './fixtures'
 import { prepareLinuxInputTarget, waitForInputVideo } from './input-fixtures'
 import type { ReconnectProxy } from './reconnect-proxy-types'
 
-// 六案各自隔離backend資料與quota；不降低正式限制或重置同案中的auth／KV。
+// 八案各自隔離backend資料與quota；不降低正式限制或重置同案中的auth／KV。
 test.beforeEach(() => resetStack())
 
 // 純auth安全案不建立target／observer，也不先做其他正式login。
@@ -315,6 +317,116 @@ test('retry rate limit stops reconnect', async ({
     }
   }
 })
+
+// admin建target後另建operator並明確授予can_connect；回傳以operator身分連線的fixture與admin token。
+async function prepareOperatorTarget() {
+  const fixture = await prepareLinuxInputTarget('tcp')
+  const admin = await api<{ access_token: string }>(fixture.context, 'auth/login', 'POST', {
+    username: process.env.RDWEB_E2E_USERNAME,
+    password,
+  })
+  const operator = await api<{ id: string; username: string }>(
+    fixture.context,
+    'users',
+    'POST',
+    { username: 'e2e-' + randomUUID().replaceAll('-', ''), password, role: 'operator' },
+    admin.access_token,
+  )
+  await setGrants(fixture, admin.access_token, [
+    {
+      user_id: operator.id,
+      role: null,
+      can_connect: true,
+      can_view_password: false,
+      can_edit: false,
+    },
+  ])
+  return {
+    fixture: { ...fixture, username: operator.username },
+    token: admin.access_token,
+    operator,
+  }
+}
+
+// 以目前target版本覆寫授權清單；空陣列即撤銷全部明確授權。
+async function setGrants(
+  fixture: { context: APIRequestContext; targetId: string },
+  token: string,
+  grants: unknown[],
+): Promise<void> {
+  const current = await api<{ version: number }>(
+    fixture.context,
+    `targets/${fixture.targetId}/permissions`,
+    'GET',
+    undefined,
+    token,
+  )
+  await api(
+    fixture.context,
+    `targets/${fixture.targetId}/permissions`,
+    'PUT',
+    { version: current.version, grants },
+    token,
+  )
+}
+
+// operator串流中由admin變更權限；後端須立即以1008關閉，前端顯示access_revoked且不再嘗試重連。
+for (const change of ['revoked permission', 'deactivated user'] as const) {
+  test(`${change} closes session without reconnect`, async ({
+    page,
+    reconnectCase,
+    reconnectProxy,
+  }) => {
+    const before = counters(reconnectProxy),
+      resources = observeConsole(page.context())
+    const { fixture, token, operator } = await prepareOperatorTarget()
+    const lease = reconnectCase.begin(fixture.targetId),
+      abort = new AbortController()
+    const accepted = lease.nextAccepted(abort.signal)
+    void accepted.catch(/* finally取消時不留下unhandled waiter。 */ () => {})
+    let remote: Page | undefined
+    try {
+      await installCloseCodeDiagnostics(page.context())
+      remote = await openOfficialConsole(page, fixture)
+      await accepted
+      await waitForInputVideo(remote, fixture)
+      if (change === 'revoked permission') await setGrants(fixture, token, [])
+      else await api(fixture.context, `users/${operator.id}`, 'PATCH', { is_active: false }, token)
+      await expect(remote.locator('[data-error-code="access_revoked"]')).toBeVisible({
+        timeout: 10000,
+      })
+      await expect(remote.getByTestId('console-reconnect')).toHaveCount(0)
+      await expect
+        .poll(/* 後端政策關閉須直接觀測為原生1008。 */ () => closeCodes(remote!))
+        .toEqual([1008])
+      await expect.poll(/* 原Worker真正關閉。 */ () => resources.closed).toBe(resources.opened)
+      expect(resources.opened).toBe(1)
+      const deadline = performance.now() + 10500
+      do {
+        const state = lease.summary()
+        expect({
+          accepted: state.accepted,
+          tickets: state.routes.ticket.requested,
+          workers: resources.opened,
+        }).toEqual({ accepted: 1, tickets: 1, workers: 1 })
+        await remote.waitForTimeout(Math.min(100, Math.max(1, deadline - performance.now())))
+      } while (performance.now() < deadline)
+      expect(resources.wrongPrefix).toBe(0)
+      record(
+        change === 'revoked permission' ? 'revoked_permission' : 'deactivated_user',
+        reconnectProxy,
+        before,
+      )
+    } finally {
+      abort.abort()
+      try {
+        if (remote && !remote.isClosed()) await remote.close()
+      } finally {
+        await fixture.context.dispose()
+      }
+    }
+  })
+}
 
 // 不得createFixture／loginUi預先消耗quota；相同bootstrap帳號／IP第1–5次200，第6次才429。
 test('login quota remains enforced', async ({ reconnectProxy }) => {

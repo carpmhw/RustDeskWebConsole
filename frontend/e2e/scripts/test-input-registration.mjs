@@ -168,10 +168,12 @@ test('reliability registers exactly one fixed platform scenario', () => {
   }
 })
 // 安全五案分開註冊，不能混入基本四案或以Linux冒充Windows。
-test('reconnect security registers six Linux-only scenarios', () => {
+test('reconnect security registers eight Linux-only scenarios', () => {
   const value = list({ RDWEB_INPUT_PLATFORMS: 'linux' }, 'playwright.reconnect-security.config.ts')
   assert.equal(value.status, 0)
-  assert.equal(value.stdout.includes('Total: 6 tests'), true)
+  assert.equal(value.stdout.includes('Total: 8 tests'), true)
+  assert.equal(value.stdout.includes('revoked permission closes session without reconnect'), true)
+  assert.equal(value.stdout.includes('deactivated user closes session without reconnect'), true)
   assert.equal(value.stdout.includes('retry rate limit stops reconnect'), true)
   const wrong = list(
     { ...runtime, RDWEB_INPUT_PLATFORMS: 'windows' },

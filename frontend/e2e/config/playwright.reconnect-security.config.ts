@@ -19,7 +19,7 @@ if (
 )
   throw new Error('Invalid reconnect channel')
 
-// 安全六案獨立，不與功能／24或48基本重連案混算。
+// 安全八案獨立，不與功能／24或48基本重連案混算。
 export default defineConfig({
   testDir: '../real',
   outputDir: '../../test-results',
