@@ -15,7 +15,8 @@ public sealed class ProbeSlots : IDisposable
     // 主機釋放時清理probe資源。
     public void Dispose() => Semaphore.Dispose();
 }
-public sealed class ServerService(AppDbContext database, SessionValidator sessions, AuditWriter audits, IKvStore store, ConnectionProbe probe, ProbeSlots slots)
+public sealed class ServerService(AppDbContext database, SessionValidator sessions, AuditWriter audits, IKvStore store, ConnectionProbe probe, ProbeSlots slots,
+    ActiveConnectionRegistry connections)
 {
     // 設定含內部端點，僅完整認證admin可讀。
     public async Task<object> ListAsync(ClaimsPrincipal principal, CancellationToken ct)
@@ -41,7 +42,10 @@ public sealed class ServerService(AppDbContext database, SessionValidator sessio
         var actor = await sessions.RequireAsync(principal, admin: true, cancellationToken: ct);
         var server = await FindAsync(id, ct);
         if (request.Version != server.Version || request.Version < 1) throw new AuthException("version_conflict", 409);
+        // 停用的server已拒絕新連線，保存後一併終止其target上串流中的連線。
+        var affected = request.Enabled ? [] : await database.Targets.Where(target => target.ServerId == id).Select(target => target.Id).ToListAsync(ct);
         Apply(server, request); await SaveAsync(ct);
+        connections.Terminate(grant => affected.Contains(grant.TargetId));
         await AuditAsync(AuditAction.ServerChanged, actor.Id, server.Id, true, ct);
         return View(server);
     }

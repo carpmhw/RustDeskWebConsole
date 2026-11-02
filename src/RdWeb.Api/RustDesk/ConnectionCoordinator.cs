@@ -35,8 +35,23 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
                 started = true;
                 await using var relay = await EstablishRelayAsync(grant, cancellationToken);
                 using var active = registry.Register(grant, relay.PeerIdentity ?? throw new AuthException("service_unavailable", 503));
-                await bridge.RunAsync(browser, relay, cancellationToken, progress, new(active.Id, grant.TargetId, active.Peer));
-                success = true;
+                using var bridgeLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var revocation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                using var revocationNotice = active.RevocationToken.Register(() => revocation.TrySetResult());
+                var running = bridge.RunAsync(browser, relay, bridgeLifetime.Token, progress, new(active.Id, grant.TargetId, active.Peer));
+                if (await Task.WhenAny(running, revocation.Task) != running)
+                {
+                    // ManagedWebSocket取消pending receive會直接中止連線，須先送出1008 close frame再取消bridge。
+                    reason = AuditReason.Revoked;
+                    await CloseBrowserAsync(browser, WebSocketCloseStatus.PolicyViolation, "access revoked");
+                    await bridgeLifetime.CancelAsync();
+                    await ((Task)running).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                }
+                else
+                {
+                    await running;
+                    success = true;
+                }
             }
         }
         catch (OperationCanceledException) { reason = cancellationToken.IsCancellationRequested ? AuditReason.Disconnected : AuditReason.Expired; }
@@ -49,15 +64,7 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
         catch { reason = AuditReason.ConnectionFailed; await SendErrorAsync(browser, "connection_failed"); }
         finally
         {
-            // 不等待完整close handshake，避免client未讀取時拖住資源回收。
-            try
-            {
-                using var closeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                if (browser.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                    await browser.CloseOutputAsync(success ? WebSocketCloseStatus.NormalClosure : WebSocketCloseStatus.InternalServerError,
-                        "relay ended", closeTimeout.Token);
-            }
-            catch { browser.Abort(); }
+            await CloseBrowserAsync(browser, success ? WebSocketCloseStatus.NormalClosure : WebSocketCloseStatus.InternalServerError, "relay ended");
             if (started)
             {
                 var totals = progress.Snapshot();
@@ -66,6 +73,18 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
                     "target", grant.TargetId), CancellationToken.None);
             }
         }
+    }
+
+    // 只送出close frame、不等待完整close handshake，避免client未讀取時拖住資源回收；已關閉則不重送。
+    private static async Task CloseBrowserAsync(WebSocket browser, WebSocketCloseStatus status, string description)
+    {
+        try
+        {
+            using var closeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            if (browser.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                await browser.CloseOutputAsync(status, description, closeTimeout.Token);
+        }
+        catch { browser.Abort(); }
     }
 
     // 錯誤control僅固定分類；一旦socket已失效就不再嘗試輸出。

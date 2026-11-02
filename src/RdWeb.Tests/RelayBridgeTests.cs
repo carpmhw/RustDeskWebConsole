@@ -113,12 +113,14 @@ public sealed class RelayBridgeTests
 
     internal sealed record Frame(byte[] Data, WebSocketMessageType Type, bool End);
 
-    internal sealed class ScriptSocket(bool blockSends = false) : WebSocket
+    internal sealed class ScriptSocket(bool blockSends = false, bool abortOnCancel = false) : WebSocket
     {
         public Channel<Frame> Input { get; } = Channel.CreateUnbounded<Frame>();
         public Channel<Frame> Output { get; } = Channel.CreateUnbounded<Frame>();
         public TaskCompletionSource<bool> SendEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Receives;
+        public WebSocketCloseStatus? SentCloseStatus { get; private set; }
+        public string? SentCloseDescription { get; private set; }
         private readonly CancellationTokenSource _closed = new();
         private WebSocketState _state = WebSocketState.Open;
         public override WebSocketCloseStatus? CloseStatus => WebSocketCloseStatus.NormalClosure;
@@ -128,17 +130,22 @@ public sealed class RelayBridgeTests
 
         // 中止測試socket並取消等待中的receive。
         public override void Abort() { _state = WebSocketState.Aborted; _closed.Cancel(); }
-        // 關閉測試socket不要求真實網路close handshake。
+        // 關閉測試socket不要求真實網路close handshake；記錄送出的close code，已中止時比照真實socket拒絕。
         public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
-        { _state = WebSocketState.Closed; _closed.Cancel(); return Task.CompletedTask; }
+        {
+            if (_state == WebSocketState.Aborted) throw new WebSocketException(WebSocketError.InvalidState);
+            SentCloseStatus = closeStatus; SentCloseDescription = statusDescription;
+            _state = WebSocketState.Closed; _closed.Cancel(); return Task.CompletedTask;
+        }
         // 輸出close時立即完成，便於驗證雙向取消。
         public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
             => CloseAsync(closeStatus, statusDescription, cancellationToken);
         // 釋放測試socket並結束pending receive。
         public override void Dispose() { Abort(); _closed.Dispose(); }
-        // 每次讀取只取一個bounded fixture fragment，不模擬任何認證。
+        // 每次讀取只取一個bounded fixture fragment，不模擬任何認證；abortOnCancel比照ManagedWebSocket取消receive即中止。
         public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
+            using var abort = abortOnCancel ? cancellationToken.Register(Abort) : default;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _closed.Token);
             var frame = await Input.Reader.ReadAsync(linked.Token);
             Interlocked.Increment(ref Receives);

@@ -7,11 +7,12 @@ using RdWeb.Api.Data.Entities;
 using RdWeb.Api.Endpoints;
 using RdWeb.Api.Infrastructure;
 using RdWeb.Api.Infrastructure.Kv;
+using RdWeb.Api.RustDesk;
 
 namespace RdWeb.Api.Security;
 
 public sealed class MfaService(AppDbContext database, Vault vault, TotpService totp, PasswordHasher hasher, TokenService tokens,
-    SessionValidator sessions, AuthService auth, AuthRateLimiter limiter, IKvStore store)
+    SessionValidator sessions, AuthService auth, AuthRateLimiter limiter, IKvStore store, ActiveConnectionRegistry connections)
 {
     // 身分驗證後重新取得追蹤實體，避免修改 detached 的安全快照。
     public async Task<User> LoadAsync(Guid id, CancellationToken cancellationToken) => await database.Users.SingleAsync(user => user.Id == id, cancellationToken);
@@ -58,6 +59,7 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
         database.RefreshTokens.Add(grant.Token);
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        connections.Terminate(active => active.UserId == user.Id);
         await auth.AuditAsync(AuditAction.Mfa, AuditResult.Success, user.Id, AuditReason.Completed, ip, cancellationToken);
         return (grant, codes);
     }
@@ -127,6 +129,7 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
         await auth.RevokeUserAsync(user.Id, cancellationToken);
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        connections.Terminate(active => active.UserId == user.Id);
         await store.TakeOnceAsync("totp_enroll:" + user.Id, cancellationToken);
     }
 

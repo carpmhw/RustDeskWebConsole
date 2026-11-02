@@ -6,12 +6,13 @@ using RdWeb.Api.Data;
 using RdWeb.Api.Data.Entities;
 using RdWeb.Api.Infrastructure;
 using RdWeb.Api.Infrastructure.Kv;
+using RdWeb.Api.RustDesk;
 
 namespace RdWeb.Api.Security;
 
 public sealed record MfaChallenge(Guid UserId, int AuthVersion, DateTime AuthenticatedAt);
 public sealed class AuthService(AppDbContext database, PasswordHasher hasher, TokenService tokens, SessionValidator sessions,
-    AuthRateLimiter limiter, IKvStore store, AuditWriter audits, TimeProvider clock)
+    AuthRateLimiter limiter, IKvStore store, AuditWriter audits, TimeProvider clock, ActiveConnectionRegistry connections)
 {
     private static readonly Lazy<Task<string>> DummyHash = new(() => new PasswordHasher().HashAsync("public-dummy-authentication-value"));
     public DateTime Now => clock.GetUtcNow().UtcDateTime;
@@ -81,6 +82,8 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
         if (old.RevokedAt != null)
         {
             await RevokeFamilyAsync(old.FamilyId, cancellationToken);
+            // 重用代表token可能外洩：撤銷family後同步終止以該family授權、仍在串流中的連線。
+            connections.Terminate(grant => grant.Session?.FamilyId == old.FamilyId);
             await AuditAsync(AuditAction.Login, AuditResult.Failure, old.UserId, AuditReason.Denied, null, cancellationToken);
             throw new AuthException("unauthorized");
         }
@@ -101,6 +104,7 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
     {
         var token = await FindRefreshAsync(raw, true, cancellationToken);
         await RevokeFamilyAsync(token.FamilyId, cancellationToken);
+        connections.Terminate(grant => grant.Session?.FamilyId == token.FamilyId);
         await AuditAsync(AuditAction.Login, AuditResult.Success, token.UserId, AuditReason.Completed, null, cancellationToken);
     }
 

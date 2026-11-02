@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using Google.Protobuf;
 using Hbb;
@@ -75,6 +76,7 @@ public sealed class ConnectionCoordinatorTests
         await using (var scope = factory.Services.CreateAsyncScope())
             await scope.ServiceProvider.GetRequiredService<ConnectionCoordinator>().RunAsync(setup.Grant, browser, request.Token).WaitAsync(timeout.Token);
         await server;
+        Assert.Equal(WebSocketCloseStatus.InternalServerError, browser.SentCloseStatus);
         var store = factory.Services.GetRequiredService<IKvStore>();
         Assert.Equal("0", await store.GetAsync("conn:all"));
         Assert.Equal("0", await store.GetAsync("conn:" + setup.Grant.UserId));
@@ -84,6 +86,52 @@ public sealed class ConnectionCoordinatorTests
         var ended = await db.AuditLogs.SingleAsync(log => log.Action == "ConnectionEnded" && log.ObjectId == setup.Grant.TargetId);
         Assert.Equal("Failure", ended.Result);
         Assert.Contains(cancel ? "Disconnected" : "ConnectionFailed", ended.Detail);
+    }
+
+    // 串流中被撤銷時須先以1008／access revoked關閉瀏覽器，再取消bridge，稽核記Revoked且不送文字錯誤。
+    [Fact]
+    public async Task RevokedStreamingConnectionClosesWithPolicyViolation()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var hbbs = new TcpListener(IPAddress.Loopback, 0);
+        using var hbbr = new TcpListener(IPAddress.Loopback, 0);
+        hbbs.Start(); hbbr.Start();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519);
+        var peerMessage = new Message { SignedId = new SignedId { Id = ByteString.CopyFrom(new byte[] { 1, 2, 3 }) } }.ToByteArray();
+        var hbbsTask = ServeHbbsAsync(hbbs, signingKey, "123456789", "12345678-1234-4234-8234-123456789abc",
+            new(TaskCreationOptions.RunContinuationsAsynchronously), new(TaskCreationOptions.RunContinuationsAsynchronously), timeout.Token);
+        var hbbrTask = Task.Run(async () =>
+        {
+            // 送出首個peer frame後保持relay開啟，直到coordinator因撤銷而釋放upstream。
+            using var client = await hbbr.AcceptTcpClientAsync(timeout.Token);
+            var stream = client.GetStream();
+            _ = await RustDeskByteStreamCodec.ReadControlFrameAsync(stream, timeout.Token);
+            await RustDeskByteStreamCodec.WriteControlFrameAsync(stream, peerMessage, timeout.Token);
+            while (await stream.ReadAsync(new byte[64], timeout.Token) > 0) { }
+        }, timeout.Token);
+        var setup = await CreateGrantAsync(hbbs, hbbr, Convert.ToBase64String(signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey)));
+        await using var factory = setup.Factory;
+        var registry = factory.Services.GetRequiredService<ActiveConnectionRegistry>();
+        using var browser = new RelayBridgeTests.ScriptSocket(abortOnCancel: true);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var run = scope.ServiceProvider.GetRequiredService<ConnectionCoordinator>().RunAsync(setup.Grant, browser, CancellationToken.None);
+        var ready = await browser.Output.Reader.ReadAsync(timeout.Token);
+        Assert.Equal(WebSocketMessageType.Text, ready.Type);
+        Assert.Equal(WebSocketMessageType.Binary, (await browser.Output.Reader.ReadAsync(timeout.Token)).Type);
+
+        Assert.Equal(1, registry.Terminate(grant => grant.UserId == setup.Grant.UserId));
+        await run.WaitAsync(timeout.Token);
+        await Task.WhenAll(hbbsTask, hbbrTask);
+
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, browser.SentCloseStatus);
+        Assert.Equal("access revoked", browser.SentCloseDescription);
+        Assert.False(browser.Output.Reader.TryRead(out _));
+        Assert.Equal(0, registry.Count);
+        await factory.Services.GetRequiredService<AuditWriter>().StopAsync(timeout.Token);
+        await using var db = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
+        var ended = await db.AuditLogs.SingleAsync(log => log.Action == "ConnectionEnded" && log.ObjectId == setup.Grant.TargetId);
+        Assert.Equal("Failure", ended.Result);
+        Assert.Contains("\"Revoked\"", ended.Detail);
     }
 
     // Signed relay response必須先驗證，延遲300ms後才連到admin-saved hbbr並送RequestRelay。

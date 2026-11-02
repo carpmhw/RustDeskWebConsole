@@ -4,12 +4,13 @@ using Microsoft.EntityFrameworkCore;
 using RdWeb.Api.Data;
 using RdWeb.Api.Endpoints;
 using RdWeb.Api.Infrastructure;
+using RdWeb.Api.RustDesk;
 using RdWeb.Api.Security;
 
 namespace RdWeb.Api.Targets;
 
 public sealed class TargetTransferService(AppDbContext database, SessionValidator sessions, TargetPolicy policy,
-    TargetService targets, EncryptedSecretStore secrets)
+    TargetService targets, EncryptedSecretStore secrets, ActiveConnectionRegistry connections)
 {
     private static readonly string[] Headers = ["server_id", "name", "rustdesk_id", "group_name", "tags", "notes"];
     // 有限新增-only，所有列在同交易，CSV從未寫入audit或error。
@@ -69,6 +70,8 @@ public sealed class TargetTransferService(AppDbContext database, SessionValidato
             foreach (var target in rows) await secrets.DeleteAsync(target.Id, ct);
             await transaction.CommitAsync(ct);
         }
+        var deleted = rows.Select(target => target.Id).ToHashSet();
+        connections.Terminate(grant => deleted.Contains(grant.TargetId));
         foreach (var target in rows) await targets.AuditAsync(AuditAction.TargetChanged, actor.Id, target.Id, true, ct);
     }
     // CSV空白optional欄位對應null，但不剝除有意義空白或apostrophe。

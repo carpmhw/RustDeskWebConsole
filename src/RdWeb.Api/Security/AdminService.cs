@@ -5,10 +5,12 @@ using RdWeb.Api.Data;
 using RdWeb.Api.Data.Entities;
 using RdWeb.Api.Endpoints;
 using RdWeb.Api.Infrastructure;
+using RdWeb.Api.RustDesk;
 
 namespace RdWeb.Api.Security;
 
-public sealed class AdminService(AppDbContext database, SessionValidator sessions, MfaService mfa, AuthService auth, PasswordHasher hasher)
+public sealed class AdminService(AppDbContext database, SessionValidator sessions, MfaService mfa, AuthService auth, PasswordHasher hasher,
+    ActiveConnectionRegistry connections)
 {
     // 列表僅選安全欄位，operator／viewer 不可使用。
     public async Task<object> ListAsync(ClaimsPrincipal principal, CancellationToken ct)
@@ -37,10 +39,12 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         if (user.Role == "admin" && user.IsActive && (!active || role != "admin") && await database.Users.CountAsync(item => item.IsActive && item.Role == "admin", ct) <= 1)
             throw new AuthException("last_admin", 409);
         await using var transaction = await database.Database.BeginTransactionAsync(ct);
-        if (active != user.IsActive || role != user.Role) { user.AuthVersion++; await auth.RevokeUserAsync(user.Id, ct); }
+        var revoke = active != user.IsActive || role != user.Role;
+        if (revoke) { user.AuthVersion++; await auth.RevokeUserAsync(user.Id, ct); }
         user.IsActive = active; user.Role = role;
         if (request.Email != null) user.Email = request.Email.Length == 0 ? null : request.Email;
         await database.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        if (revoke) connections.Terminate(grant => grant.UserId == user.Id);
         await auth.AuditAsync(AuditAction.UserChanged, AuditResult.Success, actor.Id, null, ip, ct, user.Id);
         return View(user);
     }
@@ -53,6 +57,7 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         await using var transaction = await database.Database.BeginTransactionAsync(ct);
         user.PasswordHash = hash; user.AuthVersion++; user.FailedLoginCount = 0; user.LockedUntil = null;
         await auth.RevokeUserAsync(user.Id, ct); await database.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        connections.Terminate(grant => grant.UserId == user.Id);
         await auth.AuditAsync(AuditAction.UserChanged, AuditResult.Success, actor.Id, null, ip, ct, user.Id);
     }
     // 管理員只能重設他人 MFA，不能繞過自己的強制 MFA 流程。
@@ -79,6 +84,13 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         if (setting == null) { setting = new SystemSetting { Key = "require_mfa" }; database.SystemSettings.Add(setting); }
         setting.Value = JsonSerializer.Serialize(request.RequireMfa);
         await database.SaveChangesAsync(ct);
+        // 政策即時生效：依各連線綁定的MFA狀態重算完整登入，不再符合者立即終止；放寬時不會有新不符者。
+        foreach (var grant in connections.Grants(_ => true))
+        {
+            var user = await database.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == grant.UserId, ct);
+            if (user == null || !user.IsActive || !await sessions.IsFullAsync(user, grant.Session?.MfaVerified == true, ct))
+                connections.Terminate(candidate => candidate == grant);
+        }
         await auth.AuditAsync(AuditAction.SettingsChanged, AuditResult.Success, actor.Id, null, ip, ct, setting.Id, "setting");
         return new { require_mfa = request.RequireMfa };
     }

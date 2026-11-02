@@ -38,4 +38,44 @@ public sealed class ActiveConnectionRegistryTests
         }
         finally { foreach (var lease in leases) lease.Dispose(); }
     }
+
+    // Terminate只取消符合條件的lease並回傳筆數，重複終止與釋放後終止皆無副作用。
+    [Fact]
+    public void TerminateCancelsOnlyMatchingLeasesOnce()
+    {
+        var registry = new ActiveConnectionRegistry();
+        var peer = new VerifiedPeerIdentity("123456789", Convert.ToBase64String(new byte[32]));
+        var revokedUser = Guid.NewGuid();
+        var grant = new ConnectionGrant(revokedUser, Guid.NewGuid(), new(Guid.NewGuid(), 1, "operator", false));
+        using var first = registry.Register(grant, peer);
+        using var second = registry.Register(grant with { TargetId = Guid.NewGuid() }, peer);
+        using var unrelated = registry.Register(grant with { UserId = Guid.NewGuid() }, peer);
+        var released = registry.Register(grant, peer);
+        released.Dispose();
+
+        Assert.Equal(2, registry.Terminate(candidate => candidate.UserId == revokedUser));
+        Assert.True(first.RevocationToken.IsCancellationRequested && first.Revoked);
+        Assert.True(second.RevocationToken.IsCancellationRequested && second.Revoked);
+        Assert.False(unrelated.RevocationToken.IsCancellationRequested || unrelated.Revoked);
+        Assert.False(released.Revoked);
+        // 終止不移除entry，slot仍由coordinator收尾時dispose釋放。
+        Assert.Equal(3, registry.Count);
+        Assert.Equal(0, registry.Terminate(candidate => candidate.UserId == revokedUser));
+        first.Dispose(); first.Dispose();
+        Assert.Equal(0, registry.Terminate(candidate => candidate.UserId == revokedUser));
+        Assert.Equal(2, registry.Count);
+    }
+
+    // 已釋放的lease不得被終止，也不得因釋放後取消而拋出例外。
+    [Fact]
+    public void DisposedLeaseIsNeverRevoked()
+    {
+        var registry = new ActiveConnectionRegistry();
+        var grant = new ConnectionGrant(Guid.NewGuid(), Guid.NewGuid(), new(Guid.NewGuid(), 1, "operator", false));
+        var lease = registry.Register(grant, new("123456789", Convert.ToBase64String(new byte[32])));
+        lease.Dispose();
+        Assert.Equal(0, registry.Terminate(_ => true));
+        Assert.False(lease.Revoked);
+        Assert.Equal(0, registry.Count);
+    }
 }

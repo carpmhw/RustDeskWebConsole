@@ -5,11 +5,13 @@ using RdWeb.Api.Data;
 using RdWeb.Api.Data.Entities;
 using RdWeb.Api.Endpoints;
 using RdWeb.Api.Infrastructure;
+using RdWeb.Api.RustDesk;
 using RdWeb.Api.Security;
 
 namespace RdWeb.Api.Targets;
 
-public sealed class TargetService(AppDbContext database, SessionValidator sessions, TargetPolicy policy, EncryptedSecretStore secrets, AuditWriter audits)
+public sealed class TargetService(AppDbContext database, SessionValidator sessions, TargetPolicy policy, EncryptedSecretStore secrets, AuditWriter audits,
+    ActiveConnectionRegistry connections)
 {
     // 只可見target參與count／分頁，搜尋使用EF參數化。
     public async Task<object> ListAsync(ClaimsPrincipal principal, string? q, string? group, int page, int pageSize, CancellationToken ct)
@@ -53,6 +55,7 @@ public sealed class TargetService(AppDbContext database, SessionValidator sessio
         if (!(await policy.RightsAsync(actor, target, ct)).CanEdit) throw new AuthException("forbidden", 403);
         CheckVersion(target, version); await using var transaction = await database.Database.BeginTransactionAsync(ct);
         database.Targets.Remove(target); await SaveAsync(ct); await secrets.DeleteAsync(target.Id, ct); await transaction.CommitAsync(ct);
+        connections.Terminate(grant => grant.TargetId == id);
         await AuditAsync(AuditAction.TargetChanged, actor.Id, id, true, ct);
     }
     // ACL只有admin可管理，can_edit不代表可轉授權。
@@ -83,7 +86,16 @@ public sealed class TargetService(AppDbContext database, SessionValidator sessio
         await using var transaction = await database.Database.BeginTransactionAsync(ct);
         await database.TargetPermissions.Where(permission => permission.TargetId == id).ExecuteDeleteAsync(ct);
         database.TargetPermissions.AddRange(request.Grants.Select(grant => new TargetPermission { TargetId = id, UserId = grant.UserId, Role = grant.Role, CanConnect = grant.CanConnect, CanViewPassword = grant.CanViewPassword, CanEdit = grant.CanEdit }));
-        database.Entry(target).Property(item => item.UpdatedAt).IsModified = true; await SaveAsync(ct); await transaction.CommitAsync(ct);
+        database.Entry(target).Property(item => item.UpdatedAt).IsModified = true; await SaveAsync(ct);
+        // 交易內讀取新ACL重算串流中使用者權限；停用或已刪除帳號一律視為失去連線權。
+        var denied = new HashSet<Guid>();
+        foreach (var userId in connections.Grants(grant => grant.TargetId == id).Select(grant => grant.UserId).Distinct())
+        {
+            var user = await database.Users.AsNoTracking().SingleOrDefaultAsync(item => item.Id == userId, ct);
+            if (user == null || !user.IsActive || !(await policy.RightsAsync(user, target, ct)).CanConnect) denied.Add(userId);
+        }
+        await transaction.CommitAsync(ct);
+        connections.Terminate(grant => grant.TargetId == id && denied.Contains(grant.UserId));
         await AuditAsync(AuditAction.TargetChanged, actor.Id, id, true, ct); return await GetPermissionsAsync(principal, id, ct);
     }
     // CSV與CRUD共用writer角色上限。
