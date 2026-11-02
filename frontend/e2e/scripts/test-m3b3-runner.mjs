@@ -22,6 +22,8 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 // 只複製input-only runner需要的工具來源到自有tmp，讓固定current路徑不接觸操作者私有檔。
 function copyInputOnlyTools(root) {
   for (const path of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/real/windows-runtime.ts',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',

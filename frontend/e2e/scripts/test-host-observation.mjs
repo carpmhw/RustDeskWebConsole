@@ -189,6 +189,8 @@ test('handoff factory requires explicit calibration directory and preserves the 
   const cwd = directory()
   mkdirSync(cwd, { recursive: true, mode: 0o700 })
   for (const name of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
     'frontend/e2e/real/host-input-only.ts',
@@ -799,6 +801,8 @@ test('CLI prepares exclusively and never echoes invalid arguments', () => {
   const path = directory(),
     root = roots[0]
   for (const name of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
     'frontend/e2e/real/host-input-only.ts',

@@ -479,6 +479,8 @@ test('input-only CLI runs only in a private tool copy and masks failures', () =>
   api()
   const root = dirname(dirname(directory()))
   for (const file of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
     'frontend/e2e/real/host-input-only.ts',

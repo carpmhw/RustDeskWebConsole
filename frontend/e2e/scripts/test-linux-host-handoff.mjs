@@ -451,6 +451,8 @@ test('interactive CLI refuses piped confirmation and preserves cases01-11 withou
   const cwd = root()
   mkdirSync(cwd, { mode: 0o700 })
   for (const name of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
@@ -684,6 +686,8 @@ test('watch diagnostics CLI append metadata but preserve the original terminal c
   const cwd = root()
   mkdirSync(cwd, { mode: 0o700 })
   for (const name of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
@@ -918,6 +922,8 @@ test('commit-ready CLI submits only metadata and refuses CI unknown flags and re
   const cwd = root()
   mkdirSync(cwd, { mode: 0o700 })
   for (const name of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
@@ -1363,6 +1369,8 @@ test('CLI prepares case12 without touching cases01-11 evidence and refuses reuse
   const cwd = root()
   mkdirSync(cwd, { mode: 0o700 })
   for (const name of [
+    // 私有副本須帶 package.json 的 type=module，Node 才以 ESM 載入 .ts named export。
+    'frontend/package.json',
     'frontend/e2e/scripts/linux-host-handoff.mjs',
     'frontend/e2e/real/host-observation-control.ts',
     'frontend/e2e/real/host-observation-schema.ts',
