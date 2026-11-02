@@ -16,6 +16,9 @@ import {
   type ConnectionResult,
 } from './reliability-results'
 import { inputPlatforms } from './windows-runtime'
+import { installInputDiagnostics } from './input-diagnostics'
+import { pacedTextBudgetMs } from './text-pacing-budget'
+import { WINDOWS_CHORD_GAP_MS, windowsClickAnchor, windowsTitleBarAnchor } from './windows-timing'
 
 // 輸入oracle失敗與連線失敗必須分開：前者代表連線已建立但native輸入／剪貼簿未成立。
 class InputOracleFailure extends Error {
@@ -25,9 +28,13 @@ class InputOracleFailure extends Error {
 }
 
 // 測試端只產生固定長度公開文字；內容不進報告，也不與本機sentinel相同。
-function reliabilitySample(ordinal: number): string {
-  return 'R' + String(ordinal).padStart(3, '0')
+// Windows 需經 input diagnostics 條件等待控速文字，其 expected 須以 Public 開頭；Linux 維持原 R001 格式。
+function reliabilitySample(ordinal: number, platform: 'linux' | 'windows'): string {
+  return (platform === 'windows' ? 'Public R' : 'R') + String(ordinal).padStart(3, '0')
 }
+
+// Windows 點擊錨點輪替序號：相鄰點擊不同點，避免 500ms 內同點被判為雙擊。
+let windowsClicks = 0
 
 // 本機sentinel確保遠端回讀不能以既有local clipboard冒充成功。
 const LOCAL_SENTINEL = 'Reliability local sentinel'
@@ -45,21 +52,45 @@ async function boundedOfficialAttempt(
     // 第一個attempt只允許單一Worker；任何重連state都代表不是原始連線。
     if (page.workers().length !== 1) throw new Error('Original worker count invalid')
     await expect(page.getByTestId('console-auto-reconnect')).not.toBeChecked()
-    await clickRemote(page, fixture.editor.x + 20, fixture.editor.y + 30)
+    const windows = fixture.platform === 'windows'
+    if (windows)
+      await page.evaluate(
+        /* 每次新console重新綁定診斷；只比對公開樣本，不保存文字。 */ (publicExpected) => {
+          if (!window.__rdwebInputDiagnostics)
+            throw new Error('input_clipboard_diagnostics_unavailable')
+          window.__rdwebInputDiagnostics.begin(publicExpected, false, true)
+        },
+        sample,
+      )
+    // Windows沿用已驗證記事本oracle：編輯區輪替錨點首擊，接收前改點標題列並間隔組合鍵（見windows-timing）。
+    const editor = windows
+      ? windowsClickAnchor(fixture.editor, windowsClicks++ % 2)
+      : { x: fixture.editor.x + 20, y: fixture.editor.y + 30 }
+    await clickRemote(page, editor.x, editor.y)
     await expect(page.getByTestId('console-input-active')).toBeVisible()
     try {
       await page.keyboard.press('Control+a')
       // Xaw不會以insert取代選取；Linux沿用既有已文件化的Ctrl+W清除。
       if (fixture.platform === 'linux') await page.keyboard.press('Control+w')
       await page.keyboard.insertText(sample)
+      if (windows)
+        await page.waitForFunction(
+          () => window.__rdwebInputDiagnostics?.snapshot().textExactSubmitted === true,
+          undefined,
+          { timeout: pacedTextBudgetMs(sample) },
+        )
       await page.evaluate(
         /* sentinel只在本機RAM，比對結果仍是boolean。 */ (sentinel) =>
           navigator.clipboard.writeText(sentinel),
         LOCAL_SENTINEL,
       )
       await startReceiving(page)
-      await clickRemote(page, fixture.editor.x + 20, fixture.editor.y + 30)
+      const back = windows
+        ? windowsTitleBarAnchor(fixture.editor, windowsClicks++ % 3)
+        : { x: fixture.editor.x + 20, y: fixture.editor.y + 30 }
+      await clickRemote(page, back.x, back.y)
       await page.keyboard.press('Control+a')
+      if (windows) await page.waitForTimeout(WINDOWS_CHORD_GAP_MS)
       await page.keyboard.press('Control+c')
       await assertPublicClipboard(page, sample, LOCAL_SENTINEL, 'remote_input')
       await expect(page.getByTestId('console-clipboard-waiting')).toHaveCount(0)
@@ -104,6 +135,8 @@ test('fifty original attempts on ' + platform, async ({ page, context, browser }
   const results: ConnectionResult[] = []
   let nextAssistAt = 0
   try {
+    // Windows以被動診斷條件等待控速文字提交；需在開啟console前安裝於context。
+    if (platform === 'windows') await context.addInitScript(installInputDiagnostics)
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
       origin: 'http://127.0.0.1:18080',
     })
@@ -118,7 +151,7 @@ test('fifty original attempts on ' + platform, async ({ page, context, browser }
       const wait = Math.max(0, nextAssistAt - Date.now())
       if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
       const started = Date.now(),
-        sample = reliabilitySample(ordinal)
+        sample = reliabilitySample(ordinal, platform)
       let consolePage: Page | undefined,
         success = false,
         code = 'connection_failed',
