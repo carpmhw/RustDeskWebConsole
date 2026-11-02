@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import {
   cmSettleMs,
   windowsClickAnchor,
+  windowsTitleBarAnchor,
   WINDOWS_CHORD_GAP_MS,
   WINDOWS_CM_SETTLE_MS,
 } from '../../e2e/real/windows-timing'
@@ -30,5 +31,21 @@ it('gives each windows click a distinct anchor inside the editor', () => {
   for (const a of anchors) {
     expect(a.x).toBeLessThan(editor.x + editor.width)
     expect(a.y).toBeLessThan(editor.y + editor.height)
+  }
+})
+
+// 接收／貼上前改點記事本標題列空白處，不碰編輯區選取；錨點須在編輯區上方標題列內且彼此相距避免雙擊最大化。
+it('places windows title bar anchors above the editor within the caption gap', () => {
+  const editor = { x: 3, y: 143, width: 1075, height: 508 }
+  const anchors = [0, 1, 2].map((n) => windowsTitleBarAnchor(editor, n))
+  expect(anchors).toEqual([
+    { x: 403, y: 88 },
+    { x: 443, y: 88 },
+    { x: 483, y: 88 },
+  ])
+  for (const a of anchors) {
+    expect(a.y).toBeLessThan(editor.y)
+    expect(a.x).toBeGreaterThan(312)
+    expect(a.x).toBeLessThan(967)
   }
 })

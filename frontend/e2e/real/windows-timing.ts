@@ -21,3 +21,13 @@ export function windowsClickAnchor(
 ): { x: number; y: number } {
   return { x: editor.x + 20 + 40 * n, y: editor.y + 30 }
 }
+
+// 負載下記事本偶爾晚於 Ctrl+A 處理編輯區點擊而取消全選（E2E 約 5%，加長間隔無效）。
+// 接收／貼上前改點標題列空白處：canvas 仍取得鍵盤焦點，記事本游標與選取不變。偏移依 Windows 11 記事本
+// （分頁列＋選單列、約 125% 縮放）量測：標題列在編輯區上方約 55px，空白區在 x≈312–967；版面不同須重量。
+export function windowsTitleBarAnchor(
+  editor: { x: number; y: number },
+  n: number,
+): { x: number; y: number } {
+  return { x: editor.x + 400 + 40 * n, y: editor.y - 55 }
+}

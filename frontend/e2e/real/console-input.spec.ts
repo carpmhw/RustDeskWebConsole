@@ -15,7 +15,7 @@ import {
   startReceiving,
   waitForInputVideo,
 } from './input-fixtures'
-import { WINDOWS_CHORD_GAP_MS, windowsClickAnchor } from './windows-timing'
+import { WINDOWS_CHORD_GAP_MS, windowsClickAnchor, windowsTitleBarAnchor } from './windows-timing'
 import { inputPlatforms } from './windows-runtime'
 import { prepareWindowsTargets } from './windows-fixtures'
 import { installInputDiagnostics } from './input-diagnostics'
@@ -479,9 +479,9 @@ if (platforms.includes('windows')) {
             origin: 'http://127.0.0.1:18080',
           })
           const consolePage = await openOfficialConsole(page, fixture)
-          // 每次點擊用不同錨點，避免連續點擊被判為雙擊選字（見windows-timing）。
-          const clickWindowsEditor = (n: number) => {
-            const a = windowsClickAnchor(fixture.editor, n)
+          // 接收／貼上前點標題列空白處（錨點錯開避免雙擊），不讓點擊取消記事本全選（見windows-timing）。
+          const clickWindowsTitleBar = (n: number) => {
+            const a = windowsTitleBarAnchor(fixture.editor, n)
             return clickRemote(consolePage, a.x, a.y)
           }
           await waitForInputVideo(consolePage, fixture)
@@ -496,7 +496,11 @@ if (platforms.includes('windows')) {
             },
             { publicExpected: sample, capture: textLogger !== null },
           )
-          await clickWindowsEditor(0)
+          await clickRemote(
+            consolePage,
+            windowsClickAnchor(fixture.editor, 0).x,
+            windowsClickAnchor(fixture.editor, 0).y,
+          )
           await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
           await consolePage.keyboard.press('Control+a')
           await consolePage.keyboard.insertText(sample)
@@ -511,7 +515,7 @@ if (platforms.includes('windows')) {
             () => navigator.clipboard.writeText('Public local sentinel'),
           )
           await startReceiving(consolePage)
-          await clickWindowsEditor(1)
+          await clickWindowsTitleBar(0)
           await consolePage.keyboard.press('Control+a')
           // 記事本點擊後全選較慢，組合鍵間隔模擬真人節奏（見windows-timing）。
           await consolePage.waitForTimeout(WINDOWS_CHORD_GAP_MS)
@@ -544,7 +548,7 @@ if (platforms.includes('windows')) {
           await consolePage.getByTestId('console-clipboard-send').click()
           await expect(consolePage.getByTestId('console-clipboard-send')).toBeEnabled()
           await expect(consolePage.getByTestId('console-operation-error')).toHaveCount(0)
-          await clickWindowsEditor(2)
+          await clickWindowsTitleBar(1)
           await consolePage.keyboard.press('Control+a')
           // 記事本點擊後全選較慢，組合鍵間隔模擬真人節奏（見windows-timing）。
           await consolePage.waitForTimeout(WINDOWS_CHORD_GAP_MS)
@@ -554,7 +558,7 @@ if (platforms.includes('windows')) {
             () => navigator.clipboard.writeText('Public local sentinel after send'),
           )
           await startReceiving(consolePage)
-          await clickWindowsEditor(3)
+          await clickWindowsTitleBar(2)
           await consolePage.keyboard.press('Control+a')
           // 記事本點擊後全選較慢，組合鍵間隔模擬真人節奏（見windows-timing）。
           await consolePage.waitForTimeout(WINDOWS_CHORD_GAP_MS)
