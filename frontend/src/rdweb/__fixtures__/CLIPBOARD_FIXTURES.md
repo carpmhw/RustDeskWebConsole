@@ -26,7 +26,7 @@ JSON 不包含任何遠端資料，只存固定 public bytes／SHA／native 判�
 python3 tools/prepare-fzstd-bounds-fixtures.py frontend/src/rdweb/__fixtures__/fzstd-bounds.json
 node tools/test-clipboard-fixture-integrity.mjs
 node tools/test-fzstd-patch.mjs
-corepack pnpm --dir frontend exec vitest run src/rdweb/fzstd-bounds.test.ts src/rdweb/clipboard-codec.test.ts
+(cd frontend && corepack pnpm exec vitest run src/rdweb/fzstd-bounds.test.ts src/rdweb/clipboard-codec.test.ts)
 ```
 
 Node 工具分別驗真 ESM／CJS 的 one-shot／stream（完整及 1／7-byte chunks）／不足 caller buffer；Vitest 驗 browser ESM 與 wrapper，避免把 Node 型別加入 production TypeScript。被修改的原套件 ESM／CJS 來自 fzstd 0.1.1（MIT）；pnpm patch 固定 SHA 見 notices／lock。此 corpus 是必要回歸證據，不宣稱代替全部 RFC entropy／checksum 驗證。

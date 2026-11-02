@@ -31,11 +31,12 @@ writeFileSync(
   'artifacts/nuget-licenses.json',
   JSON.stringify([...packages.values()], null, 2) + '\n',
 )
-const frontend = execFileSync(
-  'corepack',
-  ['pnpm', '--dir', 'frontend', 'licenses', 'list', '--json'],
-  { encoding: 'utf8', maxBuffer: 4000000 },
-)
+// Corepack 依工作目錄的 packageManager 選版；須在 frontend 執行，否則根目錄會取最新版而觸發 BAD_PM_VERSION。
+const frontend = execFileSync('corepack', ['pnpm', 'licenses', 'list', '--json'], {
+  cwd: 'frontend',
+  encoding: 'utf8',
+  maxBuffer: 4000000,
+})
 JSON.parse(frontend)
 writeFileSync('artifacts/frontend-licenses.json', frontend)
 console.log(`已產出 ${packages.size} 個 NuGet 套件與前端套件授權清單。`)
