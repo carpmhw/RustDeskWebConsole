@@ -1113,10 +1113,12 @@ textarea {
 /* 組字期間才顯示本機組字列，讓 IME 組字底線與候選窗對齊；仍不攔截點擊。 */
 .console-ime.console-ime--composing {
   z-index: 2;
-  width: min(28em, calc(100% - 16px));
-  height: auto;
-  min-height: 2em;
+  width: min(20em, calc(100% - 16px));
+  height: calc(1.5em + 10px);
+  min-height: 0;
   padding: 4px 8px;
+  line-height: 1.5;
+  overflow: hidden;
   border: 1px solid var(--accent);
   border-radius: 6px;
   background: var(--raised);

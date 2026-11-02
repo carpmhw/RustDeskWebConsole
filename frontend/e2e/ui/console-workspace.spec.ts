@@ -218,6 +218,8 @@ test('composition strip becomes visible inside the viewport and hides after comm
   const box = (await ime.boundingBox())!
   const viewport = (await page.getByTestId('console-viewport').boundingBox())!
   expect(box.width).toBeGreaterThan(1)
+  // 組字列為單行，不佔兩行高度遮住遠端畫面。
+  expect(box.height).toBeLessThanOrEqual(40)
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.x + viewport.width)
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.y + viewport.height)
   await ime.evaluate((node) =>
