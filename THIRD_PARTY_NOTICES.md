@@ -12,7 +12,7 @@ RustDesk／hbb_common／RustDesk Server 由原作者 RustDesk contributors／Pur
 
 ## 主要 NuGet 選型
 
-M1-C 前端新增 vue-router 5.4.0、pinia 4.0.3、vue-i18n 11.4.13、qrcode 1.5.4，皆為 MIT，使用計畫內套件。QRCode 在瀏覽器本地產生，沒有外部 QR 服務；未加入其它 UI／OTP／DOM 模擬相依。完整間接授權由 pnpm lockfile 與 metadata 工具追蹤。
+M1-C 前端新增 vue-router 5.4.0、pinia 4.0.3、vue-i18n 11.4.14（2026-11-02 由 11.4.13 升級以修補 GHSA-83rm-6c8r-g728）、qrcode 1.5.4，皆為 MIT，使用計畫內套件。QRCode 在瀏覽器本地產生，沒有外部 QR 服務；未加入其它 UI／OTP／DOM 模擬相依。完整間接授權由 pnpm lockfile 與 metadata 工具追蹤。
 
 M1-B 新增：Microsoft.AspNetCore.Authentication.JwtBearer 10.0.12（MIT，官方 LTS JWT 驗證）與 Otp.NET 1.4.1（MIT，2025-12 穩定版、net10.0、RFC 6238）。JWT 發行使用 JwtBearer 的間接 IdentityModel 相依，沒有另外新增套件。
 
