@@ -38,7 +38,6 @@ test('dedicated runtimes resolve alongside suites without moving shared developm
     'e2e/scripts/test-m3b3-reliability.sh',
     'e2e/docker/docker-compose.rustdesk-test.yml',
     'e2e/docker/Dockerfile.rustdesk-client',
-    'e2e/fixtures/windows-clipboard-open-schema-operation.ps1.txt',
     '../deploy/dev/docker-compose.spikes.yml',
     '../deploy/dev/docker-compose.redis-test.yml',
   ]) {

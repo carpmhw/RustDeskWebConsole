@@ -222,7 +222,6 @@ test('input-only scope rejects unsafe flags before filesystem side effects', () 
     { RDWEB_B3_BASES: '/rdweb' },
     { RDWEB_B3_MODES: 'strip' },
     { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
-    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
   ]) {
     const path = directory()
     assert.throws(() => a.prepareHostInputOnlyObservation({ ...env, ...patch }, path))

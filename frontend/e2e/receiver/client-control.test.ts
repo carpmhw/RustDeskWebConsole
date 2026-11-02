@@ -83,7 +83,6 @@ it.each([
   [{ RDWEB_TEST_RECEIVER_LIVE: '1', RDWEB_WINDOWS_HOST_OBSERVE: '1' }, false],
   [{ RDWEB_TEST_RECEIVER_LIVE: '1', RDWEB_WINDOWS_HOST_INPUT_ONLY: '1' }, false],
   [{ RDWEB_TEST_RECEIVER_LIVE: '1', RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' }, false],
-  [{ RDWEB_TEST_RECEIVER_LIVE: '1', RDWEB_WINDOWS_TEXT_PROBE: '1' }, false],
   [ENABLED, true],
 ] as const)('enforces the live opt-in: %j', async (env, expected) => {
   const c = await api()

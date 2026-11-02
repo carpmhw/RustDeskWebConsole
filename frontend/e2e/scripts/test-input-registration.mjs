@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
@@ -105,26 +105,6 @@ test('ingress runtime refuses absent capability before reset', () => {
     rmSync(directory, { recursive: true })
   }
 })
-const probe = {
-  ...runtime,
-  RDWEB_WINDOWS_TEXT_PROBE: '1',
-  RDWEB_INPUT_PLATFORMS: 'windows',
-  RDWEB_B3_BASES: '/',
-  RDWEB_B3_MODES: 'preserve',
-}
-const textReturnProbe = {
-  ...runtime,
-  RDWEB_INPUT_PLATFORMS: 'windows',
-  RDWEB_INPUT_CHANNELS: 'chromium',
-  RDWEB_B3_BASES: '/',
-  RDWEB_B3_MODES: 'preserve',
-  RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1',
-}
-const textProbeCurrent = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../.cache/windows-text-probe/current',
-)
-
 // 新長觀察只list，不啟proxy／Docker或native fixture。
 test('longrun registers exactly four fixed Linux scenarios', () => {
   const scope = {
@@ -183,7 +163,6 @@ test('reliability registers exactly one fixed platform scenario', () => {
     { RDWEB_INPUT_CHANNELS: 'chromium,msedge' },
     { RDWEB_B3_BASES: '/' },
     { RDWEB_B3_MODES: 'strip' },
-    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
   ]) {
     assert.notEqual(list({ ...scope, ...value }, 'playwright.reliability.config.ts').status, 0)
   }
@@ -240,65 +219,6 @@ for (const channels of ['', 'unknown', 'chromium,chromium']) {
       'playwright.reconnect.config.ts',
     )
     assert.notEqual(result.status, 0)
-  })
-}
-// 真Playwright只列一個TCP回傳case，不擴到WS或原完整雙向矩陣。
-test('text return probe registers exactly one opted-in TCP case', () => {
-  const result = list(textReturnProbe, 'playwright.text-return-probe.config.ts')
-  assert.equal(result.status, 0)
-  assert.equal(result.stdout.includes('Total: 1 test'), true)
-  assert.equal(result.stdout.includes('Windows remote input clipboard return over tcp'), true)
-  assert.equal(result.stdout.includes('over ws'), false)
-  assert.equal(result.stdout.includes('public Windows text and clipboard oracle'), false)
-})
-// 缺少logger opt-in、CI或固定scope時不得列出native text case。
-for (const override of [
-  { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: undefined },
-  { CI: 'true' },
-  { GITHUB_ACTIONS: 'true' },
-  { RDWEB_WINDOWS_PASSWORD: undefined },
-  { RDWEB_INPUT_PLATFORMS: 'linux' },
-  { RDWEB_INPUT_CHANNELS: 'chromium,msedge' },
-  { RDWEB_B3_BASES: '/rdweb' },
-  { RDWEB_B3_MODES: 'preserve strip' },
-]) {
-  // 標題只指出公開gate，不包含fixture值。
-  test('text return probe rejects unsafe registration: ' + Object.keys(override)[0], () => {
-    const result = list(
-      { ...textReturnProbe, ...override },
-      'playwright.text-return-probe.config.ts',
-    )
-    assert.notEqual(result.status, 0)
-    assert.equal(result.stdout.includes('Total: 1 test'), false)
-  })
-}
-// 有舊current時只接受fail-closed；不讀內容或刪檔以滿足registration測試。
-test('text probe registers fresh scope or rejects the preserved stale current', () => {
-  const result = list(probe, 'playwright.text-probe.config.ts')
-  if (existsSync(textProbeCurrent)) {
-    assert.notEqual(result.status, 0)
-    assert.equal((result.stdout + result.stderr).includes('text_probe_control_unavailable'), true)
-  } else {
-    assert.equal(result.status, 0)
-    assert.equal(result.stdout.includes('Total: 1 test'), true)
-    assert.equal(result.stdout.includes('diagnostic Windows text-only'), true)
-    assert.equal(result.stdout.includes('clipboard oracle'), false)
-  }
-})
-// 漏flag／CI／缺正式runtime或scope不符應在registration前拒絕。
-for (const override of [
-  { RDWEB_WINDOWS_TEXT_PROBE: undefined },
-  { CI: '1' },
-  { RDWEB_WINDOWS_PASSWORD: undefined },
-  { RDWEB_INPUT_PLATFORMS: 'linux' },
-  { RDWEB_INPUT_CHANNELS: 'msedge' },
-  { RDWEB_B3_BASES: '/rdweb' },
-]) {
-  // 報告只含固定ordinal，不放runtime值。
-  test('text probe rejects unsafe registration: ' + Object.keys(override)[0], () => {
-    const result = list({ ...probe, ...override }, 'playwright.text-probe.config.ts')
-    assert.notEqual(result.status, 0)
-    assert.equal(result.stdout.includes('Total: 1 test'), false)
   })
 }
 // Requested Windows缺runtime須在tests registration階段fail，不列Linux假通過。

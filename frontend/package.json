@@ -9,7 +9,6 @@
     "dev": "vite --host 127.0.0.1",
     "generate": "node scripts/generate-rustdesk-proto.mjs",
     "build": "node scripts/generate-rustdesk-proto.mjs && vue-tsc --noEmit && vite build",
-    "typecheck:text-return-probe": "tsc --project e2e/config/tsconfig.text-return-probe.json",
     "test": "node scripts/generate-rustdesk-proto.mjs && vitest run",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",

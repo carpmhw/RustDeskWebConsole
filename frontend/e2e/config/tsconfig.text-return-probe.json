@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "types": ["vite/client", "node"],
-    "allowImportingTsExtensions": true
-  },
-  "include": ["../real/console-text-return-probe.spec.ts", "playwright.text-return-probe.config.ts"]
-}

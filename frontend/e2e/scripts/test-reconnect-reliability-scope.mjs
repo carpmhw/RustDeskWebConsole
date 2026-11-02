@@ -53,7 +53,6 @@ test('reliability rejects missing mixed and widened scopes', () => {
     { ...linuxScope, RDWEB_B3_MODES: 'strip' },
     { ...linuxScope, APP_BASE_PATH: '/' },
     { ...linuxScope, PREFIX_MODE: 'strip' },
-    { ...linuxScope, RDWEB_WINDOWS_TEXT_PROBE: '1' },
     { ...linuxScope, RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
     { ...linuxScope, RDWEB_WINDOWS_HOST_OBSERVE: '1' },
     { ...linuxScope, RDWEB_RECONNECT_INGRESS_OWNER: 'a'.repeat(64) },

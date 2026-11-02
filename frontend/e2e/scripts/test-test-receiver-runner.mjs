@@ -136,7 +136,6 @@ test('runner rejects incomplete or unsupported authorization before side effects
     { RDWEB_WINDOWS_HOST_OBSERVE: '1' },
     { RDWEB_WINDOWS_HOST_INPUT_ONLY: '1' },
     { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
-    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
     { RDWEB_TEST_RECEIVER_PASSWORD: undefined },
     { RDWEB_TEST_RECEIVER_TARGET_NAME: 'official-windows-input-tcp' },
     { RDWEB_TEST_RECEIVER_USERNAME: 'admin' },

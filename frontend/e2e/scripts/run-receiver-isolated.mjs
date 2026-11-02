@@ -112,7 +112,6 @@ export function authorizeIsolation(env) {
       'RDWEB_WINDOWS_HOST_OBSERVE',
       'RDWEB_WINDOWS_HOST_INPUT_ONLY',
       'RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG',
-      'RDWEB_WINDOWS_TEXT_PROBE',
     ].some((key) => env[key] !== undefined && env[key] !== '0')
   )
     return fail()

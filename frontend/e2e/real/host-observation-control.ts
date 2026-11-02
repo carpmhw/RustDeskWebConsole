@@ -77,10 +77,8 @@ function enabled(env: Environment, purpose: Purpose = 'hr'): boolean {
     if (inputFlag === undefined || inputFlag === '0') return false
     if (
       inputFlag !== '1' ||
-      [env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG, env.RDWEB_WINDOWS_TEXT_PROBE].some(
-        /* 此用途不能保存clipboard原文或啟動人工文字probe。 */ (flag) =>
-          flag !== undefined && flag !== '0',
-      )
+      /* 此用途不能保存clipboard原文。 */ (env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG !== undefined &&
+        env.RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG !== '0')
     )
       hostUnavailable()
   }

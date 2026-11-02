@@ -114,7 +114,6 @@ describe('receiver case environment', () => {
     { RDWEB_WINDOWS_HOST_OBSERVE: '1' },
     { RDWEB_WINDOWS_HOST_INPUT_ONLY: '1' },
     { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
-    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
     { APP_BASE_PATH: '/rdweb' },
     { RDWEB_B3_BASES: '/rdweb' },
     { RDWEB_B3_MODES: 'strip' },

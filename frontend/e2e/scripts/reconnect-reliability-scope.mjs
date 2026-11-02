@@ -12,11 +12,7 @@ export function assertReliabilityScope(env) {
     env.RDWEB_B3_MODES !== 'preserve' ||
     (env.APP_BASE_PATH !== undefined && env.APP_BASE_PATH !== '/rdweb') ||
     (env.PREFIX_MODE !== undefined && env.PREFIX_MODE !== 'preserve') ||
-    [
-      'RDWEB_WINDOWS_TEXT_PROBE',
-      'RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG',
-      'RDWEB_WINDOWS_HOST_OBSERVE',
-    ].some(
+    ['RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG', 'RDWEB_WINDOWS_HOST_OBSERVE'].some(
       /* 未啟用的診斷值可為0，其他值不得混入可靠性run。 */ (key) =>
         env[key] !== undefined && env[key] !== '0',
     ) ||

@@ -14,11 +14,7 @@ export function assertReconnectEnvironment(env) {
   ) {
     throw new Error('reconnect_preflight_failed')
   }
-  for (const name of [
-    'RDWEB_WINDOWS_HOST_OBSERVE',
-    'RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG',
-    'RDWEB_WINDOWS_TEXT_PROBE',
-  ]) {
+  for (const name of ['RDWEB_WINDOWS_HOST_OBSERVE', 'RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG']) {
     if (env[name] !== undefined && env[name] !== '0') throw new Error('reconnect_preflight_failed')
   }
 }

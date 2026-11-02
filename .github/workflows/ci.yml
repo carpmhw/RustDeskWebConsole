@@ -97,7 +97,6 @@ jobs:
           (cd frontend && corepack pnpm test)
           (cd frontend && corepack pnpm exec vitest run --config e2e/config/vitest.reconnect-proxy.config.ts)
           (cd frontend && corepack pnpm build)
-          (cd frontend && corepack pnpm typecheck:text-return-probe)
           (cd frontend && corepack pnpm audit --audit-level high)
       - name: Third-party licenses
         run: |
@@ -132,18 +131,6 @@ jobs:
           node --test frontend/e2e/scripts/test-linux-host-handoff.mjs
           node --test frontend/e2e/scripts/test-windows-host-watchdog.mjs
           node --test frontend/e2e/scripts/test-windows-editor-geometry.mjs
-          node --test frontend/e2e/scripts/test-windows-uia-calibration.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-calibration.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-notification-calibration.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-busy-calibration.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-lease-calibration.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-race-calibration.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-capacity.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-overflow.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-invalid-utf16.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-read-race.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-read-race-diagnostic.mjs
-          node --test frontend/e2e/scripts/test-windows-clipboard-read-open-gap.mjs
   runtime:
     needs: changes
     if: needs.changes.outputs.mode == 'full'

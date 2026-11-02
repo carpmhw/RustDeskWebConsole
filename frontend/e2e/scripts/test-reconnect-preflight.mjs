@@ -15,7 +15,6 @@ test('reconnect accepts only expected environment and rejects foreign diagnostic
     { RDWEB_E2E_COMPOSE_OVERRIDE: '/arbitrary/file.yml' },
     { RDWEB_WINDOWS_HOST_OBSERVE: '1' },
     { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
-    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
   ])
     assert.throws(() => assertReconnectEnvironment(env), { message: 'reconnect_preflight_failed' })
 })

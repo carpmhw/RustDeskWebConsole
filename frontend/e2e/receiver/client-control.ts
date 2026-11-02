@@ -63,7 +63,6 @@ export function receiverClientEnabled(env: Record<string, string | undefined>): 
     'RDWEB_WINDOWS_HOST_OBSERVE',
     'RDWEB_WINDOWS_HOST_INPUT_ONLY',
     'RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG',
-    'RDWEB_WINDOWS_TEXT_PROBE',
   ].some(
     /* 任一舊用途開啟即不可混用同輪。 */ (name) => env[name] !== undefined && env[name] !== '0',
   )

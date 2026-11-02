@@ -10,36 +10,49 @@ import {
   existsSync,
   renameSync,
   chmodSync,
+  copyFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { test } from 'node:test'
-import { copyTextProbeTools } from './text-probe-test-fixture.mjs'
 import { prepareHostInputOnlyObservation } from '../real/host-observation-control.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
+
+// 只複製input-only runner需要的工具來源到自有tmp，讓固定current路徑不接觸操作者私有檔。
+function copyInputOnlyTools(root) {
+  for (const path of [
+    'frontend/e2e/real/windows-runtime.ts',
+    'frontend/e2e/real/host-observation-control.ts',
+    'frontend/e2e/real/host-observation-schema.ts',
+    'frontend/e2e/real/host-input-only.ts',
+    'frontend/e2e/real/clipboard-text-log.ts',
+    'frontend/e2e/scripts/test-m3b3-host-input-only.sh',
+    'frontend/e2e/scripts/test-m3b3-common.sh',
+  ]) {
+    const destination = join(root, path)
+    mkdirSync(dirname(destination), { recursive: true, mode: 0o700 })
+    copyFileSync(join(repoRoot, path), destination)
+  }
+}
 
 // 跨程序工具替身只用於owner／early failure測試，不連Docker或Windows，也不假裝native成功。
 function run(
   overrides = {},
   script = 'frontend/e2e/scripts/test-m3b3-input.sh',
-  stale = false,
   existingReport = false,
 ) {
   const dir = mkdtempSync('/tmp/opencode/rdweb-b3-runner-')
   const calls = join(dir, 'calls')
-  const probeSuite = script === 'frontend/e2e/scripts/test-m3b3-text-probe.sh'
-  const textReturnSuite = script === 'frontend/e2e/scripts/test-m3b3-text-return-probe.sh'
   const inputOnlySuite = script === 'frontend/e2e/scripts/test-m3b3-host-input-only.sh'
   const reliabilitySuite = script === 'frontend/e2e/scripts/test-m3b3-reliability.sh'
-  if (probeSuite || textReturnSuite || inputOnlySuite) {
-    const current = copyTextProbeTools(dir)
-    if (probeSuite && stale) mkdirSync(current, { recursive: true, mode: 0o700 })
-    if (inputOnlySuite && overrides.STUB_INPUT_ONLY_FIXTURE !== 'missing') {
+  if (inputOnlySuite) {
+    copyInputOnlyTools(dir)
+    if (overrides.STUB_INPUT_ONLY_FIXTURE !== 'missing') {
       const path = join(dir, 'frontend/.cache/windows-host-input-only/current')
       prepareHostInputOnlyObservation(
         {
-          ...textReturnProbe,
+          ...windowsRuntime,
           RDWEB_WINDOWS_HOST_INPUT_ONLY: '1',
           RDWEB_WINDOWS_HOST_OBSERVE: '1',
           RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '0',
@@ -162,7 +175,7 @@ exit "\${STUB_SUITE_EXIT:-0}"
   }
   try {
     const result = spawnSync('bash', [script], {
-      cwd: probeSuite || textReturnSuite || inputOnlySuite || reliabilitySuite ? dir : undefined,
+      cwd: inputOnlySuite || reliabilitySuite ? dir : undefined,
       env,
       encoding: 'utf8',
       timeout: 10000,
@@ -177,7 +190,7 @@ exit "\${STUB_SUITE_EXIT:-0}"
     rmSync(dir, { recursive: true, force: true })
   }
 }
-const textReturnProbe = {
+const windowsRuntime = {
   RDWEB_INPUT_PLATFORMS: 'windows',
   RDWEB_INPUT_CHANNELS: 'chromium',
   RDWEB_WINDOWS_ID_TCP: 'fixture.example:21116',
@@ -196,7 +209,7 @@ const textReturnProbe = {
   RDWEB_B3_MODES: 'preserve',
 }
 const inputOnlyProbe = {
-  ...textReturnProbe,
+  ...windowsRuntime,
   RDWEB_WINDOWS_HOST_INPUT_ONLY: '1',
   RDWEB_WINDOWS_HOST_OBSERVE: '1',
   RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '0',
@@ -218,7 +231,6 @@ test('input_only_preflight_rejects_before_docker', () => {
     { RDWEB_B3_BASES: '/rdweb' },
     { RDWEB_B3_MODES: 'strip' },
     { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
-    { RDWEB_WINDOWS_TEXT_PROBE: '1' },
     ...['missing', 'purpose', 'mode', 'claimed', 'expired'].map(
       /* 每案保留自身不合法fixture。 */ (value) => ({ STUB_INPUT_ONLY_FIXTURE: value }),
     ),
@@ -229,11 +241,16 @@ test('input_only_preflight_rejects_before_docker', () => {
     assert.equal(result.output.includes('public-fixture-password'), false)
   }
 })
-// 新用途不能誤排原HR或其他suite，即使舊suite的runtime本身合法。
+// 新用途不能誤排其他suite，即使該suite的Windows runtime本身合法。
 test('input-only flag is rejected by existing suite preflight before Docker', () => {
   const result = run(
-    { ...textReturnProbe, RDWEB_WINDOWS_HOST_INPUT_ONLY: '1', STUB_LOG_DOCKER: '1' },
-    'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
+    {
+      ...windowsRuntime,
+      RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: undefined,
+      RDWEB_WINDOWS_HOST_INPUT_ONLY: '1',
+      STUB_LOG_DOCKER: '1',
+    },
+    'frontend/e2e/scripts/test-m3b3-input.sh',
   )
   assert.equal(result.status, 2)
   assert.equal(result.calls, '')
@@ -473,7 +490,6 @@ for (const override of [
   { RDWEB_INPUT_CHANNELS: 'chromium,msedge' },
   { RDWEB_B3_BASES: '/' },
   { RDWEB_B3_MODES: 'strip' },
-  { RDWEB_WINDOWS_TEXT_PROBE: '1' },
   { RDWEB_RECONNECT_INGRESS_OWNER: 'owner' },
 ]) {
   // 只輸出公開env欄位名稱，不帶runtime值。
@@ -488,7 +504,7 @@ for (const override of [
 }
 // 既有原始50筆報告未歸檔前拒絕新run，避免第二份結果無聲取代第一份。
 test('reliability runner refuses to overwrite existing original results', () => {
-  const result = run(reliabilityScope, 'frontend/e2e/scripts/test-m3b3-reliability.sh', false, true)
+  const result = run(reliabilityScope, 'frontend/e2e/scripts/test-m3b3-reliability.sh', true)
   assert.equal(result.status, 2)
   assert.equal(result.calls, '')
   assert.equal(result.output.includes('Reliability report already exists'), true)
@@ -623,43 +639,7 @@ test('reconnect runner rejects missing Windows runtime before Docker', () => {
   assert.equal(result.status, 2)
   assert.equal(result.calls, '')
 })
-// 未開log或scope不合法須在取得任何Docker owner前fail closed。
-for (const override of [
-  { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: undefined },
-  { CI: '1' },
-  { GITHUB_ACTIONS: '1' },
-  { RDWEB_INPUT_PLATFORMS: 'linux,windows' },
-  { RDWEB_INPUT_CHANNELS: 'msedge' },
-  { RDWEB_B3_BASES: '/ /rdweb' },
-  { RDWEB_B3_MODES: 'preserve strip' },
-]) {
-  // 子程序使用自有Docker替身，不連線Windows或真daemon。
-  test('text return runner rejects unsafe preflight: ' + Object.keys(override)[0], () => {
-    const result = run(
-      { ...textReturnProbe, ...override },
-      'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
-    )
-    assert.equal(result.status, 2)
-    assert.equal(result.calls, '')
-  })
-}
-// 合法scope只排程一次，reuse official stack不被誤down。
-test('text return runner schedules one suite and preserves reused official resources', () => {
-  const result = run(
-    { ...textReturnProbe, STUB_OFFICIAL: 'full', STUB_SUITE_EXIT: '1' },
-    'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
-  )
-  assert.equal(result.status, 1)
-  assert.equal(
-    result.calls
-      .split('\n')
-      .filter(/* 單一固定TCP suite。 */ (line) => line.startsWith('playwright:')).length,
-    1,
-  )
-  assert.equal(result.calls.includes('official action:'), false)
-  assert.equal(result.calls.includes(' -v'), false)
-})
-// host缺manifest／非法flag或非HR不得走Docker；真reader只讀自有tmp。
+// 非input-only suite一律不接受host觀察旗標，真reader不讀任何current且不走Docker。
 for (const override of [
   { RDWEB_WINDOWS_HOST_OBSERVE: '1' },
   { RDWEB_WINDOWS_HOST_OBSERVE: 'yes' },
@@ -669,8 +649,8 @@ for (const override of [
     'host runner rejects unsafe setup before Docker: ' + JSON.stringify(Object.keys(override)),
     () => {
       const value = run(
-        { ...textReturnProbe, ...override },
-        'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
+        { ...windowsRuntime, RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: undefined, ...override },
+        'frontend/e2e/scripts/test-m3b3-input.sh',
       )
       assert.equal(value.status, 2)
       assert.equal(value.calls, '')
@@ -678,119 +658,6 @@ for (const override of [
     },
   )
 }
-// 未啟用host與明確0都沿舊suite無新manifest；不因新功能擴成完整矩陣。
-test('host flag zero keeps original runner scheduling without new files', () => {
-  const value = run(
-    { ...textReturnProbe, RDWEB_WINDOWS_HOST_OBSERVE: '0', STUB_OFFICIAL: 'full' },
-    'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
-  )
-  assert.equal(value.status, 0)
-  assert.equal(value.calls.includes('playwright://preserve'), true)
-})
-// 新建owner遇cleanup失敗時仍只清一次，不刪volumes或外部stack。
-test('text return runner cleanup failure attempts each owned stack once', () => {
-  const result = run(
-    { ...textReturnProbe, STUB_CONSOLE_DOWN_FAIL: '1' },
-    'frontend/e2e/scripts/test-m3b3-text-return-probe.sh',
-  )
-  assert.equal(result.status, 1)
-  for (const scope of ['official', 'console']) {
-    assert.equal(
-      result.calls
-        .split('\n')
-        .filter(
-          /* 每個新owned scope僅down一次。 */ (line) =>
-            line.startsWith(scope + ' action:') && line.endsWith(' down'),
-        ).length,
-      1,
-    )
-  }
-  assert.equal(result.calls.includes(' -v'), false)
-})
-const probe = {
-  RDWEB_WINDOWS_TEXT_PROBE: '1',
-  RDWEB_INPUT_PLATFORMS: 'windows',
-  RDWEB_WINDOWS_ID_TCP: 'fixture.example:21116',
-  RDWEB_WINDOWS_RELAY_TCP: 'fixture.example:21117',
-  RDWEB_WINDOWS_ID_WS: 'fixture.example:21118',
-  RDWEB_WINDOWS_RELAY_WS: 'fixture.example:21119',
-  RDWEB_WINDOWS_PUBLIC_KEY: 'public-fixture-key',
-  RDWEB_WINDOWS_TARGET_ID: '123456789',
-  RDWEB_WINDOWS_PASSWORD: 'public-fixture-password',
-  RDWEB_WINDOWS_EDITOR_X: '0',
-  RDWEB_WINDOWS_EDITOR_Y: '61',
-  RDWEB_WINDOWS_EDITOR_WIDTH: '1398',
-  RDWEB_WINDOWS_EDITOR_HEIGHT: '894',
-}
-// Probe任何非法scope均需在Docker action之前拒絕，沒有fallback舊suite。
-for (const override of [
-  { RDWEB_WINDOWS_TEXT_PROBE: '0' },
-  { CI: '1' },
-  { GITHUB_ACTIONS: '1' },
-  { RDWEB_INPUT_PLATFORMS: 'linux,windows' },
-  { RDWEB_INPUT_CHANNELS: 'msedge' },
-  { RDWEB_B3_BASES: '/ /rdweb' },
-  { RDWEB_B3_MODES: 'preserve strip' },
-  { RDWEB_WINDOWS_CLIPBOARD_TEXT_LOG: '1' },
-]) {
-  // 子程序工具替身，測真preflight但不接觸Windows或Dockerdaemon。
-  test('text probe fails before any owned action: ' + Object.keys(override)[0], () => {
-    const result = run({ ...probe, ...override }, 'frontend/e2e/scripts/test-m3b3-text-probe.sh')
-    assert.equal(result.status, 2)
-    assert.equal(result.calls, '')
-  })
-}
-// 正常scope只排程一次，suite與cleanup失敗仍保留volumes並清自己的stack。
-test('single text probe preserves reused official stack and cleans only its console on failure', () => {
-  const result = run(
-    { ...probe, STUB_OFFICIAL: 'full', STUB_SUITE_EXIT: '1' },
-    'frontend/e2e/scripts/test-m3b3-text-probe.sh',
-  )
-  assert.equal(result.status, 1)
-  assert.equal(result.calls.includes('official action:'), false)
-  assert.equal(
-    result.calls
-      .split('\n')
-      .filter(/* 只驗一次固定scope。 */ (line) => line.startsWith('playwright:')).length,
-    1,
-  )
-  assert.equal(result.calls.includes(' -v'), false)
-})
-// 殘留current或預先存在stack不可自動down／覆寫，保護操作者工作。
-test('text probe stale control and pre-existing console fail before owned actions', () => {
-  for (const [overrides, stale] of [
-    [{}, true],
-    [{ STUB_CONSOLE_RUNNING: '1' }, false],
-    [{ STUB_OFFICIAL: 'partial' }, false],
-  ]) {
-    const result = run(
-      { ...probe, ...overrides },
-      'frontend/e2e/scripts/test-m3b3-text-probe.sh',
-      stale,
-    )
-    assert.equal(result.status, 2)
-    assert.equal(result.calls, '')
-  }
-})
-// down失敗仍清每個owned scope一次，不動volumes。
-test('text probe cleanup failure still releases both newly owned stacks once', () => {
-  const result = run(
-    { ...probe, STUB_CONSOLE_DOWN_FAIL: '1' },
-    'frontend/e2e/scripts/test-m3b3-text-probe.sh',
-  )
-  assert.equal(result.status, 1)
-  for (const scope of ['official', 'console'])
-    assert.equal(
-      result.calls
-        .split('\n')
-        .filter(
-          /* 每個owner只down一次。 */ (line) =>
-            line.startsWith(scope + ' action:') && line.endsWith(' down'),
-        ).length,
-      1,
-    )
-  assert.equal(result.calls.includes(' -v'), false)
-})
 
 // 每個early gate都須在Docker action前停止，包括prefix、channel與requested Windows缺憑證。
 for (const overrides of [
