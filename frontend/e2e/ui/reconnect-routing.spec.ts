@@ -331,11 +331,12 @@ test('reconnect proxy reaches native dedicated Worker sockets', async ({ page })
     expect(proxy.counts()).toMatchObject({ opened: 1, messages: 1, interrupted: 0 })
     expect(endpoint.counts()).toMatchObject({ opened: 1, messages: 1 })
     proxy.interrupt(0)
+    // proxy只注入固定service-restart close frame（1012），Worker須收到同一原生code。
     await expect
       .poll(() =>
         page.evaluate(() => (window as Window & { publicWorkerClose?: number }).publicWorkerClose),
       )
-      .toBe(1006)
+      .toBe(1012)
     await expect.poll(() => endpoint.counts().active).toBe(0)
     await expect.poll(() => proxy.counts().interrupted).toBe(1)
   } finally {
