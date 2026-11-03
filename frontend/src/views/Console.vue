@@ -450,7 +450,10 @@ onBeforeUnmount(() => {
       </div>
     </template>
     <template #status>
-      <p role="status" data-testid="console-phase">{{ t('consoleUI.phases.' + phase) }}</p>
+      <!-- 串流中與可見的連線提示同文，phase只留給報讀器以免重複顯示。 -->
+      <p role="status" data-testid="console-phase" :class="{ 'sr-only': phase === 'streaming' }">
+        {{ t('consoleUI.phases.' + phase) }}
+      </p>
       <p v-if="error" class="error-message" role="alert" :data-error-code="error">
         {{ t('consoleUI.errors.' + error) }}
       </p>
@@ -465,7 +468,7 @@ onBeforeUnmount(() => {
       <div v-if="summary" data-testid="console-verified">
         <p>{{ summary.platform }} · {{ summary.version }}</p>
       </div>
-      <p v-if="phase === 'streaming'" data-testid="console-streaming">
+      <p v-if="phase === 'streaming'" data-testid="console-streaming" aria-hidden="true">
         {{ t('consoleUI.connected') }}
       </p>
       <p v-if="stats" data-testid="console-stats">

@@ -45,6 +45,15 @@ for (const transport of ['tcp', 'ws'] as const) {
       const consolePage = await openOfficialConsole(page, fixture)
       await waitForClock(consolePage)
       await expect(consolePage.getByTestId('console-streaming')).toBeVisible()
+      // 「畫面已連線」只顯示一次：phase僅留給報讀器，可見提示不重複朗讀。
+      await expect(consolePage.getByTestId('console-phase')).toHaveText('畫面已連線。')
+      expect(
+        (await consolePage.getByTestId('console-phase').boundingBox())!.width,
+      ).toBeLessThanOrEqual(1)
+      await expect(consolePage.getByTestId('console-streaming')).toHaveAttribute(
+        'aria-hidden',
+        'true',
+      )
       expect(await clockChanges(consolePage)).toBe(true)
       // Task12主控台接線回歸：真正MAC／Canvas之後才接管native DOM輸入。
       await expect(consolePage.getByTestId('console-auto-reconnect')).toBeChecked()
