@@ -17,6 +17,10 @@ if [ "${CLIENT_ROLE:-target}" = target ]; then
 fi
 mkdir -p "$XDG_CONFIG_HOME/rustdesk"
 printf "rendezvous_server = 'hbbs:21116'\n[options]\ncustom-rendezvous-server = 'hbbs:21116'\nrelay-server = 'hbbr:21117'\nkey = '%s'\nverification-method = 'use-permanent-password'\napprove-mode = 'password'\nallow-always-software-render = 'Y'\n" "$PUBLIC_KEY" > "$XDG_CONFIG_HOME/rustdesk/RustDesk2.toml"
+# 權限拒絕案例才以受控端官方選項關閉鍵鼠控制；每次啟動重寫設定，重建即恢復。
+if [ "${TARGET_DISABLE_KEYBOARD:-}" = 1 ]; then
+  printf "enable-keyboard = 'N'\n" >> "$XDG_CONFIG_HOME/rustdesk/RustDesk2.toml"
+fi
 
 # 固定測試密碼在首次啟動時隨機產生並保存在私有 volume，永不輸出。
 if [ "${CLIENT_ROLE:-target}" = target ]; then

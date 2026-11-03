@@ -118,6 +118,37 @@ function publicNativeEvents(): NativeEvent[] {
   return events
 }
 
+// 以官方選項重建本輪owned受控端：disable時關閉鍵鼠控制權限；身分與密碼保存在volume不變。
+function recreateTarget(disableKeyboard: boolean): void {
+  const options = {
+    cwd: '..',
+    timeout: 180000,
+    stdio: 'ignore' as const,
+    env: { ...process.env, RDWEB_TARGET_DISABLE_KEYBOARD: disableKeyboard ? '1' : '' },
+  }
+  try {
+    execFileSync(
+      'docker',
+      [
+        'compose',
+        '-f',
+        'frontend/e2e/docker/docker-compose.rustdesk-test.yml',
+        'up',
+        '-d',
+        '--force-recreate',
+        '--wait',
+        '--wait-timeout',
+        '90',
+        'target',
+      ],
+      options,
+    )
+    execFileSync(process.execPath, ['frontend/e2e/scripts/wait-rustdesk-online.mjs'], options)
+  } catch {
+    throw new Error('Public target recreation failed')
+  }
+}
+
 // 真auth／Redis配額保持正式設定，每case只隔離自己的測試stack。
 test.beforeEach(() => resetStack())
 // 公開observer只回傳事件數量，原始按鍵與座標不離開owned target。
@@ -197,6 +228,34 @@ if (platforms.includes('linux')) {
       }
     } finally {
       for (const pair of pairs) await pair[0]!.context.dispose()
+    }
+  })
+}
+if (platforms.includes('linux')) {
+  // 受控端關閉鍵鼠權限時，主控台不得取得輸入焦點、不得送出任何鍵鼠事件，接收遠端複製亦停用。
+  test('public Linux target keyboard permission denial blocks input', async ({ page }) => {
+    recreateTarget(true)
+    try {
+      const fixture = await prepareLinuxInputTarget('tcp')
+      try {
+        const consolePage = await openOfficialConsole(page, fixture)
+        await waitForInputVideo(consolePage, fixture)
+        // 傳送本機文字可用代表受控端權限狀態已送達；接收遠端複製需鍵鼠權限，故此時必須停用。
+        await expect(consolePage.getByTestId('console-clipboard-send')).toBeEnabled()
+        await expect(consolePage.getByTestId('console-clipboard-copy')).toBeDisabled()
+        const before = publicEventCounts()
+        // 權限狀態已知後，未取得鍵鼠權限即不會取得焦點，也不送出點擊或按鍵。
+        await clickRemote(consolePage, fixture.observer!.x + 120, fixture.observer!.y + 120)
+        await consolePage.keyboard.press('F8')
+        await expect(consolePage.getByTestId('console-input-active')).toHaveCount(0)
+        expect(publicEventCounts()).toEqual(before)
+        await consolePage.getByTestId('console-end').click()
+        await consolePage.close()
+      } finally {
+        await fixture.context.dispose()
+      }
+    } finally {
+      recreateTarget(false)
     }
   })
 }

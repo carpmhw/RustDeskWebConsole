@@ -47,6 +47,9 @@ services:
     build:
       context: ../../..
       dockerfile: frontend/e2e/docker/Dockerfile.rustdesk-client
+    environment:
+      # 只有權限拒絕案例明確設1；預設維持官方允許鍵鼠控制。
+      TARGET_DISABLE_KEYBOARD: ${RDWEB_TARGET_DISABLE_KEYBOARD:-}
     volumes:
       - public-key:/public-key:ro
       - target-state:/test-state
