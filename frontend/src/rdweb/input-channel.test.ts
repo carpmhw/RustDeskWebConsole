@@ -541,3 +541,19 @@ it('does not drop new text when a stale slice is refused after refocus', () => {
   f.ack(0, false)
   expect(texts(f.batches)).toEqual([['a'], ['x']])
 })
+
+// hover 30Hz：前一筆 move 送出後 33ms 內即使已有 credit 也不送下一筆，滿 1000/30ms 才送。
+it('holds the next hover move until the thirty hertz interval elapses', () => {
+  const { c, batches, advance } = fixture()
+  c.enqueue({ kind: 'move', x: 1, y: 1 })
+  c.ack({ ...batches[0]!, sent: true })
+  advance(33)
+  c.enqueue({ kind: 'move', x: 2, y: 1 })
+  c.tick()
+  expect(batches).toHaveLength(1)
+  // fixture 的 advance 設定絕對時間。
+  advance(34)
+  c.tick()
+  expect(batches).toHaveLength(2)
+  expect((batches[1]!.events[0] as Extract<InputIntent, { kind: 'move' }>).x).toBe(2)
+})

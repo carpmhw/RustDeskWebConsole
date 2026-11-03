@@ -161,3 +161,18 @@ it('preserves text lock modifiers without forwarding hotkeys as Unicode', () => 
     modifiers: ['Shift', 'CapsLock', 'NumLock'],
   })
 })
+
+// 組字結果恰好 4096 bytes 仍送出一次，4097 bytes 才提示超額。
+it('accepts a composition result of exactly 4096 UTF-8 bytes', () => {
+  const emit = vi.fn(),
+    issue = vi.fn(),
+    k = new KeyboardInput(emit, issue)
+  k.compositionStart()
+  k.compositionEnd('中'.repeat(1365) + 'a')
+  expect(emit).toHaveBeenCalledOnce()
+  expect(issue).not.toHaveBeenCalled()
+  k.compositionStart()
+  k.compositionEnd('中'.repeat(1365) + 'ab')
+  expect(emit).toHaveBeenCalledOnce()
+  expect(issue).toHaveBeenCalledWith('input_text_too_large')
+})

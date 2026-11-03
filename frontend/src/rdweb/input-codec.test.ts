@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { hbb, decodeMessage } from './codec'
+import { hbb, decodeMessage, encodeMessage } from './codec'
 import { encodeInput } from './input-codec'
 import {
   CONTROL_NAMES,
@@ -226,4 +226,21 @@ it('reads independent CSharp public wire literals', () => {
   expect(
     decodeMessage(new Uint8Array([0x9a, 1, 4, 58, 2, 96, 1])).misc?.option?.disableKeyboard,
   ).toBe(1)
+})
+// Translate 編碼須與 C# 獨立 fixture 的手算 bytes 一致，不以同一 encoder 往返作 oracle。
+it('encodes Windows Translate keys to the independent CSharp wire bytes', () => {
+  expect(
+    Array.from(
+      encodeMessage(
+        encodeInput({ kind: 'key', key: 'LeftArrow', down: true, modifiers: ['Shift'] }, meta)[0]!,
+      ),
+    ),
+  ).toEqual([0x7a, 0x0b, 8, 1, 0x20, 0xcb, 0xc0, 3, 0x42, 1, 0x1d, 0x48, 2])
+  expect(
+    Array.from(
+      encodeMessage(
+        encodeInput({ kind: 'shortcut', char: 'a', down: true, modifiers: [] }, meta)[0]!,
+      ),
+    ),
+  ).toEqual([0x7a, 9, 8, 1, 0x20, 0x80, 0x80, 0x84, 2, 0x48, 2])
 })

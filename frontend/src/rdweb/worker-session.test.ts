@@ -693,3 +693,37 @@ it('does not observe closes after the session stops', async () => {
   expect(p.socket.onclose).toBeNull()
   expect(codes).toEqual([])
 })
+
+// 每次attempt（含重連建立的新Worker）ready期限固定30秒，不因cycle剩餘時間放寬或延長。
+it('fails a silent attempt as temporary exactly at the thirty second ready deadline', async () => {
+  const value = fixture(),
+    socket = new Socket()
+  value.deps.socket = () => socket
+  value.session.handle({
+    type: 'probe',
+    revision: 1,
+    frame: new ProbeFrame() as unknown as VideoFrame,
+  })
+  await settle()
+  vi.useFakeTimers()
+  try {
+    value.session.handle({
+      type: 'start',
+      revision: 1,
+      target: '00000000-0000-0000-0000-000000000001',
+      peer: '123456789',
+      origin: 'http://localhost',
+      base: '/rdweb',
+      ticket: 'public-test-only',
+    })
+    await vi.advanceTimersByTimeAsync(29999)
+    expect(value.messages.filter((m) => m.type === 'failure')).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(value.messages.filter((m) => m.type === 'failure')).toEqual([
+      { type: 'failure', revision: 1, code: 'connection_timeout', cause: 'temporary' },
+    ])
+  } finally {
+    value.session.dispose()
+    vi.useRealTimers()
+  }
+})

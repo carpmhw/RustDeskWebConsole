@@ -46,4 +46,21 @@ public sealed class RustDeskInteractionWireTests
         var value = new Message { Misc = new Misc { Option = new OptionMessage { DisableKeyboard = OptionMessage.Types.BoolOption.No } } };
         Assert.Equal(new byte[] { 0x9a, 1, 4, 58, 2, 96, 1 }, value.ToByteArray());
     }
+    // Windows extended 鍵：Translate＋帶 E0 前綴掃描碼（0xE04B），手算 bytes 為跨語言 oracle。
+    [Fact]
+    public void TranslateExtendedKeyEnvelopeMatchesPublicFixture()
+    {
+        var key = new KeyEvent { Down = true, Chr = 0xE04B, Mode = KeyboardMode.Translate };
+        key.Modifiers.Add(ControlKey.Shift);
+        var value = new Message { KeyEvent = key };
+        Assert.Equal(new byte[] { 0x7a, 0x0b, 8, 1, 0x20, 0xcb, 0xc0, 3, 0x42, 1, 0x1d, 0x48, 2 }, value.ToByteArray());
+    }
+
+    // Windows ASCII 快捷鍵：Translate＋高 word 虛擬 VK（'A' = 0x41 << 16）。
+    [Fact]
+    public void TranslateShortcutEnvelopeMatchesPublicFixture()
+    {
+        var value = new Message { KeyEvent = new KeyEvent { Down = true, Chr = 0x41u << 16, Mode = KeyboardMode.Translate } };
+        Assert.Equal(new byte[] { 0x7a, 9, 8, 1, 0x20, 0x80, 0x80, 0x84, 2, 0x48, 2 }, value.ToByteArray());
+    }
 }
