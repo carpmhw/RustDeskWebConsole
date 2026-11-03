@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import type { ServerRow, ServerProbe } from '../api/management'
+import { DEFAULT_PORTS, joinEndpoint, splitEndpoint, switchedPort } from '../utils/serverEndpoint'
 defineOptions({ name: 'ServersView' })
 const { t, te } = useI18n()
 const auth = useAuthStore()
@@ -19,12 +20,14 @@ let alive = true
 const errorText = computed(() =>
   t(te('errors.' + error.value) ? 'errors.' + error.value : 'errors.service_unavailable'),
 )
-// 新設定不帶任何existing key或不安全預設端點。
+// 新設定不帶任何existing key或主機；port只預填TCP的OSS預設值，可修改。
 function emptyDraft() {
   return {
     name: '',
-    id_server: '',
-    relay_server: '',
+    id_host: '',
+    id_port: String(DEFAULT_PORTS.tcp.id),
+    relay_host: '',
+    relay_port: String(DEFAULT_PORTS.tcp.relay),
     public_key: '',
     transport: 'tcp' as 'tcp' | 'ws',
     enabled: true,
@@ -53,8 +56,11 @@ function edit(row?: ServerRow): void {
   draft.value = row
     ? {
         name: row.name,
-        id_server: row.id_server,
-        relay_server: row.relay_server,
+        // 既有值原樣拆回兩欄，不套用預設port。
+        id_host: splitEndpoint(row.id_server).host,
+        id_port: splitEndpoint(row.id_server).port,
+        relay_host: splitEndpoint(row.relay_server).host,
+        relay_port: splitEndpoint(row.relay_server).port,
         public_key: row.public_key,
         transport: row.transport,
         enabled: row.enabled,
@@ -77,7 +83,17 @@ async function save(): Promise<void> {
     await auth.request(
       selected.value ? 'api/v1/servers/' + selected.value.id : 'api/v1/servers',
       selected.value ? 'PUT' : 'POST',
-      draft.value,
+      {
+        name: draft.value.name,
+        id_server: joinEndpoint(draft.value.id_host, String(draft.value.id_port)),
+        relay_server: joinEndpoint(draft.value.relay_host, String(draft.value.relay_port)),
+        public_key: draft.value.public_key,
+        transport: draft.value.transport,
+        enabled: draft.value.enabled,
+        allow_private_network: draft.value.allow_private_network,
+        notes: draft.value.notes,
+        version: draft.value.version,
+      },
       controller.signal,
     )
     if (alive) {
@@ -147,6 +163,26 @@ function cancel(): void {
   selected.value = null
   draft.value = emptyDraft()
 }
+// 只在同一份draft內切換傳輸方式時調整port；edit()換入既有設定不得改寫其保存值。
+// number輸入經v-model會變成數字，比對前一律轉字串。
+watch(
+  () => ({ value: draft.value, transport: draft.value.transport }),
+  (now, before) => {
+    if (now.value !== before.value || now.transport === before.transport) return
+    now.value.id_port = switchedPort(
+      String(now.value.id_port),
+      'id',
+      before.transport,
+      now.transport,
+    )
+    now.value.relay_port = switchedPort(
+      String(now.value.relay_port),
+      'relay',
+      before.transport,
+      now.transport,
+    )
+  },
+)
 onMounted(load)
 // 離頁取消操作與清除設定副本，避免延遲回應更新新頁。
 onBeforeUnmount(() => {
@@ -196,7 +232,7 @@ onBeforeUnmount(() => {
             <label for="id-server">{{ t('manage.idServer') }}</label
             ><input
               id="id-server"
-              v-model="draft.id_server"
+              v-model="draft.id_host"
               required
               maxlength="320"
               :disabled="busy"
@@ -204,14 +240,38 @@ onBeforeUnmount(() => {
             />
           </div>
           <div>
+            <label for="id-port">{{ t('manage.idPort') }}</label
+            ><input
+              id="id-port"
+              v-model="draft.id_port"
+              type="number"
+              min="1"
+              max="65535"
+              required
+              :disabled="busy"
+            />
+          </div>
+          <div>
             <label for="relay-server">{{ t('manage.relayServer') }}</label
             ><input
               id="relay-server"
-              v-model="draft.relay_server"
+              v-model="draft.relay_host"
               required
               maxlength="320"
               :disabled="busy"
               spellcheck="false"
+            />
+          </div>
+          <div>
+            <label for="relay-port">{{ t('manage.relayPort') }}</label
+            ><input
+              id="relay-port"
+              v-model="draft.relay_port"
+              type="number"
+              min="1"
+              max="65535"
+              required
+              :disabled="busy"
             />
           </div>
         </div>
