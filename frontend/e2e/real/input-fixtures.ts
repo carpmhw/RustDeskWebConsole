@@ -171,11 +171,12 @@ export async function waitForInputVideo(page: Page, fixture: InputFixture): Prom
   if (settle) await page.waitForTimeout(settle)
 }
 // client rect包含縮放與scroll；座標來源只有公开fixture幾何。
-export async function clickRemote(page: Page, x: number, y: number): Promise<void> {
+// 遠端畫素座標轉為canvas元素內的本機座標；先等surface幾何穩定並完成捲動。
+async function surfacePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const surface = page.getByTestId('console-canvas')
   // 先讓Playwright等surface幾何穩定並完成捲動，再取rect，避免click等待後沿用舊比例。
   await surface.scrollIntoViewIfNeeded()
-  const point = await surface.evaluate(
+  return surface.evaluate(
     /* 遠端point只轉為本機mouse座標，不取pixel或remote origin。 */ (element, p) => {
       const c = element as HTMLCanvasElement,
         r = c.getBoundingClientRect()
@@ -196,8 +197,22 @@ export async function clickRemote(page: Page, x: number, y: number): Promise<voi
     },
     { x, y },
   )
+}
+// 遠端畫素座標的本機頁面座標，供右鍵、中鍵、拖曳與滾輪以page.mouse精確操作。
+export async function remotePagePoint(
+  page: Page,
+  x: number,
+  y: number,
+): Promise<{ x: number; y: number }> {
+  const point = await surfacePoint(page, x, y)
+  const box = (await page.getByTestId('console-canvas').boundingBox())!
+  return { x: box.x + point.x, y: box.y + point.y }
+}
+// 以遠端畫素座標點擊主控台畫面，經locator處理捲動與穩定幾何。
+export async function clickRemote(page: Page, x: number, y: number): Promise<void> {
+  const point = await surfacePoint(page, x, y)
   // locator處理整頁與viewport滾動後才點擊；原page.mouse不會捲動畫面外point。
-  await surface.click({ position: point })
+  await page.getByTestId('console-canvas').click({ position: point })
 }
 // 真UI先明示手動接收順序，不以testid繞過缺少或誤導的操作名稱。
 export async function startReceiving(page: Page, locale: 'zh-TW' | 'en' = 'zh-TW'): Promise<void> {

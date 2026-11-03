@@ -5,6 +5,7 @@ import { resetStack } from '../management/helpers/fixtures'
 import { openOfficialConsole, observeConsole, clockChanges } from './fixtures'
 import {
   clickRemote,
+  remotePagePoint,
   assertCanvasEmptyAndWorkersClosed,
   clipboardMatches,
   assertPublicClipboard,
@@ -58,6 +59,63 @@ async function assertWindowsClipboard(
       }
     }
   }
+}
+
+// 公開xev記錄只取按鍵／滑鈕事件的種類、button或keysym與視窗內座標，不輸出其他內容。
+type NativeEvent = {
+  kind: 'ButtonPress' | 'ButtonRelease' | 'KeyPress' | 'KeyRelease'
+  detail: string
+  x: number
+  y: number
+}
+function publicNativeEvents(): NativeEvent[] {
+  let raw: string
+  try {
+    raw = execFileSync(
+      'docker',
+      [
+        'compose',
+        '-f',
+        'frontend/e2e/docker/docker-compose.rustdesk-test.yml',
+        'exec',
+        '-T',
+        'target',
+        'sh',
+        '-c',
+        "grep -E -A4 '^(ButtonPress|ButtonRelease|KeyPress|KeyRelease) event' /test-state/public-input-events || true",
+      ],
+      {
+        cwd: '..',
+        encoding: 'utf8',
+        timeout: 10000,
+        maxBuffer: 1 << 20,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+  } catch {
+    throw new Error('Public input events unavailable')
+  }
+  const events: NativeEvent[] = []
+  let current: NativeEvent | null = null
+  for (const line of raw.split('\n')) {
+    const head = /^(ButtonPress|ButtonRelease|KeyPress|KeyRelease) event/.exec(line)
+    if (head) {
+      current = { kind: head[1] as NativeEvent['kind'], detail: '', x: -1, y: -1 }
+      events.push(current)
+      continue
+    }
+    if (!current) continue
+    const point = /\((-?\d+),(-?\d+)\), root:/.exec(line)
+    if (point) {
+      current.x = Number(point[1])
+      current.y = Number(point[2])
+    }
+    const button = /, button (\d+),/.exec(line)
+    if (button) current.detail = 'button' + button[1]
+    const keysym = /\(keysym 0x[0-9a-f]+, ([A-Za-z0-9_]+)\)/.exec(line)
+    if (keysym) current.detail = keysym[1]!
+  }
+  return events
 }
 
 // 真auth／Redis配額保持正式設定，每case只隔離自己的測試stack。
@@ -167,6 +225,118 @@ for (const transport of platforms.includes('linux') ? (['tcp', 'ws'] as const) :
         )
         .toEqual({ keyPress: 1, keyRelease: 1, mousePress: 1 })
       await consolePage.getByTestId('console-end').click()
+      await consolePage.close()
+    } finally {
+      await fixture.context.dispose()
+    }
+  })
+  // 真受控端滑鼠語意：縮放後左／右／中鍵、拖曳、滾輪方向與座標，及失焦時放開已按住的修飾鍵。
+  test('public Linux native pointer semantics over ' + transport, async ({ page }) => {
+    const fixture = await prepareLinuxInputTarget(transport)
+    try {
+      const consolePage = await openOfficialConsole(page, fixture)
+      await waitForInputVideo(consolePage, fixture)
+      await consolePage.getByTestId('console-zoom').selectOption('0.5')
+      const o = fixture.observer!
+      const at = (dx: number, dy: number) => remotePagePoint(consolePage, o.x + dx, o.y + dy)
+      const before = publicNativeEvents().length
+      const since = () => publicNativeEvents().slice(before)
+      await clickRemote(consolePage, o.x + 40, o.y + 40)
+      await expect(consolePage.getByTestId('console-input-active')).toBeVisible()
+      for (const [button, d] of [
+        ['right', 60],
+        ['middle', 80],
+      ] as const) {
+        const p = await at(d, d)
+        await consolePage.mouse.click(p.x, p.y, { button })
+      }
+      const from = await at(100, 100),
+        to = await at(150, 140)
+      await consolePage.mouse.move(from.x, from.y)
+      await consolePage.mouse.down()
+      await consolePage.mouse.move(to.x, to.y, { steps: 5 })
+      await consolePage.mouse.up()
+      // 縮放後一個遠端畫素約0.5本機px，座標容許±2遠端畫素。
+      const near = (e: NativeEvent | undefined, x: number, y: number) =>
+        !!e && Math.abs(e.x - x) <= 2 && Math.abs(e.y - y) <= 2
+      await expect
+        .poll(
+          () => {
+            const b = since().filter((e) => e.kind.startsWith('Button'))
+            return [
+              b.length,
+              b.map((e) => e.kind + ':' + e.detail).join(','),
+              near(b[0], 40, 40) && near(b[2], 60, 60) && near(b[4], 80, 80),
+              near(b[6], 100, 100) && near(b[7], 150, 140),
+            ]
+          },
+          { timeout: 10000 },
+        )
+        .toEqual([
+          8,
+          'ButtonPress:button1,ButtonRelease:button1,ButtonPress:button3,ButtonRelease:button3,ButtonPress:button2,ButtonRelease:button2,ButtonPress:button1,ButtonRelease:button1',
+          true,
+          true,
+        ])
+      // 滾輪方向：向上為X11 button4、向下為button5，各至少一次且不混入反向。
+      const wheelStart = since().length
+      await consolePage.mouse.wheel(0, -120)
+      await expect
+        .poll(() =>
+          since()
+            .slice(wheelStart)
+            .filter((e) => e.kind === 'ButtonPress')
+            .map((e) => e.detail),
+        )
+        .toContain('button4')
+      expect(
+        since()
+          .slice(wheelStart)
+          .some((e) => e.detail === 'button5'),
+      ).toBe(false)
+      const downStart = since().length
+      await consolePage.mouse.wheel(0, 120)
+      await expect
+        .poll(() =>
+          since()
+            .slice(downStart)
+            .filter((e) => e.kind === 'ButtonPress')
+            .map((e) => e.detail),
+        )
+        .toContain('button5')
+      expect(
+        since()
+          .slice(downStart)
+          .some((e) => e.detail === 'button4'),
+      ).toBe(false)
+      // 按住Ctrl後焦點移到工具列：遠端須收到恰好一次Control_L放開，之後放開本機鍵不再送。
+      const keyStart = since().length
+      await consolePage.keyboard.down('Control')
+      await expect
+        .poll(() =>
+          since()
+            .slice(keyStart)
+            .filter((e) => e.detail === 'Control_L')
+            .map((e) => e.kind),
+        )
+        .toEqual(['KeyPress'])
+      await consolePage.getByTestId('console-zoom').focus()
+      await expect(consolePage.getByTestId('console-input-active')).toHaveCount(0)
+      await expect
+        .poll(() =>
+          since()
+            .slice(keyStart)
+            .filter((e) => e.detail === 'Control_L')
+            .map((e) => e.kind),
+        )
+        .toEqual(['KeyPress', 'KeyRelease'])
+      await consolePage.keyboard.up('Control')
+      await consolePage.getByTestId('console-end').click()
+      expect(
+        since()
+          .slice(keyStart)
+          .filter((e) => e.detail === 'Control_L'),
+      ).toHaveLength(2)
       await consolePage.close()
     } finally {
       await fixture.context.dispose()
