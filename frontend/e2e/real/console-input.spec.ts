@@ -529,6 +529,52 @@ if (platforms.includes('windows')) {
             textRecords,
           )
           await expect(consolePage.getByTestId('console-clipboard-waiting')).toHaveCount(0)
+          // Shift＋extended鍵須真的選取：End→Shift+Home選整行、Home→Shift+→×7選開頭「Public 」，複製回讀驗證。
+          // diagnostics僅接受以「Public 」開頭的公開預期，故方向鍵段選取開頭而非結尾。
+          for (const [n, expected, sentinel, keys] of [
+            [3, sample, 'Public local sentinel select', ['End', 'Shift+Home']],
+            [
+              4,
+              'Public ',
+              'Public local sentinel head',
+              ['Home', ...Array(7).fill('Shift+ArrowRight')],
+            ],
+          ] as [number, string, string, string[]][]) {
+            await consolePage.evaluate(
+              /* 每段選取獨立public expected，不沿用前段複製證據。 */ ({
+                publicExpected,
+                capture,
+              }) => {
+                if (!window.__rdwebInputDiagnostics)
+                  throw new Error('input_clipboard_diagnostics_unavailable')
+                window.__rdwebInputDiagnostics.begin(publicExpected, capture)
+              },
+              { publicExpected: expected, capture: textLogger !== null },
+            )
+            await consolePage.evaluate(
+              // 本機公開sentinel避免前段剪貼簿冒充選取結果。
+              (value) => navigator.clipboard.writeText(value),
+              sentinel,
+            )
+            await startReceiving(consolePage)
+            await clickWindowsTitleBar(n)
+            for (const key of keys) {
+              // 組合鍵間隔模擬真人節奏（見windows-timing）。
+              await consolePage.waitForTimeout(WINDOWS_CHORD_GAP_MS)
+              await consolePage.keyboard.press(key)
+            }
+            await consolePage.waitForTimeout(WINDOWS_CHORD_GAP_MS)
+            await consolePage.keyboard.press('Control+c')
+            await assertWindowsClipboard(
+              consolePage,
+              expected,
+              sentinel,
+              'remote_input',
+              transport,
+              textRecords,
+            )
+            await expect(consolePage.getByTestId('console-clipboard-waiting')).toHaveCount(0)
+          }
           await consolePage.evaluate(
             /* outbound獨立public expected，不沿用首次複製證據。 */ ({
               publicExpected,
