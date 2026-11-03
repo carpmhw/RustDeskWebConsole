@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
 const runner = fileURLToPath(new URL('../scripts/test-subpaths.sh', import.meta.url))
+// runner與CI相同自repo根目錄執行，Corepack須在frontend目錄內被呼叫。
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 
 // 只替換慢速外部命令，真shell控制流程／環境與參數仍由正式runner決定。
 function run(matrix?: string): { status: number | null; calls: string[] } {
@@ -16,7 +18,7 @@ function run(matrix?: string): { status: number | null; calls: string[] } {
       // 只記固定命令參數與公開prefix，不輸出或保存程序環境中的憑證。
       writeFileSync(
         join(directory, name),
-        `#!/bin/sh\nprintf '%s|%s|%s|%s\\n' '${name}' "\${APP_BASE_PATH:-unset}" "\${PREFIX_MODE:-unset}" "$*" >> "$PUBLIC_RUNNER_LOG"\n`,
+        `#!/bin/sh\nprintf '%s|%s|%s|%s|%s\\n' '${name}' "\${APP_BASE_PATH:-unset}" "\${PREFIX_MODE:-unset}" "$*" "$(basename "$PWD")" >> "$PUBLIC_RUNNER_LOG"\n`,
       )
       chmodSync(join(directory, name), 0o700)
     }
@@ -24,6 +26,7 @@ function run(matrix?: string): { status: number | null; calls: string[] } {
       'sh',
       [runner, 'e2e/management/workspace-ui.spec.ts', '--grep', 'header keeps'],
       {
+        cwd: repoRoot,
         env: {
           ...process.env,
           PATH: directory + ':' + process.env.PATH,
@@ -57,7 +60,7 @@ test('management runner selects one deep path and forwards test arguments', () =
   const result = run('ui-targeted')
   expect(result.status).toBe(0)
   expect(result.calls.filter((line) => line.startsWith('corepack|'))).toEqual([
-    'corepack|/a/b/c|preserve|pnpm --dir frontend e2e e2e/management/workspace-ui.spec.ts --grep header keeps',
+    'corepack|/a/b/c|preserve|pnpm e2e e2e/management/workspace-ui.spec.ts --grep header keeps|frontend',
   ])
   expect(
     result.calls.filter((line) =>
@@ -89,7 +92,7 @@ test('management runner separates functional cases from proxy contracts', () => 
   const result = run('management')
   expect(result.status).toBe(0)
   expect(result.calls.filter((line) => line.startsWith('corepack|'))).toEqual([
-    'corepack|/a/b/c|preserve|pnpm --dir frontend e2e --grep-invert @proxy e2e/management/workspace-ui.spec.ts --grep header keeps',
+    'corepack|/a/b/c|preserve|pnpm e2e --grep-invert @proxy e2e/management/workspace-ui.spec.ts --grep header keeps|frontend',
   ])
 })
 
@@ -100,4 +103,5 @@ test('management runner keeps all six proxy contract combinations', () => {
   const calls = result.calls.filter((line) => line.startsWith('corepack|'))
   expect(calls).toHaveLength(6)
   expect(calls.every((line) => line.includes(' e2e --grep @proxy '))).toBe(true)
+  expect(calls.every((line) => line.endsWith('|frontend'))).toBe(true)
 })
