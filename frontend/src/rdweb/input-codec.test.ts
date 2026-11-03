@@ -62,7 +62,7 @@ it('keeps semantic text atomic and Windows shortcuts releasable', () => {
     )[0]!.keyEvent?.chr,
   ).toBe(97)
 })
-// Windows Legacy會釋放暫加的modifier，明確down不能將自身家族列為暫加鍵。
+// 上游Legacy會釋放暫加的modifier，明確down不能將自身家族列為暫加鍵（Windows與Linux）。
 it.each<readonly [ControlName, Modifier, number]>([
   ['Control', 'Control', 4],
   ['RControl', 'Control', 74],
@@ -86,10 +86,9 @@ it.each<readonly [ControlName, Modifier, number]>([
     mode: 0,
     modifiers: [3, 63],
   })
+  // Linux上游Legacy同樣在事件尾放開暫加modifier（2026-11-03真機xev實測），故同樣排除自身家族。
   expect(encodeInput(intent, { ...meta, platform: 'linux' })[0]!.keyEvent?.modifiers).toEqual([
-    hbb.ControlKey[family],
-    3,
-    63,
+    3, 63,
   ])
 })
 // 去除自身家族仍需保留其它已按下家族，不把Ctrl+Shift誤變成單鍵。
@@ -137,6 +136,20 @@ it('sends Windows extended keys as E0 scan codes in Translate mode', () => {
     expect(encodeInput({ kind: 'key', key, down: true, modifiers: [] }, meta)[0]!.keyEvent).toEqual(
       { controlKey: hbb.ControlKey[key], down: true, press: false, mode: 0, modifiers: [] },
     )
+})
+// Linux 上游 Legacy 同樣在事件尾放開暫加 modifier：明確修飾鍵 down 不得帶自身家族，否則按住會被立即放開。
+it('omits the own modifier family on explicit Linux modifier down', () => {
+  const linux = { ...meta, platform: 'linux' as const, sas: false }
+  expect(
+    encodeInput(
+      { kind: 'key', key: 'Control', down: true, modifiers: ['Control', 'Shift', 'Alt'] },
+      linux,
+    )[0]!.keyEvent?.modifiers,
+  ).toEqual([29, 1])
+  expect(
+    encodeInput({ kind: 'key', key: 'Control', down: false, modifiers: ['Control'] }, linux)[0]!
+      .keyEvent?.modifiers,
+  ).toEqual([hbb.ControlKey.Control])
 })
 // 白名單每個 control key 都保留 enum 值與 up 語意。
 it('maps the complete control whitelist and ASCII virtual punctuation', () => {

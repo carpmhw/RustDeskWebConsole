@@ -132,10 +132,11 @@ export function encodeInput(v: InputIntent, meta: PeerInputMetadata): hbb.IMessa
           },
         },
       ]
-    // Windows Legacy會在事件尾放開暫加modifier；明確down的自身家族不能被暫加。
+    // 上游Legacy（Windows與Linux皆然）會在事件尾放開暫加modifier；明確down的自身家族不能被暫加，
+    // 否則按住的修飾鍵會被立即放開（Linux真機xev實測）。
     const own = EXPLICIT_MODIFIER_FAMILY[v.key]
     const keyMods =
-      meta.platform === 'windows' && v.down && own
+      v.down && own
         ? mods.filter(
             /* 只排除自身家族，保留其它快捷鍵與lock狀態。 */ (m) => m !== hbb.ControlKey[own],
           )
