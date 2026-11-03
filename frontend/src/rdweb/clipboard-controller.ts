@@ -161,6 +161,8 @@ export class ClipboardController {
         return
       }
       if (op.epoch !== this.epoch || op.signal.aborted) return
+      // 本機沒有文字不送空字串，避免意外清空遠端剪貼簿。
+      if (!value) throw new Error('clipboard_empty')
       bytes = utf8(value, L.clipboard, 'clipboard_too_large')
       value = ''
       await this.wait(this.bridge.push(bytes, op.signal), op.signal)

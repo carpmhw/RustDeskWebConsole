@@ -252,6 +252,15 @@ it('rejects malformed or oversized local text without sending', async () => {
     f.c.dispose()
   }
 })
+// 本機剪貼簿沒有文字時不送空字串清掉遠端剪貼簿，只提示 clipboard_empty，不開 fallback。
+it('reports an empty local clipboard without sending', async () => {
+  const f = fixture()
+  f.port.readText.mockResolvedValueOnce('')
+  await f.c.sendLocal()
+  expect(f.bridge.push).not.toHaveBeenCalled()
+  expect(f.values.at(-1)).toMatchObject({ busy: false, fallback: 'none', code: 'clipboard_empty' })
+  f.c.dispose()
+})
 // API 拒絕只能明確手動 fallback，editor 不重讀 native 或延長 30 秒。
 it('keeps a fixed manual-send lease and does not submit stale valid text after invalid editing', async () => {
   const f = fixture()
