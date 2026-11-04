@@ -1,0 +1,180 @@
+diff --git a/esm/index.mjs b/esm/index.mjs
+index 5d3c01b4130fdc4cdba432b9643bbd2a1ee04226..9cabd2be3e52728c93db1d1f71e6aeba007dbbf6 100644
+--- a/esm/index.mjs
++++ b/esm/index.mjs
+@@ -111,6 +111,9 @@ var rzfh = function (dat, w) {
+             e: ws,
+             o: new i32(buf.buffer, 0, 3),
+             u: fss,
++            // 區分 FCS=0 與沒有 FCS，追蹤已完成的真輸出／有效歷史。
++            f: fsb != 0,
++            p: 0,
+             c: cc,
+             m: Math.min(131072, ws)
+         };
+@@ -398,6 +401,9 @@ var rzb = function (dat, st, out) {
+     var sz = (b0 >> 3) | (dat[bt + 1] << 5) | (dat[bt + 2] << 13);
+     // end byte for block
+     var ebt = (bt += 3) + sz;
++    // raw／RLE 不能超過 frame block 容量或 caller 的剩餘輸出。
++    if (btype < 2 && (sz > st.m || (out && sz > out.length - st.y)))
++        err(0);
+     if (btype == 1) {
+         if (bt >= dat.length)
+             return;
+@@ -442,6 +448,9 @@ var rzb = function (dat, st, out) {
+         ++bt;
+         // add literals to end - can never overlap with backreferences because unused literals always appended
+         var buf = out ? out.subarray(st.y, st.y + st.m) : new u8(st.m);
++        // literal 配置前驗精確額度，禁止 fill／slice 默默截斷。
++        if (lss > buf.length)
++            err(0);
+         // starting point for literals
+         var spl = buf.length - lss;
+         if (lbt == 0)
+@@ -542,6 +551,13 @@ var rzb = function (dat, st, out) {
+                     else
+                         off = st.o[0];
+                 }
++                // sequence 讀寫前驗 literal 剩餘量與真輸出容量。
++                if (!Number.isSafeInteger(ll) || !Number.isSafeInteger(ml) || ll < 0 || ml < 0 ||
++                    ll > buf.length - spl || ll + ml > buf.length - oubt)
++                    err(0);
++                // offset 只可引用當前已解碼 bytes 或已完成的 frame 歷史。
++                if (!Number.isSafeInteger(off) || off < 1 || off > oubt + ll + (out ? st.y : st.p))
++                    err(0);
+                 for (var i = 0; i < ll; ++i) {
+                     buf[oubt + i] = buf[spl + i];
+                 }
+@@ -550,6 +566,9 @@ var rzb = function (dat, st, out) {
+                 if (stin < 0) {
+                     var len = -stin;
+                     var bs = st.e + stin;
++                    // 指向 window 外的歷史不可被 undefined 轉為零 byte。
++                    if (bs < 0)
++                        err(0);
+                     if (len > ml)
+                         len = ml;
+                     for (var i = 0; i < len; ++i) {
+@@ -563,6 +582,9 @@ var rzb = function (dat, st, out) {
+                 oubt += ml;
+             }
+             if (oubt != spl) {
++                // 最後未使用 literal 亦須驗額，不能在尾端默默丟失。
++                if (buf.length - spl > buf.length - oubt)
++                    err(0);
+                 while (spl < buf.length) {
+                     buf[oubt++] = buf[spl++];
+                 }
+@@ -631,6 +653,10 @@ export function decompress(dat, buf) {
+                 var blk = rzb(dat, st, buf);
+                 if (!blk)
+                     err(5);
++                // one-shot 同樣驗 frame 真長度，不信任預配置 FCS buffer。
++                st.p = buf ? st.y : st.p + blk.length;
++                if (st.f && (st.p > st.u || (st.l && st.p != st.u)))
++                    err(0);
+                 if (buf)
+                     st.e = st.y;
+                 else {
+@@ -733,6 +759,10 @@ var Decompress = /*#__PURE__*/ (function () {
+                     return;
+                 }
+                 else {
++                    // 結果 callback 之前驗真輸出，末 block 必須恰等 FCS。
++                    this.s.p += blk.length;
++                    if (this.s.f && (this.s.p > this.s.u || (this.s.l && this.s.p != this.s.u)))
++                        err(0);
+                     this.ondata(blk, false);
+                     cpw(this.s.w, 0, blk.length);
+                     this.s.w.set(blk, this.s.w.length - blk.length);
+diff --git a/lib/index.js b/lib/index.js
+index fc3a45d5dbf22d7512203c714019b0a8eb130ee6..cf78b1c965b182e6b89d3ea24b8166ed9cfc642a 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -112,6 +112,9 @@ var rzfh = function (dat, w) {
+             e: ws,
+             o: new i32(buf.buffer, 0, 3),
+             u: fss,
++            // 區分 FCS=0 與沒有 FCS，追蹤已完成的真輸出／有效歷史。
++            f: fsb != 0,
++            p: 0,
+             c: cc,
+             m: Math.min(131072, ws)
+         };
+@@ -399,6 +402,9 @@ var rzb = function (dat, st, out) {
+     var sz = (b0 >> 3) | (dat[bt + 1] << 5) | (dat[bt + 2] << 13);
+     // end byte for block
+     var ebt = (bt += 3) + sz;
++    // raw／RLE 不能超過 frame block 容量或 caller 的剩餘輸出。
++    if (btype < 2 && (sz > st.m || (out && sz > out.length - st.y)))
++        err(0);
+     if (btype == 1) {
+         if (bt >= dat.length)
+             return;
+@@ -443,6 +449,9 @@ var rzb = function (dat, st, out) {
+         ++bt;
+         // add literals to end - can never overlap with backreferences because unused literals always appended
+         var buf = out ? out.subarray(st.y, st.y + st.m) : new u8(st.m);
++        // literal 配置前驗精確額度，禁止 fill／slice 默默截斷。
++        if (lss > buf.length)
++            err(0);
+         // starting point for literals
+         var spl = buf.length - lss;
+         if (lbt == 0)
+@@ -543,6 +552,13 @@ var rzb = function (dat, st, out) {
+                     else
+                         off = st.o[0];
+                 }
++                // sequence 讀寫前驗 literal 剩餘量與真輸出容量。
++                if (!Number.isSafeInteger(ll) || !Number.isSafeInteger(ml) || ll < 0 || ml < 0 ||
++                    ll > buf.length - spl || ll + ml > buf.length - oubt)
++                    err(0);
++                // offset 只可引用當前已解碼 bytes 或已完成的 frame 歷史。
++                if (!Number.isSafeInteger(off) || off < 1 || off > oubt + ll + (out ? st.y : st.p))
++                    err(0);
+                 for (var i = 0; i < ll; ++i) {
+                     buf[oubt + i] = buf[spl + i];
+                 }
+@@ -551,6 +567,9 @@ var rzb = function (dat, st, out) {
+                 if (stin < 0) {
+                     var len = -stin;
+                     var bs = st.e + stin;
++                    // 指向 window 外的歷史不可被 undefined 轉為零 byte。
++                    if (bs < 0)
++                        err(0);
+                     if (len > ml)
+                         len = ml;
+                     for (var i = 0; i < len; ++i) {
+@@ -564,6 +583,9 @@ var rzb = function (dat, st, out) {
+                 oubt += ml;
+             }
+             if (oubt != spl) {
++                // 最後未使用 literal 亦須驗額，不能在尾端默默丟失。
++                if (buf.length - spl > buf.length - oubt)
++                    err(0);
+                 while (spl < buf.length) {
+                     buf[oubt++] = buf[spl++];
+                 }
+@@ -632,6 +654,10 @@ function decompress(dat, buf) {
+                 var blk = rzb(dat, st, buf);
+                 if (!blk)
+                     err(5);
++                // one-shot 同樣驗 frame 真長度，不信任預配置 FCS buffer。
++                st.p = buf ? st.y : st.p + blk.length;
++                if (st.f && (st.p > st.u || (st.l && st.p != st.u)))
++                    err(0);
+                 if (buf)
+                     st.e = st.y;
+                 else {
+@@ -735,6 +761,10 @@ var Decompress = /*#__PURE__*/ (function () {
+                     return;
+                 }
+                 else {
++                    // 結果 callback 之前驗真輸出，末 block 必須恰等 FCS。
++                    this.s.p += blk.length;
++                    if (this.s.f && (this.s.p > this.s.u || (this.s.l && this.s.p != this.s.u)))
++                        err(0);
+                     this.ondata(blk, false);
+                     cpw(this.s.w, 0, blk.length);
+                     this.s.w.set(blk, this.s.w.length - blk.length);

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>false</SelfContained>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
+    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

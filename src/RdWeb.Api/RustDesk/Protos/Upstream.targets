@@ -1,0 +1,23 @@
+<Project>
+  <PropertyGroup>
+    <UpstreamProtoDirectory>$(MSBuildProjectDirectory)/obj/upstream-protos</UpstreamProtoDirectory>
+    <UpstreamProtoUrl>https://raw.githubusercontent.com/rustdesk/hbb_common/334641686c731631fc51524bb2aa2ec2773069ee/protos</UpstreamProtoUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <Protobuf Include="$(UpstreamProtoDirectory)/rendezvous.proto" ProtoRoot="$(UpstreamProtoDirectory)" GrpcServices="None" />
+    <Protobuf Include="$(UpstreamProtoDirectory)/message.proto" ProtoRoot="$(UpstreamProtoDirectory)" GrpcServices="None" />
+  </ItemGroup>
+  <!-- 保留完整上游規格，只快取到 obj；每次建置皆驗證固定 SHA-256。 -->
+  <Target Name="FetchPinnedRustDeskProtos" BeforeTargets="PrepareForBuild">
+    <DownloadFile SourceUrl="$(UpstreamProtoUrl)/rendezvous.proto" DestinationFolder="$(UpstreamProtoDirectory)" Condition="!Exists('$(UpstreamProtoDirectory)/rendezvous.proto')" Retries="2" />
+    <DownloadFile SourceUrl="$(UpstreamProtoUrl)/message.proto" DestinationFolder="$(UpstreamProtoDirectory)" Condition="!Exists('$(UpstreamProtoDirectory)/message.proto')" Retries="2" />
+    <GetFileHash Files="$(UpstreamProtoDirectory)/rendezvous.proto" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="RendezvousHash" />
+    </GetFileHash>
+    <GetFileHash Files="$(UpstreamProtoDirectory)/message.proto" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="MessageHash" />
+    </GetFileHash>
+    <Error Condition="'$(RendezvousHash)' != '98C7C047761BBD7151B72D249F9E58479CC345827335589A1F5285C27AB1A469'" Text="上游 rendezvous.proto SHA-256 不符，拒絕生成協定程式碼。" />
+    <Error Condition="'$(MessageHash)' != '963CB7B27752EDF7C200F563607FDBEF76E1792951CBB4BB21D72508435F08EB'" Text="上游 message.proto SHA-256 不符，拒絕生成協定程式碼。" />
+  </Target>
+</Project>

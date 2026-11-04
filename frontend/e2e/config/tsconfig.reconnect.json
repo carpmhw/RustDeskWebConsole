@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"], "allowImportingTsExtensions": true },
+  "include": [
+    "../../src/env.d.ts",
+    "../real/reconnect-proxy*.ts",
+    "../real/reconnect-fixtures.ts",
+    "../real/reconnect-longrun*.ts",
+    "../real/reconnect-ingress*.ts",
+    "../real/console-reconnect*.ts",
+    "../real/clipboard-oracle.ts",
+    "../real/console-reliability.spec.ts",
+    "../real/input-diagnostics.ts",
+    "../real/input-fixtures.ts",
+    "../real/input-peer.ts",
+    "../real/reliability-results.ts",
+    "../real/windows-fixtures.ts",
+    "../real/windows-runtime.ts",
+    "../proxy/**/*.ts",
+    "vitest.reconnect-proxy.config.ts",
+    "playwright.reconnect*.config.ts",
+    "playwright.reliability.config.ts"
+  ]
+}

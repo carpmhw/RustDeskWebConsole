@@ -1,0 +1,22 @@
+[
+  {
+    "name": "ascii",
+    "plain": "Public RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\nPublic RdWeb clipboard fixture\n",
+    "bytes": 992,
+    "compressed": "KLUv/WDgAj0BAPhQdWJsaWMgUmRXZWIgY2xpcGJvYXJkIGZpeHR1cmUKAQD7FpVyAg==",
+    "sha256": "dab3a6820a859663080ac73f37d716480981a8ca3748f8979487739fcc427ac0",
+    "engine": "libzstd",
+    "version": "1.5.5",
+    "level": 3
+  },
+  {
+    "name": "unicode",
+    "plain": "公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n公開繁體中文剪貼簿測試\n",
+    "bytes": 2176,
+    "compressed": "KLUv/WCAB10BACQC5YWs6ZaL57mB6auU5Lit5paH5Ymq6LK857C/5ris6KmmCgEA2kLx1RM=",
+    "sha256": "62522c7c7ed54c8a146a73e12b64818807a0c2827072afe2e77a14586e3458cc",
+    "engine": "libzstd",
+    "version": "1.5.5",
+    "level": 3
+  }
+]

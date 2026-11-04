@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"] },
+  "include": [
+    "../../src/env.d.ts",
+    "../receiver/**/*.ts",
+    "../real/test-receiver-control.ts",
+    "../real/test-receiver-scenario.ts",
+    "../real/console-test-receiver.spec.ts",
+    "playwright.test-receiver.config.ts",
+    "vitest.receiver.config.ts"
+  ]
+}

@@ -1,0 +1,29 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.cs]
+indent_size = 4
+dotnet_sort_system_directives_first = true
+csharp_style_namespace_declarations = file_scoped:warning
+
+[*.{csproj,props}]
+indent_size = 2
+
+[**/Migrations/*.cs]
+charset = utf-8-bom
+csharp_style_namespace_declarations = block_scoped:silent
+
+# Windows PowerShell 5.1對含繁體中文的host腳本必須以BOM識別UTF-8，避免ANSI解碼吞換行。
+[frontend/e2e/scripts/{windows-host-observer,windows-host-observer-supervisor,windows-host-observer-fixture,test-windows-host-observer,test-windows-host-supervisor,test-windows-host-lifecycle,measure-windows-editor-geometry,windows-host-editor,windows-host-editor-identity,calibrate-windows-host-editor,calibrate-windows-host-watchdog}.ps1]
+charset = utf-8-bom
+
+# 新receiver入口同樣由PS5.1直接執行，含繁中註解／字串時必須保留UTF-8 BOM。
+[frontend/e2e/scripts/{start-windows-test-receiver,test-windows-test-receiver}.ps1]
+charset = utf-8-bom

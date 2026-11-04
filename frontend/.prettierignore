@@ -1,0 +1,12 @@
+pnpm-lock.yaml
+dist
+node_modules
+test-results
+playwright-report
+src/rdweb/generated
+e2e/receiver/generated
+.cache
+# NuGet 產生的鎖檔保留工具原格式；.NET 建置輸出不納入格式檢查
+**/packages.lock.json
+**/bin/
+**/obj/

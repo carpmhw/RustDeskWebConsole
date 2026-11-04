@@ -1,0 +1,9 @@
+minimumReleaseAgeExclude:
+  - '@playwright/test@1.64.0'
+  - playwright-core@1.64.0
+  - playwright@1.64.0
+patchedDependencies:
+  fzstd@0.1.1: patches/fzstd@0.1.1.patch
+# 2026-10-21 Task17：jsdoc 的 dev-only markdown-it 14.3.2 有 high／low advisory，固定到修補版。
+overrides:
+  markdown-it: 14.3.3

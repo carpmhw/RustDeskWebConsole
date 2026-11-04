@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>false</SelfContained>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
+    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/RdWeb.Receiver.NativeSupervisor.Core.csproj" />
+    <ProjectReference Include="../Windows/RdWeb.Receiver.NativeSupervisor.Windows.csproj" />
+    <ProjectReference Include="../Baseline/RdWeb.Receiver.NativeBaseline.Windows.csproj" />
+  </ItemGroup>
+</Project>

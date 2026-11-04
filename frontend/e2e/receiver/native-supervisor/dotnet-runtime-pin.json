@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "version": "10.0.14",
+  "rid": "win-x64",
+  "channelMetadataUrl": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json",
+  "packages": [
+    {
+      "id": "Microsoft.NETCore.App.Runtime.win-x64",
+      "version": "10.0.14",
+      "metadataUrl": "https://api.nuget.org/v3/registration5-semver1/microsoft.netcore.app.runtime.win-x64/10.0.14.json",
+      "catalogUrl": "https://api.nuget.org/v3/catalog0/data/2026.10.25.17.31.05/microsoft.netcore.app.runtime.win-x64.10.0.14.json",
+      "packageUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.win-x64/10.0.14/microsoft.netcore.app.runtime.win-x64.10.0.14.nupkg",
+      "sha512": "mLWGagTP5n7nMfJQI2XpXRYgvPcnyYvAc8ZiDfum8ShM0UcrPDyfW4Lqo45UtlCHCucERUHQuMTI6ybVweCN9A==",
+      "licenseExpression": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/dotnet/dotnet",
+        "commit": "0427b9abbead3fa64c6655eb4290c537397131fa"
+      },
+      "license": {
+        "member": "LICENSE.TXT",
+        "sha256": "d7a68596ab69b06f51ca278a6545148e4269a9381c26d597c13df5d88e08cf5b"
+      },
+      "thirdPartyNotices": {
+        "member": "THIRD-PARTY-NOTICES.TXT",
+        "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21"
+      },
+      "runtimeList": {
+        "member": "data/RuntimeList.xml",
+        "sha256": "8014f30f93c243043f202e04cfeeb10be5e44399735cebe8451ee99478b67ea4"
+      }
+    },
+    {
+      "id": "Microsoft.NETCore.App.Host.win-x64",
+      "version": "10.0.14",
+      "metadataUrl": "https://api.nuget.org/v3/registration5-semver1/microsoft.netcore.app.host.win-x64/10.0.14.json",
+      "catalogUrl": "https://api.nuget.org/v3/catalog0/data/2026.10.25.17.30.18/microsoft.netcore.app.host.win-x64.10.0.14.json",
+      "packageUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.host.win-x64/10.0.14/microsoft.netcore.app.host.win-x64.10.0.14.nupkg",
+      "sha512": "Kn602fS/n6hsgpCW8HzykOu31D/oNrxhETNlgoou5yj7Zvvw9KWX3GnG7hevtm9R3VKdP1kPEfQ0Y3eo83YafQ==",
+      "licenseExpression": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/dotnet/dotnet",
+        "commit": "0427b9abbead3fa64c6655eb4290c537397131fa"
+      },
+      "license": {
+        "member": "LICENSE.TXT",
+        "sha256": "d7a68596ab69b06f51ca278a6545148e4269a9381c26d597c13df5d88e08cf5b"
+      },
+      "thirdPartyNotices": {
+        "member": "THIRD-PARTY-NOTICES.TXT",
+        "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21"
+      }
+    }
+  ]
+}

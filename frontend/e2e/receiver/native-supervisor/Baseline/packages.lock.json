@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "rdweb.receiver.nativesupervisor.core": {
+        "type": "Project"
+      },
+      "rdweb.receiver.nativesupervisor.windows": {
+        "type": "Project",
+        "dependencies": {
+          "RdWeb.Receiver.NativeSupervisor.Core": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}
