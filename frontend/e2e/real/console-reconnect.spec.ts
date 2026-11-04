@@ -117,7 +117,10 @@ async function replaceAndRead(page: Page, fixture: InputFixture, expected: strin
     const a = windowsClickAnchor(fixture.editor, windowsClicks++ % 2)
     await clickRemote(page, a.x, a.y)
     await expect(page.getByTestId('console-input-active')).toBeVisible()
+    // 記事本點擊後套用Ctrl+A較慢；未生效時樣本會插入既有文字而非取代（2026-11-04第二組前綴實測），間隔見windows-timing。
+    await page.waitForTimeout(WINDOWS_CHORD_GAP_MS)
     await page.keyboard.press('Control+a')
+    await page.waitForTimeout(WINDOWS_CHORD_GAP_MS)
     await page.keyboard.insertText(expected)
     await page.waitForFunction(
       () => window.__rdwebInputDiagnostics?.snapshot().textExactSubmitted === true,
