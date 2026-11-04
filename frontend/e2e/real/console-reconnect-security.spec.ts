@@ -392,9 +392,22 @@ for (const change of ['revoked permission', 'deactivated user'] as const) {
       await waitForInputVideo(remote, fixture)
       if (change === 'revoked permission') await setGrants(fixture, token, [])
       else await api(fixture.context, `users/${operator.id}`, 'PATCH', { is_active: false }, token)
-      await expect(remote.locator('[data-error-code="access_revoked"]')).toBeVisible({
-        timeout: 10000,
-      })
+      try {
+        await expect(remote.locator('[data-error-code="access_revoked"]')).toBeVisible({
+          timeout: 10000,
+        })
+      } catch {
+        // 只回報原生close code與是否已被導向登入頁，不輸出URL、DOM或任何帳號資料。
+        const view = remote!
+        throw new Error(
+          'access_revoked_missing ' +
+            JSON.stringify({
+              closeCodes: await closeCodes(view),
+              loginRoute: new URL(view.url()).pathname.endsWith('/login'),
+              reconnecting: (await view.getByTestId('console-reconnect').count()) > 0,
+            }),
+        )
+      }
       await expect(remote.getByTestId('console-reconnect')).toHaveCount(0)
       await expect
         .poll(/* 後端政策關閉須直接觀測為原生1008。 */ () => closeCodes(remote!))
