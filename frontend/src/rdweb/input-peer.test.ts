@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest'
 import { assertInputPeer } from '../../e2e/real/input-peer'
 
-// 兩平台皆依最新核准基準驗收，不以子字串或版本缺省冒充匹配。
+// 各平台依各自核准基準驗收（Linux fixture 1.5.0、Windows 真機 1.5.1），不以子字串或版本缺省冒充匹配。
 it.each([
   ['linux', 'Linux · 1.5.0'],
-  ['windows', 'Windows · 1.5.0'],
-  ['windows', '  Windows · 1.5.0\n'],
+  ['windows', 'Windows · 1.5.1'],
+  ['windows', '  Windows · 1.5.1\n'],
 ] as const)('accepts only the approved peer for %s', (platform, metadata) => {
   expect(() => assertInputPeer(metadata, platform)).not.toThrow()
 })
@@ -13,8 +13,8 @@ it.each([
 // 誤分派另一平台或unknown peer時必須先拒絕，不能用版本匹配掩蓋。
 it.each([
   ['linux', 'Windows · 1.5.0'],
-  ['windows', 'Linux · 1.5.0'],
-  ['windows', 'NotWindows · 1.5.0'],
+  ['windows', 'Linux · 1.5.1'],
+  ['windows', 'NotWindows · 1.5.1'],
   ['linux', 'linux · 1.5.0'],
 ] as const)('rejects a mismatched platform for %s', (platform, metadata) => {
   expect(() => assertInputPeer(metadata, platform)).toThrow('input_peer_platform_mismatch')
@@ -32,6 +32,14 @@ it.each(['1.4.2', '1.6.0', '1.5.00', '11.5.0', '1.5.0-rc', '1.5.0+custom', '1.5.
     }
   },
 )
+
+// 平台基準互不通用：Linux 不接受 1.5.1、Windows 不再接受 1.5.0。
+it.each([
+  ['linux', 'Linux · 1.5.1'],
+  ['windows', 'Windows · 1.5.0'],
+] as const)('rejects the other platform baseline for %s', (platform, metadata) => {
+  expect(() => assertInputPeer(metadata, platform)).toThrow('input_peer_version_mismatch')
+})
 
 // 未取得完整安全摘要屬獨立固定診斷，不猜平台、版本或繼續點擊。
 it.each([null, '', ' ', 'Windows', 'Windows · ', 'Windows ·1.5.0'])(

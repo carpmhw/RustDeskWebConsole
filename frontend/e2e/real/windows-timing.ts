@@ -1,4 +1,4 @@
-// RustDesk 1.5.0 開源版受控端每個新連線都會讓連線管理視窗 windowOnTop 搶前景，授權 3 秒後才自動縮小
+// RustDesk 1.5.0／1.5.1 開源版受控端每個新連線都會讓連線管理視窗 windowOnTop 搶前景，授權 3 秒後才自動縮小
 // （flutter/lib/models/server_model.dart `_addTab`／`cmHiddenTimer`）；allow-hide-cm 僅 Pro／自訂 client 有效。
 // 這是第三方受控端 UI 的已知計時行為，不是放寬判定；等待後的第一次點擊即可把鍵盤焦點交回記事本。
 export const WINDOWS_CM_SETTLE_MS = 4000
