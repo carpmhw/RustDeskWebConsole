@@ -5,7 +5,8 @@ import { expect, request, type APIRequestContext, type Locator, type Page } from
 import { totpCode } from './totp'
 
 export const base = (process.env.APP_BASE_PATH ?? '/').replace(/\/$/, '')
-export const origin = 'http://127.0.0.1:18080'
+// 部署 E2E 經外層 HTTPS nginx 時由 runner 指定；其餘 suite 維持 dev ingress。
+export const origin = process.env.RDWEB_E2E_ORIGIN ?? 'http://127.0.0.1:18080'
 export const password = process.env.RDWEB_E2E_PASSWORD ?? ''
 export interface FixtureUser {
   id: string
@@ -93,7 +94,7 @@ export async function api<T>(
 export async function createFixture(
   role: 'viewer' | 'operator' | 'admin' = 'operator',
 ): Promise<{ user: FixtureUser; admin: Grant; context: APIRequestContext }> {
-  const context = await request.newContext()
+  const context = await request.newContext({ ignoreHTTPSErrors: origin.startsWith('https:') })
   const admin = await api<Grant>(context, 'auth/login', 'POST', {
     username: process.env.RDWEB_E2E_USERNAME,
     password,
