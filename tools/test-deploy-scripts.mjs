@@ -153,6 +153,7 @@ function opsFixture(root) {
   *" cp backend:"*) eval "last=\\\${$#}"; : > "$last"; exit \${STUB_CP_EXIT:-0} ;;
   *" run "*" restore "*) exit \${STUB_RESTORE_EXIT:-0} ;;
   *" up -d"*) exit \${STUB_UP_EXIT:-0} ;;
+  *" build"*) exit \${STUB_BUILD_EXIT:-0} ;;
 esac`,
   )
   stub(
@@ -319,14 +320,24 @@ test('update.sh runs fetch, backup, checkout, build and up in order', () => {
   })
 })
 
-// 啟動失敗時提示回到前一版本的指令。
-test('update.sh prints rollback command when services fail to become healthy', () => {
-  fixture((root) => {
-    const env = { ...opsFixture(root), STUB_UP_EXIT: '1', RDWEB_BACKUP_DIR: join(root, 'backups') }
-    const result = runScript(root, 'update.sh', ['v1.0.0'], { env })
-    assert.equal(result.status, 1)
-    assert.match(result.stderr, /update\.sh v0\.9\.0/)
-  })
+// 建置或啟動失敗時，提示「切回前一版本 → 重新建置 → 以更新前備份離線還原」的完整順序與實際備份路徑。
+test('update.sh prints rollback steps with the pre-update backup on failure', () => {
+  for (const failure of ['STUB_BUILD_EXIT', 'STUB_UP_EXIT']) {
+    fixture((root) => {
+      const backups = join(root, 'backups')
+      const env = { ...opsFixture(root), [failure]: '1', RDWEB_BACKUP_DIR: backups }
+      const result = runScript(root, 'update.sh', ['v1.0.0'], { env })
+      assert.equal(result.status, 1, failure)
+      const [backup] = readdirSync(backups)
+      assert.ok(backup, failure)
+      const checkout = result.stderr.indexOf('checkout -q v0.9.0')
+      const build = result.stderr.indexOf(' build', checkout)
+      const restore = result.stderr.indexOf(
+        `restore.sh --yes --skip-backup ${join(backups, backup)}`,
+      )
+      assert.ok(checkout >= 0 && build > checkout && restore > build, result.stderr)
+    })
+  }
 })
 
 // 額外 compose 檔依序疊加在 compose.yml 之後，供主機自訂設定或 E2E 使用。
@@ -357,7 +368,10 @@ test('backup.sh twice within the same second creates two files', () => {
 test('prod data volume mounts the app-owned directory created by the image', () => {
   const compose = readFileSync('deploy/prod/compose.yml', 'utf8')
   const dockerfile = readFileSync('deploy/dev/Dockerfile.api', 'utf8')
-  assert.match(dockerfile, /mkdir -p \/app\/data && chown app:app \/app\/data && chmod 700 \/app\/data/)
+  assert.match(
+    dockerfile,
+    /mkdir -p \/app\/data && chown app:app \/app\/data && chmod 700 \/app\/data/,
+  )
   assert.match(compose, /^\s+- rdweb-data:\/app\/data$/m)
   assert.match(compose, /^\s+DATA_PATH: \/app\/data\/app\.db$/m)
   const backup = readFileSync('deploy/prod/backup.sh', 'utf8')

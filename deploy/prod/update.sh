@@ -6,19 +6,34 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib.sh"
 
-# 依序執行更新步驟；任一步失敗即停止，啟動失敗時提示回到前一版本。
+# 切換版本後失敗時，輸出回到前一版本的完整順序：先切回並重建舊映像，再以更新前備份離線還原
+# （新版可能已升級資料庫 schema，舊程式不能直接沿用）。
+rollback_hint() {
+  printf '%s\n' '更新失敗，服務可能未正常運作。回到前一版本請依序執行：' \
+    "  sudo git -C $repo checkout -q $previous" \
+    "  sudo docker compose -p $RDWEB_PROJECT -f $SCRIPT_DIR/compose.yml --env-file $RDWEB_CONF build" \
+    "  sudo sh $SCRIPT_DIR/restore.sh --yes --skip-backup $backup" >&2
+}
+
+# 依序執行更新步驟；任一步失敗即停止，切換版本後的失敗一律提示回滾步驟。
 main() {
   [ $# -eq 1 ] || fail '用法：sudo sh update.sh <tag>'
   tag=$1
-  repo=$SCRIPT_DIR/../..
+  repo=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
   [ -z "$(git -C "$repo" status --porcelain)" ] || fail '工作樹有未提交的修改，拒絕更新。'
   git -C "$repo" fetch --tags
   git -C "$repo" rev-parse -q --verify "refs/tags/$tag^{commit}" >/dev/null || fail "找不到 tag $tag。"
   previous=$(git -C "$repo" describe --tags --exact-match 2>/dev/null || git -C "$repo" rev-parse HEAD)
-  sh "$SCRIPT_DIR/backup.sh" "$RDWEB_BACKUP_DIR" || fail '更新前備份失敗，未變更版本。' 1
+  report=$(sh "$SCRIPT_DIR/backup.sh" "$RDWEB_BACKUP_DIR") || fail '更新前備份失敗，未變更版本。' 1
+  printf '%s\n' "$report"
+  # backup.sh 最後一行為「已備份：<路徑>（…）」，取出路徑供回滾提示使用。
+  backup=${report##*已備份：}
+  backup=${backup%%（*}
+  trap 'status=$?; if [ "$status" != 0 ]; then rollback_hint; fi' EXIT
   git -C "$repo" checkout -q "$tag"
-  compose build
-  compose_up || fail "服務未在時限內恢復健康。可回到前一版本：sudo sh $SCRIPT_DIR/update.sh $previous" 1
+  compose build || exit 1
+  compose_up || fail '服務未在時限內恢復健康。' 1
+  trap - EXIT
   printf '%s\n' "已更新到 $tag。"
 }
 
