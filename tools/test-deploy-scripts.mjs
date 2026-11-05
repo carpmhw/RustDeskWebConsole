@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -139,5 +140,191 @@ test('gen-secrets validates typed password', () => {
     assert.equal(result.status, 0, result.stderr)
     assert.equal(readFileSync(join(dir, 'bootstrap_admin_password'), 'utf8'), 'typed-password-ok')
     assert.ok(!result.stdout.includes('typed-password-ok'))
+  })
+})
+
+// 建立 docker／git 替身與設定檔；替身行為由環境變數控制，供維運腳本序列測試。
+function opsFixture(root) {
+  stub(
+    root,
+    'docker',
+    `case "$*" in
+  *" exec -T backend dotnet RdWeb.Api.dll backup "*) exit \${STUB_BACKUP_EXIT:-0} ;;
+  *" cp backend:"*) eval "last=\\\${$#}"; : > "$last"; exit \${STUB_CP_EXIT:-0} ;;
+  *" run "*" restore "*) exit \${STUB_RESTORE_EXIT:-0} ;;
+  *" up -d"*) exit \${STUB_UP_EXIT:-0} ;;
+esac`,
+  )
+  stub(
+    root,
+    'git',
+    `case "$*" in
+  *"status --porcelain"*) printf '%s' "\${STUB_GIT_DIRTY:-}" ;;
+  *"rev-parse"*"refs/tags/"*) exit \${STUB_TAG_EXIT:-0} ;;
+  *"describe"*) echo v0.9.0 ;;
+esac`,
+  )
+  stub(root, 'chown', 'exit 0')
+  const conf = join(root, 'rdweb.conf')
+  writeFileSync(conf, 'APP_PUBLIC_URL=https://example.test/\n')
+  return { RDWEB_CONF: conf }
+}
+
+// 只保留 docker／git 呼叫的子命令部分，方便比對順序。
+function sequence(root) {
+  return calls(root)
+    .filter((line) => line.startsWith('docker ') || line.startsWith('git '))
+    .map((line) => line.replace(/^docker compose -p rdweb -f \S+ --env-file \S+ /, 'compose '))
+}
+
+// backup 以 CLI 建立快照、複製到主機並設為 0600，最後清除容器內暫存。
+test('backup.sh snapshots, copies out with 0600 and removes container copy', () => {
+  fixture((root) => {
+    const env = opsFixture(root)
+    const out = join(root, 'backups')
+    const result = runScript(root, 'backup.sh', [out], { env })
+    assert.equal(result.status, 0, result.stderr)
+    const steps = sequence(root)
+    assert.match(
+      steps[0],
+      /^compose exec -T backend dotnet RdWeb\.Api\.dll backup \/data\/backups\/rdweb-\d{8}T\d{6}Z\.db$/,
+    )
+    const name = steps[0].split('/').pop()
+    assert.equal(steps[1], `compose cp backend:/data/backups/${name} ${join(out, name)}`)
+    assert.equal(steps[2], `compose exec -T backend rm -f /data/backups/${name}`)
+    assert.equal(statSync(join(out, name)).mode & 0o777, 0o600)
+  })
+})
+
+// CLI 備份失敗時以非 0 結束，且主機不留下檔案。
+test('backup.sh fails without leaving host file when CLI fails', () => {
+  fixture((root) => {
+    const env = { ...opsFixture(root), STUB_BACKUP_EXIT: '1' }
+    const out = join(root, 'backups')
+    const result = runScript(root, 'backup.sh', [out], { env })
+    assert.notEqual(result.status, 0)
+    assert.equal(
+      sequence(root).some((step) => step.includes(' cp ')),
+      false,
+    )
+    assert.equal(existsSync(out) ? readdirSync(out).length : 0, 0)
+  })
+})
+
+// 未確認時不動任何服務。
+test('restore.sh does nothing without confirmation', () => {
+  fixture((root) => {
+    const env = opsFixture(root)
+    const file = join(root, 'a.db')
+    writeFileSync(file, 'x')
+    const result = runScript(root, 'restore.sh', [file], { env, input: 'no\n' })
+    assert.equal(result.status, 1)
+    assert.deepEqual(sequence(root), [])
+  })
+})
+
+// 還原順序：先備份現況、停止、以唯讀掛載執行 restore、再啟動並等待健康。
+test('restore.sh backs up, stops, restores read-only and starts again', () => {
+  fixture((root) => {
+    const env = { ...opsFixture(root), RDWEB_BACKUP_DIR: join(root, 'backups') }
+    const file = join(root, 'a.db')
+    writeFileSync(file, 'x')
+    const result = runScript(root, 'restore.sh', ['--yes', file], { env })
+    assert.equal(result.status, 0, result.stderr)
+    const steps = sequence(root)
+    assert.match(steps[0], /backup \/data\/backups\//)
+    const stop = steps.indexOf('compose stop')
+    assert.ok(stop > 0)
+    assert.match(
+      steps[stop + 1],
+      /^compose run --rm --no-deps -T -v \S+:\/restore\.db:ro backend restore \/restore\.db$/,
+    )
+    assert.equal(steps[stop + 2], 'compose up -d --wait --wait-timeout 120')
+    assert.ok(calls(root).some((line) => /^chown 1654:1654 /.test(line)))
+  })
+})
+
+// restore 回 3（備份較新於目前程式）時仍重新啟動原服務並以 3 結束。
+test('restore.sh restarts services and exits 3 on newer schema', () => {
+  fixture((root) => {
+    const env = {
+      ...opsFixture(root),
+      STUB_RESTORE_EXIT: '3',
+      RDWEB_BACKUP_DIR: join(root, 'backups'),
+    }
+    const file = join(root, 'a.db')
+    writeFileSync(file, 'x')
+    const result = runScript(root, 'restore.sh', ['--yes', file], { env })
+    assert.equal(result.status, 3)
+    assert.match(result.stderr, /較新/)
+    assert.equal(sequence(root).at(-1), 'compose up -d --wait --wait-timeout 120')
+  })
+})
+
+// 工作樹不乾淨或 tag 不存在時拒絕更新，且不備份、不切換版本。
+test('update.sh refuses dirty tree and unknown tag', () => {
+  fixture((root) => {
+    const env = opsFixture(root)
+    const dirty = runScript(root, 'update.sh', ['v1.0.0'], {
+      env: { ...env, STUB_GIT_DIRTY: ' M file' },
+    })
+    assert.equal(dirty.status, 2)
+    const unknown = runScript(root, 'update.sh', ['v9.9.9'], {
+      env: { ...env, STUB_TAG_EXIT: '1' },
+    })
+    assert.equal(unknown.status, 2)
+    assert.equal(
+      sequence(root).some((step) => step.startsWith('compose') || step.includes('checkout')),
+      false,
+    )
+  })
+})
+
+// 成功更新序列為 fetch → backup → checkout → build → up；備份失敗則不 checkout。
+test('update.sh runs fetch, backup, checkout, build and up in order', () => {
+  fixture((root) => {
+    const env = { ...opsFixture(root), RDWEB_BACKUP_DIR: join(root, 'backups') }
+    const result = runScript(root, 'update.sh', ['v1.0.0'], { env })
+    assert.equal(result.status, 0, result.stderr)
+    const steps = sequence(root)
+    const index = (pattern) => steps.findIndex((step) => pattern.test(step))
+    const order = [
+      index(/^git .*fetch --tags/),
+      index(/backup \/data\/backups\//),
+      index(/^git .*checkout -q v1\.0\.0$/),
+      index(/^compose build$/),
+      index(/^compose up -d --wait --wait-timeout 120$/),
+    ]
+    assert.ok(
+      order.every((value) => value >= 0),
+      JSON.stringify(steps),
+    )
+    assert.deepEqual(
+      [...order].sort((a, b) => a - b),
+      order,
+    )
+  })
+  fixture((root) => {
+    const env = {
+      ...opsFixture(root),
+      STUB_BACKUP_EXIT: '1',
+      RDWEB_BACKUP_DIR: join(root, 'backups'),
+    }
+    const result = runScript(root, 'update.sh', ['v1.0.0'], { env })
+    assert.notEqual(result.status, 0)
+    assert.equal(
+      sequence(root).some((step) => step.includes('checkout')),
+      false,
+    )
+  })
+})
+
+// 啟動失敗時提示回到前一版本的指令。
+test('update.sh prints rollback command when services fail to become healthy', () => {
+  fixture((root) => {
+    const env = { ...opsFixture(root), STUB_UP_EXIT: '1', RDWEB_BACKUP_DIR: join(root, 'backups') }
+    const result = runScript(root, 'update.sh', ['v1.0.0'], { env })
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /update\.sh v0\.9\.0/)
   })
 })

@@ -3,16 +3,9 @@
 # 用法：sudo sh gen-secrets.sh [--generate-password] [目錄（預設 /etc/rdweb/secrets）]
 # 已存在任一目標檔即拒絕，絕不覆寫；金鑰內容不輸出到終端。
 set -eu
-
-# 容器內 .NET aspnet 映像 app 使用者的 uid／gid（docker run --rm <api 映像> id app 確認）。
-APP_UID=1654
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib.sh"
 NAMES='secret_key vault_key bootstrap_admin_password'
-
-# 輸出固定錯誤訊息並以 exit 2 結束。
-fail() {
-  printf '%s\n' "$1" >&2
-  exit 2
-}
 
 generate_password=0
 dir=/etc/rdweb/secrets
