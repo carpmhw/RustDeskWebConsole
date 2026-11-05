@@ -13,8 +13,8 @@ services:
       APP_BASE_PATH: ${APP_BASE_PATH:-/}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:?請在 rdweb.conf 設定 APP_PUBLIC_URL}
       DATA_PATH: /app/data/app.db
-      # 只信任同一內部網路的 web 容器（ForwardLimit 固定 1）；外層 nginx 不直連 backend。
-      TRUSTED_PROXIES: ${RDWEB_SUBNET:-172.31.80.0/24}
+      # 只信任 web 容器的固定位址（ForwardLimit 固定 1）；同網路其他來源與外層 nginx 都不被信任。
+      TRUSTED_PROXIES: ${RDWEB_WEB_ADDRESS:-172.31.80.250}
       LOG_TIME_ZONE: ${LOG_TIME_ZONE:-UTC}
       VAULT_KEY_VERSION: ${VAULT_KEY_VERSION:-1}
       SECRET_KEY_FILE: /run/secrets/secret_key
@@ -62,7 +62,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
-    networks: [rdweb]
+    networks:
+      rdweb:
+        ipv4_address: ${RDWEB_WEB_ADDRESS:-172.31.80.250}
 secrets:
   secret_key:
     file: ${RDWEB_SECRETS_DIR:-/etc/rdweb/secrets}/secret_key

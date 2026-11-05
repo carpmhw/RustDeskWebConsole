@@ -13,6 +13,8 @@ OUTER_PROXY_ADDRESSES=172.31.80.1
 RDWEB_BIND=127.0.0.1:8080
 # compose 內部網路子網；與主機既有網路衝突時才修改（gateway 為此子網的 .1）。
 RDWEB_SUBNET=172.31.80.0/24
+# web 容器在內部網路的固定位址（須在 RDWEB_SUBNET 內）；backend 只信任此位址轉來的 X-Forwarded-For。
+RDWEB_WEB_ADDRESS=172.31.80.250
 
 # 秘密檔目錄（gen-secrets.sh 的輸出位置）。
 RDWEB_SECRETS_DIR=/etc/rdweb/secrets

@@ -377,3 +377,16 @@ test('prod data volume mounts the app-owned directory created by the image', () 
   const backup = readFileSync('deploy/prod/backup.sh', 'utf8')
   assert.doesNotMatch(backup, /[^p]\/data\/backups/)
 })
+
+// backend 只信任 web 容器的固定位址（不是整個子網），避免同網路其他來源偽造 X-Forwarded-For。
+test('backend trusts only the fixed web container address', () => {
+  const compose = readFileSync('deploy/prod/compose.yml', 'utf8')
+  const address = '${RDWEB_WEB_ADDRESS:-172.31.80.250}'
+  assert.ok(compose.includes(`TRUSTED_PROXIES: ${address}\n`))
+  assert.ok(compose.includes(`ipv4_address: ${address}\n`))
+  assert.ok(!/TRUSTED_PROXIES: \$\{RDWEB_SUBNET/.test(compose))
+  assert.match(
+    readFileSync('deploy/prod/rdweb.conf.example', 'utf8'),
+    /^RDWEB_WEB_ADDRESS=172\.31\.80\.250$/m,
+  )
+})

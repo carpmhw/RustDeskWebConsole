@@ -1,6 +1,7 @@
-# 只在首次啟動時疊加，建立初始管理員（已有 admin 時不覆寫）：
-# docker compose -p rdweb -f compose.yml -f compose.bootstrap.yml --env-file /etc/rdweb/rdweb.conf up -d
-# 之後一律只用 compose.yml；首次登入並更改密碼後即可刪除 bootstrap_admin_password 檔。
+# 只用於首次安裝的一次性指令，建立初始管理員（已有 admin 時不覆寫）：
+# docker compose -p rdweb -f compose.yml -f compose.bootstrap.yml --env-file /etc/rdweb/rdweb.conf \
+#   run --rm --no-deps backend bootstrap create-admin
+# 不可用於 up：長駐容器會持續掛載密碼檔，刪檔後重啟即無法啟動。服務一律只用 compose.yml 啟動。
 services:
   backend:
     environment:

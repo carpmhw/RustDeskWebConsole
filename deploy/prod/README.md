@@ -14,7 +14,7 @@
 - 資料：SQLite 資料庫在 named volume `rdweb_rdweb-data`（容器內 `/app/data/app.db`）。
 - 秘密：`secret_key`、`vault_key`、`bootstrap_admin_password` 以 Docker secrets 檔案掛載到 `/run/secrets`，不放在環境變數值、映像或命令列。
 - 兩個容器都以非 root 執行、去除全部 Linux capability；backend 使用唯讀根檔案系統。
-- web 只綁 `127.0.0.1:8080`（可調），由既有 nginx 轉入；backend 不對外發布。
+- web 只綁 `127.0.0.1:8080`（可調），由既有 nginx 轉入；backend 不對外發布，且只信任 web 容器固定位址（`RDWEB_WEB_ADDRESS`）轉來的用戶端 IP。
 
 ## 需求
 
@@ -65,14 +65,17 @@
 
    依提示輸入兩次初始管理員密碼（至少 12 字元）；或加 `--generate-password` 由腳本產生並只顯示一次。之後請**另外離線保存 `vault_key`**：遺失後已加密的 TOTP 與目標密碼將無法解開，資料庫備份也無法單獨還原這些資料。
 
-4. 首次啟動（疊加 `compose.bootstrap.yml` 建立初始管理員，帳號為 `rdweb.conf` 的 `BOOTSTRAP_ADMIN_USERNAME`）：
+4. 建置映像、建立初始管理員（一次性指令，帳號為 `rdweb.conf` 的 `BOOTSTRAP_ADMIN_USERNAME`），再啟動服務：
 
    ```sh
+   sudo docker compose -p rdweb -f deploy/prod/compose.yml --env-file /etc/rdweb/rdweb.conf build
    sudo docker compose -p rdweb -f deploy/prod/compose.yml -f deploy/prod/compose.bootstrap.yml \
-     --env-file /etc/rdweb/rdweb.conf up -d --build --wait --wait-timeout 300
+     --env-file /etc/rdweb/rdweb.conf run --rm --no-deps backend bootstrap create-admin
+   sudo docker compose -p rdweb -f deploy/prod/compose.yml --env-file /etc/rdweb/rdweb.conf \
+     up -d --wait --wait-timeout 300
    ```
 
-   首次建置需下載映像與套件，時間較長。之後的啟動與更新一律只用 `compose.yml`（腳本已處理），已有管理員時不會覆寫。
+   首次建置需下載映像與套件，時間較長。建立管理員的指令成功時不輸出內容（結束碼 0），已有管理員時不會覆寫。`compose.bootstrap.yml` 只用於這一次的 `run`，不要拿來 `up`：長駐容器會持續掛載密碼檔，之後刪檔再重啟就無法啟動。
 
 5. 設定外層 nginx（下一節），重新載入 nginx，以瀏覽器開啟 `APP_PUBLIC_URL` 登入。
 
@@ -213,7 +216,7 @@ rdweb-compose run --rm --no-deps \
 | 頁面空白或資源 404                            | 外層 nginx 的 `__BASE__` 與 `APP_BASE_PATH` 不一致，或根目錄部署未刪除「子路徑專用」行。                                  |
 | 登入或連線一律被拒（HTTP 403）                | 瀏覽器網址與 `APP_PUBLIC_URL`（協定、網域、port）不一致；後端以此檢查 Origin。                                            |
 | 遠端畫面連不上、立即斷線                      | 外層 nginx 缺少 WebSocket 升級標頭或逾時設定；伺服器為私網位址卻未勾選允許私網；Docker 主機連不到 hbbs／hbbr。            |
-| 啟動時報子網衝突                              | 修改 `RDWEB_SUBNET`（並同步 `OUTER_PROXY_ADDRESSES` 的 gateway 位址）。                                                   |
+| 啟動時報子網衝突                              | 修改 `RDWEB_SUBNET`，並同步 `RDWEB_WEB_ADDRESS`（須在新子網內）與 `OUTER_PROXY_ADDRESSES` 的 gateway 位址。               |
 
 ## 其他反向代理的必要條件（未驗證）
 

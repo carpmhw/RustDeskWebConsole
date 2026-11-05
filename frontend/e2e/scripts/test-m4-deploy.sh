@@ -75,6 +75,7 @@ APP_BASE_PATH=$APP_BASE_PATH
 OUTER_PROXY_ADDRESSES=172.31.81.10
 RDWEB_BIND=127.0.0.1:18081
 RDWEB_SUBNET=172.31.81.0/24
+RDWEB_WEB_ADDRESS=172.31.81.250
 RDWEB_SECRETS_DIR=$work/secrets
 LOG_TIME_ZONE=UTC
 DEFAULT_DISPLAY_TIME_ZONE=Asia/Taipei
@@ -86,9 +87,10 @@ EOF
     deploy_owned=1
     if [[ "$first" == 1 ]]; then
       "${deploy[@]}" --env-file "$RDWEB_CONF" build backend web
-      # 首次啟動依文件疊加 compose.bootstrap.yml 建立初始管理員。
+      # 依文件以一次性 run 疊加 compose.bootstrap.yml 建立初始管理員，再刪除密碼檔；之後重啟仍須健康。
       docker compose -p "$project" -f deploy/prod/compose.yml -f deploy/prod/compose.bootstrap.yml -f "$override" \
-        --env-file "$RDWEB_CONF" up -d --wait --wait-timeout 120
+        --env-file "$RDWEB_CONF" run --rm --no-deps backend bootstrap create-admin
+      sudo -n rm "$work/secrets/bootstrap_admin_password"
       first=0
     fi
     "${deploy[@]}" --env-file "$RDWEB_CONF" up -d --wait --wait-timeout 120 --force-recreate

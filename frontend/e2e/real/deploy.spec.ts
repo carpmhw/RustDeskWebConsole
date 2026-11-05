@@ -292,12 +292,14 @@ test('real client ip reaches audit and spoofed forwarding is ignored', async () 
   expect(probeLogin(viaOuter, false)).toBe('401')
   expect(probeLogin(viaOuter, true)).toBe('401')
   expect(probeLogin(`http://web:8080${base}/api/v1/auth/login`, true)).toBe('401')
-  // 稽核由背景佇列寫入；以條件輪詢等待三筆皆落地後再判定。
+  // backend 只信任 web 容器；同網路其他來源直連 backend 帶 XFF 也不得被採信。
+  expect(probeLogin('http://backend:8080/api/v1/auth/login', true)).toBe('401')
+  // 稽核由背景佇列寫入；以條件輪詢等待四筆皆落地後再判定。
   await expect
     .poll(
       () => {
-        const sources = failedLoginSources(3)
-        return sources.length === 3 && sources.every((source) => probeIp.test(source))
+        const sources = failedLoginSources(4)
+        return sources.length === 4 && sources.every((source) => probeIp.test(source))
       },
       { timeout: 30000 },
     )
@@ -367,9 +369,13 @@ test('backup and restore round trip', async () => {
 // 映像與容器環境不含秘密值、不帶秘密類檔案，且兩個服務都以非 root 執行。
 test('images carry no secrets', () => {
   test.skip(!lifecycle, '生命週期案例只在 /rdweb preserve 執行')
-  const secrets = ['secret_key', 'vault_key', 'bootstrap_admin_password'].map((name) =>
-    execFileSync('sudo', ['-n', 'cat', join(work, 'secrets', name)], { encoding: 'utf8' }).trim(),
-  )
+  // 初始密碼檔已依文件在首次建立管理員後刪除，改用 runner 程序內的同一密碼比對。
+  const secrets = [
+    ...['secret_key', 'vault_key'].map((name) =>
+      execFileSync('sudo', ['-n', 'cat', join(work, 'secrets', name)], { encoding: 'utf8' }).trim(),
+    ),
+    password,
+  ]
   const leaks = (text: string) => secrets.some((secret) => text.includes(secret))
   for (const [service, image, dirs] of [
     ['backend', 'rdweb-backend:local', ['/app']],
