@@ -1,0 +1,12 @@
+# 只在首次啟動時疊加，建立初始管理員（已有 admin 時不覆寫）：
+# docker compose -p rdweb -f compose.yml -f compose.bootstrap.yml --env-file /etc/rdweb/rdweb.conf up -d
+# 之後一律只用 compose.yml；首次登入並更改密碼後即可刪除 bootstrap_admin_password 檔。
+services:
+  backend:
+    environment:
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:?請在 rdweb.conf 設定 BOOTSTRAP_ADMIN_USERNAME}
+      BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/bootstrap_admin_password
+    secrets: [secret_key, vault_key, bootstrap_admin_password]
+secrets:
+  bootstrap_admin_password:
+    file: ${RDWEB_SECRETS_DIR:-/etc/rdweb/secrets}/bootstrap_admin_password

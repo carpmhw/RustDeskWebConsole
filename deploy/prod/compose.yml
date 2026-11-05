@@ -1,0 +1,77 @@
+# RustDesk Web Console 正式部署（兩容器，以 compose 專案整體操作）。
+# 一律搭配非秘密設定檔：docker compose -p rdweb -f compose.yml --env-file /etc/rdweb/rdweb.conf ...
+# 秘密只以 Docker secrets 檔案掛載至 /run/secrets，不進環境變數值、映像或命令列。
+name: rdweb
+services:
+  backend:
+    image: rdweb-backend:local
+    build:
+      context: ../..
+      dockerfile: deploy/dev/Dockerfile.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      APP_BASE_PATH: ${APP_BASE_PATH:-/}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?請在 rdweb.conf 設定 APP_PUBLIC_URL}
+      DATA_PATH: /data/app.db
+      # 只信任同一內部網路的 web 容器（ForwardLimit 固定 1）；外層 nginx 不直連 backend。
+      TRUSTED_PROXIES: ${RDWEB_SUBNET:-172.31.80.0/24}
+      LOG_TIME_ZONE: ${LOG_TIME_ZONE:-UTC}
+      VAULT_KEY_VERSION: ${VAULT_KEY_VERSION:-1}
+      SECRET_KEY_FILE: /run/secrets/secret_key
+      VAULT_KEY_FILE: /run/secrets/vault_key
+      TZ: UTC
+    secrets: [secret_key, vault_key]
+    volumes:
+      - rdweb-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, dotnet, RdWeb.Api.dll, healthcheck]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [rdweb]
+  web:
+    image: rdweb-web:local
+    build:
+      context: ../..
+      dockerfile: deploy/dev/Dockerfile.web
+    environment:
+      APP_BASE_PATH: ${APP_BASE_PATH:-/}
+      DEFAULT_DISPLAY_TIME_ZONE: ${DEFAULT_DISPLAY_TIME_ZONE:-Asia/Taipei}
+      # 外層 nginx 連入 web 時的來源位址／CIDR；只有這些來源的 X-Forwarded-For 會被採信。
+      OUTER_PROXY_ADDRESSES: ${OUTER_PROXY_ADDRESSES:?請在 rdweb.conf 設定 OUTER_PROXY_ADDRESSES}
+    ports:
+      - ${RDWEB_BIND:-127.0.0.1:8080}:8080
+    # web 不設 read_only：entrypoint 於啟動時把 base path 寫入 index.html 與 config.js（與 dev 同一映像、已驗收行為），
+    # 改為唯讀需變更靜態檔服務路徑，留待後續；仍以非 root（nginx 使用者）、去除全部 capability 執行。
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --output, /dev/null, http://127.0.0.1:8080/]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [rdweb]
+secrets:
+  secret_key:
+    file: ${RDWEB_SECRETS_DIR:-/etc/rdweb/secrets}/secret_key
+  vault_key:
+    file: ${RDWEB_SECRETS_DIR:-/etc/rdweb/secrets}/vault_key
+volumes:
+  rdweb-data:
+networks:
+  # 不設 internal：backend 需連到另一台主機上的 hbbs／hbbr。
+  rdweb:
+    ipam:
+      config:
+        - subnet: ${RDWEB_SUBNET:-172.31.80.0/24}

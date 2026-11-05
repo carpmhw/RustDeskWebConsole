@@ -1,0 +1,27 @@
+# RustDesk Web Console 正式部署的非秘密設定（複製到 /etc/rdweb/rdweb.conf 後修改）。
+# 此檔不得放任何金鑰或密碼；秘密由 gen-secrets.sh 產生於 RDWEB_SECRETS_DIR。
+
+# 使用者在瀏覽器看到的完整網址（含子路徑），須與 APP_BASE_PATH 一致。
+APP_PUBLIC_URL=https://remote.example.com/rdweb
+# 對外子路徑；掛在網域根目錄時設為 /。
+APP_BASE_PATH=/rdweb
+
+# 外層 nginx 連入 web 容器時的來源位址／CIDR（逗號分隔，不得為 0.0.0.0/0 或 ::/0）。
+# 外層 nginx 在同一台主機並連 127.0.0.1:8080 時，來源為 compose 網路的 gateway（預設 172.31.80.1）。
+OUTER_PROXY_ADDRESSES=172.31.80.1
+# web 對主機發布的位址與 port；外層 nginx 在同一台主機時維持只綁 127.0.0.1。
+RDWEB_BIND=127.0.0.1:8080
+# compose 內部網路子網；與主機既有網路衝突時才修改（gateway 為此子網的 .1）。
+RDWEB_SUBNET=172.31.80.0/24
+
+# 秘密檔目錄（gen-secrets.sh 的輸出位置）。
+RDWEB_SECRETS_DIR=/etc/rdweb/secrets
+# 目前 vault_key 的版本號；執行 rotate-key 後依文件調整。
+VAULT_KEY_VERSION=1
+
+# log 時區（預設 UTC）與頁面預設顯示時區。
+LOG_TIME_ZONE=UTC
+DEFAULT_DISPLAY_TIME_ZONE=Asia/Taipei
+
+# 首次啟動疊加 compose.bootstrap.yml 時建立的初始管理員帳號（密碼在秘密目錄）。
+BOOTSTRAP_ADMIN_USERNAME=admin
