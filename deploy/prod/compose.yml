@@ -12,7 +12,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       APP_BASE_PATH: ${APP_BASE_PATH:-/}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:?請在 rdweb.conf 設定 APP_PUBLIC_URL}
-      DATA_PATH: /data/app.db
+      DATA_PATH: /app/data/app.db
       # 只信任同一內部網路的 web 容器（ForwardLimit 固定 1）；外層 nginx 不直連 backend。
       TRUSTED_PROXIES: ${RDWEB_SUBNET:-172.31.80.0/24}
       LOG_TIME_ZONE: ${LOG_TIME_ZONE:-UTC}
@@ -22,7 +22,8 @@ services:
       TZ: UTC
     secrets: [secret_key, vault_key]
     volumes:
-      - rdweb-data:/data
+      # 掛在映像預先建立、屬於 app 的目錄；新 volume 會繼承其擁有者與 0700 權限。
+      - rdweb-data:/app/data
     read_only: true
     tmpfs:
       - /tmp

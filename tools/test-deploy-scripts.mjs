@@ -187,11 +187,11 @@ test('backup.sh snapshots, copies out with 0600 and removes container copy', () 
     const steps = sequence(root)
     assert.match(
       steps[0],
-      /^compose exec -T backend dotnet RdWeb\.Api\.dll backup \/data\/backups\/rdweb-\d{8}T\d{6}Z-\d+\.db$/,
+      /^compose exec -T backend dotnet RdWeb\.Api\.dll backup \/app\/data\/backups\/rdweb-\d{8}T\d{6}Z-\d+\.db$/,
     )
     const name = steps[0].split('/').pop()
-    assert.equal(steps[1], `compose cp backend:/data/backups/${name} ${join(out, name)}`)
-    assert.equal(steps[2], `compose exec -T backend rm -f /data/backups/${name}`)
+    assert.equal(steps[1], `compose cp backend:/app/data/backups/${name} ${join(out, name)}`)
+    assert.equal(steps[2], `compose exec -T backend rm -f /app/data/backups/${name}`)
     assert.equal(statSync(join(out, name)).mode & 0o777, 0o600)
   })
 })
@@ -232,7 +232,7 @@ test('restore.sh backs up, stops, restores read-only and starts again', () => {
     const result = runScript(root, 'restore.sh', ['--yes', file], { env })
     assert.equal(result.status, 0, result.stderr)
     const steps = sequence(root)
-    assert.match(steps[0], /backup \/data\/backups\//)
+    assert.match(steps[0], /backup \/app\/data\/backups\//)
     const stop = steps.indexOf('compose stop')
     assert.ok(stop > 0)
     assert.match(
@@ -290,7 +290,7 @@ test('update.sh runs fetch, backup, checkout, build and up in order', () => {
     const index = (pattern) => steps.findIndex((step) => pattern.test(step))
     const order = [
       index(/^git .*fetch --tags/),
-      index(/backup \/data\/backups\//),
+      index(/backup \/app\/data\/backups\//),
       index(/^git .*checkout -q v1\.0\.0$/),
       index(/^compose build$/),
       index(/^compose up -d --wait --wait-timeout 120$/),
@@ -351,4 +351,15 @@ test('backup.sh twice within the same second creates two files', () => {
     assert.equal(runScript(root, 'backup.sh', [out], { env }).status, 0)
     assert.equal(readdirSync(out).length, 2)
   })
+})
+
+// 新 named volume 只會繼承映像內既有目錄的擁有者；資料目錄必須是 Dockerfile 預先建立且屬於 app 的路徑。
+test('prod data volume mounts the app-owned directory created by the image', () => {
+  const compose = readFileSync('deploy/prod/compose.yml', 'utf8')
+  const dockerfile = readFileSync('deploy/dev/Dockerfile.api', 'utf8')
+  assert.match(dockerfile, /mkdir -p \/app\/data && chown app:app \/app\/data && chmod 700 \/app\/data/)
+  assert.match(compose, /^\s+- rdweb-data:\/app\/data$/m)
+  assert.match(compose, /^\s+DATA_PATH: \/app\/data\/app\.db$/m)
+  const backup = readFileSync('deploy/prod/backup.sh', 'utf8')
+  assert.doesNotMatch(backup, /[^p]\/data\/backups/)
 })

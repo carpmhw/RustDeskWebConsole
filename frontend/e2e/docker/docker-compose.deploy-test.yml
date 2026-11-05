@@ -5,7 +5,7 @@ services:
     volumes:
       - type: bind
         source: ${RDWEB_M4_DATA_DIR:?}
-        target: /data
+        target: /app/data
     networks: [rdweb, official-rustdesk]
   outer:
     image: nginx:stable-bookworm@sha256:552e7481ca93ffccd046aa658dbbed22caefbc09c66fa7cd247cbb90b8a5c609
