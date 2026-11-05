@@ -13,6 +13,8 @@ http {
   map $http_upgrade $connection_upgrade { default upgrade; '' close; }
   server {
     listen 8080;
+    # 正式部署由 OUTER_PROXY_ADDRESSES 產生 realip 設定；之後 $remote_addr 即真實用戶端，dev 未設定時為空。
+    ${REAL_IP_CONFIG}
     root /usr/share/nginx/html;
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;
