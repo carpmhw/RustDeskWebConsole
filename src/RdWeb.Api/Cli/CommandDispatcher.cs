@@ -27,7 +27,11 @@ public static class CommandDispatcher
             return await BootstrapCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().AddSecretFiles(Environment.GetEnvironmentVariables()).Build());
         if (args is ["rotate-key"])
             return await RotateKeyCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().AddSecretFiles(Environment.GetEnvironmentVariables()).Build());
-        Console.Error.WriteLine("用法：spikes | healthcheck | bootstrap create-admin | rotate-key | --urls <listen-url>");
+        if (args is ["backup", var backupPath])
+            return await BackupCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build(), backupPath, Console.Out);
+        if (args is ["restore", var restorePath])
+            return await RestoreCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build(), restorePath, Console.Out);
+        Console.Error.WriteLine("用法：spikes | healthcheck | bootstrap create-admin | rotate-key | backup <輸出檔> | restore <備份檔> | --urls <listen-url>");
         return 2;
     }
 }
