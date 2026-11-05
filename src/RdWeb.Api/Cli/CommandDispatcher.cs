@@ -28,9 +28,9 @@ public static class CommandDispatcher
         if (args is ["rotate-key"])
             return await RotateKeyCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().AddSecretFiles(Environment.GetEnvironmentVariables()).Build());
         if (args is ["backup", var backupPath])
-            return await BackupCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build(), backupPath, Console.Out);
+            return await BackupCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build(), backupPath, Console.Out, Console.Error);
         if (args is ["restore", var restorePath])
-            return await RestoreCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build(), restorePath, Console.Out);
+            return await RestoreCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build(), restorePath, Console.Out, Console.Error);
         Console.Error.WriteLine("用法：spikes | healthcheck | bootstrap create-admin | rotate-key | backup <輸出檔> | restore <備份檔> | --urls <listen-url>");
         return 2;
     }

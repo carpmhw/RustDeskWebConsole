@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace RdWeb.Api.Cli;
@@ -24,6 +25,21 @@ internal static class SqliteSnapshotFile
         await connection.OpenAsync();
         return connection;
     }
+
+    // 錯誤輸出只寫固定分類，讓維運者判斷原因而不回顯路徑、資料或低層訊息。
+    public static Task WriteFailureAsync(TextWriter error, string reason) =>
+        error.WriteLineAsync(JsonSerializer.Serialize(new { status = "error", reason }));
+
+    // 依例外型別歸類失敗原因；SQLITE_NOTADB（26）代表來源不是 SQLite 資料庫。
+    public static string Classify(Exception exception) => exception switch
+    {
+        SqliteException { SqliteErrorCode: 26 } => "not_sqlite",
+        SqliteException => "sqlite",
+        InvalidDataException => "integrity",
+        IOException or UnauthorizedAccessException => "io",
+        InvalidOperationException => "configuration",
+        _ => "unexpected",
+    };
 
     // 完整性檢查通過時回傳最後一筆 migration；檢查失敗或無 migration 紀錄回 null。
     public static async Task<string?> VerifyAsync(SqliteConnection connection)

@@ -43,20 +43,30 @@ public sealed class BackupRestoreTests : IDisposable
         return await database.Users.AnyAsync(user => user.Username == username);
     }
 
-    // 執行 backup 並回傳結束碼與輸出。
-    private async Task<(int Code, string Output)> BackupAsync(string output)
+    // 執行 backup 並回傳結束碼、標準輸出與錯誤輸出。
+    private async Task<(int Code, string Output, string Error)> BackupAsync(string output)
     {
         using var writer = new StringWriter();
-        var code = await BackupCommand.RunAsync(Configuration(), output, writer);
-        return (code, writer.ToString());
+        using var error = new StringWriter();
+        var code = await BackupCommand.RunAsync(Configuration(), output, writer, error);
+        return (code, writer.ToString(), error.ToString());
     }
 
-    // 執行 restore 並回傳結束碼與輸出。
-    private async Task<(int Code, string Output)> RestoreAsync(string source)
+    // 執行 restore 並回傳結束碼、標準輸出與錯誤輸出。
+    private async Task<(int Code, string Output, string Error)> RestoreAsync(string source)
     {
         using var writer = new StringWriter();
-        var code = await RestoreCommand.RunAsync(Configuration(), source, writer);
-        return (code, writer.ToString());
+        using var error = new StringWriter();
+        var code = await RestoreCommand.RunAsync(Configuration(), source, writer, error);
+        return (code, writer.ToString(), error.ToString());
+    }
+
+    // 失敗時錯誤輸出只含固定分類，供維運者判斷原因且不回顯路徑或資料。
+    private static void AssertReason(string error, string reason)
+    {
+        using var json = JsonDocument.Parse(error);
+        Assert.Equal("error", json.RootElement.GetProperty("status").GetString());
+        Assert.Equal(reason, json.RootElement.GetProperty("reason").GetString());
     }
 
     // WAL 尚未 checkpoint 時，線上備份仍須包含已提交資料且完整性正確。
@@ -78,7 +88,7 @@ public sealed class BackupRestoreTests : IDisposable
         }
         Assert.True(new FileInfo(DataPath + "-wal").Length > 0);
         var output = Path.Combine(directory, "backups", "snapshot.db");
-        var (code, text) = await BackupAsync(output);
+        var (code, text, _) = await BackupAsync(output);
         Assert.Equal(0, code);
         Assert.True(await HasUserAsync(output, "wal-row"));
         using var json = JsonDocument.Parse(text);
@@ -94,14 +104,18 @@ public sealed class BackupRestoreTests : IDisposable
     public async Task BackupRefusesExistingOutputAndLeavesNoPartial()
     {
         var output = Path.Combine(directory, "snapshot.db");
-        Assert.Equal(1, (await BackupAsync(output)).Code);
+        var missing = await BackupAsync(output);
+        Assert.Equal(1, missing.Code);
+        AssertReason(missing.Error, "database_missing");
         Assert.False(File.Exists(output));
         Assert.False(File.Exists(output + ".partial"));
         Assert.False(File.Exists(DataPath));
 
         await DatabaseInitializer.InitializeAsync(new(DataPath));
         await File.WriteAllTextAsync(output, "keep");
-        Assert.Equal(1, (await BackupAsync(output)).Code);
+        var exists = await BackupAsync(output);
+        Assert.Equal(1, exists.Code);
+        AssertReason(exists.Error, "output_exists");
         Assert.Equal("keep", await File.ReadAllTextAsync(output));
         Assert.False(File.Exists(output + ".partial"));
     }
@@ -119,7 +133,7 @@ public sealed class BackupRestoreTests : IDisposable
         await File.WriteAllBytesAsync(DataPath + "-wal", []);
         await File.WriteAllBytesAsync(DataPath + "-shm", []);
 
-        var (code, text) = await RestoreAsync(output);
+        var (code, text, _) = await RestoreAsync(output);
         Assert.Equal(0, code);
         Assert.Equal("ok", JsonDocument.Parse(text).RootElement.GetProperty("status").GetString());
         Assert.False(File.Exists(DataPath + "-wal"));
@@ -145,7 +159,9 @@ public sealed class BackupRestoreTests : IDisposable
         }
         SqliteConnection.ClearAllPools();
         var before = await File.ReadAllBytesAsync(DataPath);
-        Assert.Equal(3, (await RestoreAsync(output)).Code);
+        var newer = await RestoreAsync(output);
+        Assert.Equal(3, newer.Code);
+        AssertReason(newer.Error, "schema_newer");
         Assert.Equal(before, await File.ReadAllBytesAsync(DataPath));
         Assert.False(File.Exists(DataPath + ".restore"));
     }
@@ -159,8 +175,13 @@ public sealed class BackupRestoreTests : IDisposable
         var corrupt = Path.Combine(directory, "corrupt.db");
         await File.WriteAllBytesAsync(corrupt, System.Security.Cryptography.RandomNumberGenerator.GetBytes(8192));
         var before = await File.ReadAllBytesAsync(DataPath);
-        Assert.Equal(1, (await RestoreAsync(corrupt)).Code);
-        Assert.Equal(1, (await RestoreAsync(Path.Combine(directory, "missing.db"))).Code);
+        var invalid = await RestoreAsync(corrupt);
+        Assert.Equal(1, invalid.Code);
+        AssertReason(invalid.Error, "not_sqlite");
+        Assert.DoesNotContain(directory, invalid.Error);
+        var absent = await RestoreAsync(Path.Combine(directory, "missing.db"));
+        Assert.Equal(1, absent.Code);
+        AssertReason(absent.Error, "source_missing");
         Assert.Equal(before, await File.ReadAllBytesAsync(DataPath));
         Assert.False(File.Exists(DataPath + ".restore"));
     }
