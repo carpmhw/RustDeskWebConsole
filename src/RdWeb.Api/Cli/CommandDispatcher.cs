@@ -1,3 +1,5 @@
+using RdWeb.Api.Configuration;
+
 namespace RdWeb.Api.Cli;
 
 public static class CommandDispatcher
@@ -22,9 +24,9 @@ public static class CommandDispatcher
             return await HealthcheckCommand.RunAsync(client);
         }
         if (args is ["bootstrap", "create-admin"])
-            return await BootstrapCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build());
+            return await BootstrapCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().AddSecretFiles(Environment.GetEnvironmentVariables()).Build());
         if (args is ["rotate-key"])
-            return await RotateKeyCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().Build());
+            return await RotateKeyCommand.RunAsync(new ConfigurationBuilder().AddEnvironmentVariables().AddSecretFiles(Environment.GetEnvironmentVariables()).Build());
         Console.Error.WriteLine("用法：spikes | healthcheck | bootstrap create-admin | rotate-key | --urls <listen-url>");
         return 2;
     }
