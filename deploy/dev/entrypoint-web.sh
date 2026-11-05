@@ -34,6 +34,7 @@ else
   sed "s|<base href=\"/\" />|<base href=\"${BASE}/\" />|" /usr/share/nginx/html/index.html > /tmp/index.html
   cp /tmp/index.html /usr/share/nginx/html/index.html
   printf 'window.RDWEB_CONFIG = {basePath:"%s",defaultDisplayTimeZone:"%s"};\n' "$BASE" "$DISPLAY_ZONE" > /usr/share/nginx/html/config.js
-  envsubst '${BASE}' < /etc/rdweb/nginx.conf.template > /tmp/nginx.conf
+  . /etc/rdweb/validate-outer-proxy.sh
+  envsubst '${BASE} ${REAL_IP_CONFIG}' < /etc/rdweb/nginx.conf.template > /tmp/nginx.conf
 fi
 exec nginx -c /tmp/nginx.conf -g 'daemon off;'

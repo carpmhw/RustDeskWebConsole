@@ -5,6 +5,7 @@
   <p>
     <a href="#功能">功能</a> ·
     <a href="#架構">架構</a> ·
+    <a href="#正式部署">正式部署</a> ·
     <a href="#快速啟動開發環境">快速啟動</a> ·
     <a href="#本機開發與驗證">本機開發</a>
   </p>
@@ -47,6 +48,10 @@ API（ASP.NET Core）── SQLite（正式資料）
 ```
 
 瀏覽器不會指定任意遠端主機；後端只連線至管理員設定並通過驗證的 RustDesk server。SQLite 為單一 API 執行個體設計；Redis 只替換短期 KV，不會讓 SQLite 支援多個 API 執行個體。
+
+## 正式部署
+
+在既有 Docker 主機與既有 nginx（HTTPS）後方長期部署、更新、備份與還原，見 [`deploy/prod/README.md`](deploy/prod/README.md)。
 
 ## 快速啟動（開發環境）
 

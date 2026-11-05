@@ -131,6 +131,7 @@ jobs:
           node --test frontend/e2e/scripts/test-linux-host-handoff.mjs
           node --test frontend/e2e/scripts/test-windows-host-watchdog.mjs
           node --test frontend/e2e/scripts/test-windows-editor-geometry.mjs
+          node --test tools/test-deploy-scripts.mjs tools/test-web-outer-proxy.mjs
   runtime:
     needs: changes
     if: needs.changes.outputs.mode == 'full'
@@ -189,6 +190,7 @@ jobs:
           - reconnect-longrun
           - reconnect-ingress
           - reliability
+          - deploy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -224,6 +226,8 @@ jobs:
               RDWEB_B3_MODES=preserve \
               bash frontend/e2e/scripts/test-m3b3-reliability.sh
               ;;
+            # 正式部署：單組含重啟、備份還原與映像秘密檢查；六組矩陣於本機發布前驗收執行。
+            deploy) RDWEB_M4_BASES=/rdweb RDWEB_M4_MODES=preserve bash frontend/e2e/scripts/test-m4-deploy.sh ;;
             *) exit 2 ;;
           esac
       - name: Cleanup suite containers
@@ -254,6 +258,7 @@ jobs:
         run: |
           (cd frontend && corepack pnpm exec vue-tsc --noEmit --project e2e/config/tsconfig.ui.json)
           (cd frontend && corepack pnpm exec tsc --project e2e/config/tsconfig.reconnect.json)
+          (cd frontend && corepack pnpm exec tsc --project e2e/config/tsconfig.deploy.json)
       - name: Public UI regression
         if: matrix.suite == 'ui'
         run: |

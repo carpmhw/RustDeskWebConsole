@@ -11,6 +11,7 @@ COPY --from=build /source/dist/ /usr/share/nginx/html/
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/nginx/html/
 COPY deploy/dev/nginx.conf.template deploy/dev/ingress.conf.template /etc/rdweb/
 COPY deploy/dev/entrypoint-web.sh /etc/rdweb/entrypoint.sh
+COPY deploy/dev/validate-outer-proxy.sh /etc/rdweb/validate-outer-proxy.sh
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx
 USER nginx
 EXPOSE 8080

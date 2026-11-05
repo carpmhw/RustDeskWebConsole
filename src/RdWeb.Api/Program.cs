@@ -14,6 +14,8 @@ public partial class Program
     {
         if (await CommandDispatcher.ExecuteAsync(args) is int exitCode) return exitCode;
         var builder = WebApplication.CreateBuilder(args);
+        // 秘密可由 Docker secrets 等 <NAME>_FILE 檔案提供，與同名環境變數互斥。
+        builder.Configuration.AddSecretFiles(Environment.GetEnvironmentVariables());
         // 延後至主機完成設定來源合併後才驗證設定，支援整合測試及外部主機覆寫。
         builder.Services.AddSingleton(services => AppOptions.FromConfiguration(services.GetRequiredService<IConfiguration>()));
         builder.Services.AddApplicationInfrastructure();
