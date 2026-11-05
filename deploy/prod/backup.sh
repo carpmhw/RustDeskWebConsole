@@ -6,7 +6,8 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib.sh"
 
 out=${1:-$RDWEB_BACKUP_DIR}
-name=rdweb-$(date -u +%Y%m%dT%H%M%SZ).db
+# 檔名以 UTC 時間開頭（字典序即時間序），加上程序編號避免同一秒內連續備份撞名。
+name=rdweb-$(date -u +%Y%m%dT%H%M%SZ)-$$.db
 [ ! -e "$out/$name" ] || fail "$out/$name 已存在。"
 compose exec -T backend dotnet RdWeb.Api.dll backup "/data/backups/$name" >/dev/null || fail '資料庫備份失敗。' 1
 # 不論複製成功與否都清除容器內暫存快照。

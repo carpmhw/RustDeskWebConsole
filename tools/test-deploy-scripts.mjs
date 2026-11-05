@@ -174,7 +174,7 @@ esac`,
 function sequence(root) {
   return calls(root)
     .filter((line) => line.startsWith('docker ') || line.startsWith('git '))
-    .map((line) => line.replace(/^docker compose -p rdweb -f \S+ --env-file \S+ /, 'compose '))
+    .map((line) => line.replace(/^docker compose -p rdweb --env-file \S+ -f \S+ /, 'compose '))
 }
 
 // backup 以 CLI 建立快照、複製到主機並設為 0600，最後清除容器內暫存。
@@ -187,7 +187,7 @@ test('backup.sh snapshots, copies out with 0600 and removes container copy', () 
     const steps = sequence(root)
     assert.match(
       steps[0],
-      /^compose exec -T backend dotnet RdWeb\.Api\.dll backup \/data\/backups\/rdweb-\d{8}T\d{6}Z\.db$/,
+      /^compose exec -T backend dotnet RdWeb\.Api\.dll backup \/data\/backups\/rdweb-\d{8}T\d{6}Z-\d+\.db$/,
     )
     const name = steps[0].split('/').pop()
     assert.equal(steps[1], `compose cp backend:/data/backups/${name} ${join(out, name)}`)
@@ -326,5 +326,29 @@ test('update.sh prints rollback command when services fail to become healthy', (
     const result = runScript(root, 'update.sh', ['v1.0.0'], { env })
     assert.equal(result.status, 1)
     assert.match(result.stderr, /update\.sh v0\.9\.0/)
+  })
+})
+
+// 額外 compose 檔依序疊加在 compose.yml 之後，供主機自訂設定或 E2E 使用。
+test('lib.sh appends RDWEB_COMPOSE_EXTRA files after compose.yml', () => {
+  fixture((root) => {
+    const env = { ...opsFixture(root), RDWEB_COMPOSE_EXTRA: '/x/a.yml /x/b.yml' }
+    assert.equal(runScript(root, 'backup.sh', [join(root, 'backups')], { env }).status, 0)
+    const first = calls(root).find((line) => line.startsWith('docker '))
+    assert.match(
+      first,
+      /^docker compose -p rdweb --env-file \S+ -f \S+\/compose\.yml -f \/x\/a\.yml -f \/x\/b\.yml exec /,
+    )
+  })
+})
+
+// 同一秒內連續備份（例如還原前自動備份緊接手動備份）不得因檔名相同而失敗。
+test('backup.sh twice within the same second creates two files', () => {
+  fixture((root) => {
+    const env = opsFixture(root)
+    const out = join(root, 'backups')
+    assert.equal(runScript(root, 'backup.sh', [out], { env }).status, 0)
+    assert.equal(runScript(root, 'backup.sh', [out], { env }).status, 0)
+    assert.equal(readdirSync(out).length, 2)
   })
 })
