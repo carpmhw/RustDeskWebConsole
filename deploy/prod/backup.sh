@@ -14,6 +14,6 @@ compose exec -T backend dotnet RdWeb.Api.dll backup "/app/data/backups/$name" >/
 trap 'compose exec -T backend rm -f "/app/data/backups/$name" >/dev/null 2>&1 || true' EXIT
 umask 077
 mkdir -p "$out"
-compose cp "backend:/app/data/backups/$name" "$out/$name" >/dev/null || { rm -f "$out/$name"; fail '複製備份檔失敗。' 1; }
+compose cp "backend:/app/data/backups/$name" "$out/$name" >/dev/null 2>&1 || { rm -f "$out/$name"; fail '複製備份檔失敗。' 1; }
 chmod 0600 "$out/$name"
 printf '%s\n' "已備份：$out/$name（不含金鑰，請另外保管 vault_key 與 secret_key）。"
