@@ -22,7 +22,11 @@ public sealed class AdminIntegrationTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", grant.GetProperty("access_token").GetString());
         using var users = await client.GetAsync("/api/v1/users");
         Assert.Equal(HttpStatusCode.OK, users.StatusCode);
-        Assert.DoesNotContain("password", await users.Content.ReadAsStringAsync());
+        // 列表每筆只能有安全欄位白名單，雜湊或密碼不得以任何欄位名稱出現。
+        var allowed = new[] { "id", "username", "email", "role", "is_active", "totp_enabled", "password_change_required" };
+        foreach (var listed in (await users.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray())
+            Assert.All(listed.EnumerateObject(), property => Assert.Contains(property.Name, allowed));
+        Assert.DoesNotContain(AuthIntegrationTests.Password, await users.Content.ReadAsStringAsync());
         using var disable = await client.PatchAsJsonAsync($"/api/v1/users/{id}", new { is_active = false });
         Assert.Equal(HttpStatusCode.Conflict, disable.StatusCode);
         using var policy = await client.PutAsJsonAsync("/api/v1/settings/security", new { require_mfa = "admins", password = AuthIntegrationTests.Password });

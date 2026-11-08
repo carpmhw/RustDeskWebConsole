@@ -61,6 +61,9 @@ export const useAuthStore = defineStore('auth', () => {
     // 重產使用後端二次驗證。
     regenerate: (proof: { password?: string; code?: string }, signal?: AbortSignal) =>
       session.regenerate(proof, signal),
+    // 本人變更密碼；密碼只作為當次參數，成功後由 session 採用換發的工作階段。
+    changePassword: (current: string, next: string, signal?: AbortSignal) =>
+      session.changePassword(current, next, signal),
     // 停用後由session清除認證。
     disable: (proof: { password?: string; code?: string }, signal?: AbortSignal) =>
       session.disable(proof, signal),

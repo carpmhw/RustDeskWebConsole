@@ -1,6 +1,13 @@
 import { request, type APIRequestContext, type Page, type Response } from '@playwright/test'
 import { test, expect } from './reconnect-fixtures'
-import { resetStack, password, base, api } from '../management/helpers/fixtures'
+import {
+  resetStack,
+  password,
+  base,
+  api,
+  createUser,
+  activateUser,
+} from '../management/helpers/fixtures'
 import { randomUUID } from 'node:crypto'
 import { closeCodes, installCloseCodeDiagnostics } from './close-code-diagnostics'
 import { createReconnectSecurityProbe } from './reconnect-security-probe'
@@ -91,6 +98,7 @@ test('wrong origin denied', async ({ reconnectCase, reconnectProxy }) => {
     base: base as '' | '/rdweb' | '/a/b/c',
   })
   try {
+    await activateUser(fixture.context, fixture.username)
     expect(await probe.login(fixture.username, password)).toEqual({ status: 200, code: 'none' })
     expect(await probe.refresh('wrong-origin')).toEqual({ status: 403, code: 'invalid_origin' })
     expect(await probe.wrongOriginUpgrade(fixture.targetId)).toEqual({
@@ -325,12 +333,11 @@ async function prepareOperatorTarget() {
     username: process.env.RDWEB_E2E_USERNAME,
     password,
   })
-  const operator = await api<{ id: string; username: string }>(
+  const operator = await createUser(
     fixture.context,
-    'users',
-    'POST',
-    { username: 'e2e-' + randomUUID().replaceAll('-', ''), password, role: 'operator' },
     admin.access_token,
+    'e2e-' + randomUUID().replaceAll('-', ''),
+    'operator',
   )
   await setGrants(fixture, admin.access_token, [
     {

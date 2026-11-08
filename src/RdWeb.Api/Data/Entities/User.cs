@@ -16,4 +16,5 @@ public sealed class User : Entity
     public int FailedLoginCount { get; set; }
     public DateTime? LockedUntil { get; set; }
     public DateTime? LastLoginAt { get; set; }
+    public bool PasswordChangeRequired { get; set; }
 }

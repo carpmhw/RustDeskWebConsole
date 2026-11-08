@@ -12,6 +12,7 @@ it('does not let a viewer open console routes', () => {
           role: 'viewer',
           totp_enabled: false,
           mfa_enrollment_required: false,
+          password_change_required: false,
         },
       },
       'console',
@@ -30,6 +31,7 @@ it('guards anonymous and MFA-restricted navigation', () => {
     role: 'admin' as const,
     totp_enabled: false,
     mfa_enrollment_required: true,
+    password_change_required: false,
   }
   expect(routeDecision({ phase: 'authenticated', user }, 'overview', true)).toBe('security')
   expect(routeDecision({ phase: 'authenticated', user }, 'security', true)).toBeNull()
@@ -46,9 +48,42 @@ it('limits server management navigation to administrators', () => {
     role: 'operator' as const,
     totp_enabled: false,
     mfa_enrollment_required: false,
+    password_change_required: false,
   }
   expect(routeDecision({ phase: 'authenticated', user }, 'servers', true)).toBe('overview')
   expect(
     routeDecision({ phase: 'authenticated', user: { ...user, role: 'admin' } }, 'servers', true),
   ).toBeNull()
+})
+
+// 必須改密碼時一律導到設定新密碼頁，優先於雙重驗證綁定；使用者管理只給管理員。
+it('locks password-change sessions and guards user management', () => {
+  const base = {
+    id: 'fixture',
+    username: 'fixture',
+    role: 'admin' as const,
+    totp_enabled: false,
+    mfa_enrollment_required: false,
+    password_change_required: true,
+  }
+  for (const target of ['overview', 'security', 'targets', 'users', 'servers'] as const)
+    expect(routeDecision({ phase: 'authenticated', user: base }, target, true)).toBe('password')
+  expect(routeDecision({ phase: 'authenticated', user: base }, 'password', true)).toBeNull()
+  const both = { ...base, mfa_enrollment_required: true }
+  expect(routeDecision({ phase: 'authenticated', user: both }, 'security', true)).toBe('password')
+  const mfaOnly = { ...base, password_change_required: false, mfa_enrollment_required: true }
+  expect(routeDecision({ phase: 'authenticated', user: mfaOnly }, 'overview', true)).toBe(
+    'security',
+  )
+  expect(routeDecision({ phase: 'authenticated', user: mfaOnly }, 'password', true)).toBe(
+    'security',
+  )
+  const clear = { ...base, password_change_required: false }
+  expect(routeDecision({ phase: 'authenticated', user: clear }, 'password', true)).toBe('overview')
+  expect(routeDecision({ phase: 'authenticated', user: clear }, 'users', true)).toBeNull()
+  for (const role of ['operator', 'viewer'] as const)
+    expect(routeDecision({ phase: 'authenticated', user: { ...clear, role } }, 'users', true)).toBe(
+      'overview',
+    )
+  expect(safeNext('users')).toBe('users')
 })

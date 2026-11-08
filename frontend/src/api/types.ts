@@ -4,6 +4,7 @@ export interface SessionUser {
   role: 'admin' | 'operator' | 'viewer'
   totp_enabled: boolean
   mfa_enrollment_required: boolean
+  password_change_required: boolean
 }
 export interface SessionGrant {
   access_token: string

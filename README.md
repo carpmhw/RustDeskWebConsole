@@ -14,11 +14,12 @@
 RustDesk Web Console 使用瀏覽器管理並連線至既有 RustDesk 受控端。前端以 Vue 3 建置，後端使用 ASP.NET Core；RustDesk hbbs／hbbr 仍由你自行部署與管理，本專案不取代 RustDesk server。
 
 > [!IMPORTANT]
-> 專案仍在開發中，尚未完成正式部署（M4）與發布（M5）。目前驗收過的受控端組合為 Windows 11（RustDesk 1.5.1）與 Linux X11（RustDesk 1.5.0），瀏覽器為 Chromium 與 Microsoft Edge；其他用戶端版本、作業系統與瀏覽器尚未驗證。
+> 專案仍在開發中：正式部署（M4）已完成，尚未發布（M5）。目前驗收過的受控端組合為 Windows 11（RustDesk 1.5.1）與 Linux X11（RustDesk 1.5.0），瀏覽器為 Chromium 與 Microsoft Edge；其他用戶端版本、作業系統與瀏覽器尚未驗證。
 
 ## 功能
 
 - 帳密登入、TOTP 多因素驗證與備援碼；支援管理員、操作員、檢視者角色。
+- 使用者管理（建立、停用、改角色、重設密碼與雙重驗證、雙重驗證政策）；管理員交付的初始密碼首次登入後必須變更，所有人可自行變更密碼；單一管理員可在主機以 `recover-admin` 救援。
 - 管理 RustDesk server（端點 port 依 TCP／WebSocket 預填預設值）、目標與存取控制清單（ACL）；目標密碼以後端 Vault 保護，敏感操作需重新驗證。
 - 瀏覽器遠端主控台提供即時影像、縮放、全螢幕、畫質選項與專注模式。
 - 遠端鍵鼠輸入：滑鼠左／右／中鍵、拖曳、雙向滾輪、常用功能鍵與快捷鍵，以及本機中文輸入法（組字時於畫面內顯示組字列）；Windows 受控端另提供 Ctrl+Alt+Del。

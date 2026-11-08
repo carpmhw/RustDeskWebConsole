@@ -40,13 +40,29 @@ public static class ServiceRegistration
     {
         _ = services.GetRequiredService<RuntimeOptions>();
         _ = services.GetRequiredService<KvOptions>();
+        var stage = "database";
         try
         {
             await DatabaseInitializer.InitializeAsync(services.GetRequiredService<DatabaseOptions>(), cancellationToken);
+            stage = "kv";
             var store = services.GetRequiredService<IKvStore>();
             await store.GetAsync("health:startup", cancellationToken);
             await store.ResetConnectionCountsAsync(cancellationToken);
         }
-        catch { throw new InvalidOperationException("應用儲存初始化失敗，請檢查資料目錄及 KV 設定。"); }
+        catch (Exception exception)
+        {
+            // 只輸出階段與例外分類，協助判斷資料目錄擁有者／權限或 KV 問題，不回顯路徑、連線字串或低層訊息。
+            var reason = exception switch
+            {
+                UnauthorizedAccessException => "permission",
+                Microsoft.Data.Sqlite.SqliteException => "sqlite",
+                IOException => "io",
+                RedisException => "redis",
+                // Redis 連線工廠失敗時已轉為不含連線字串的 InvalidOperationException。
+                InvalidOperationException when stage == "kv" => "redis",
+                _ => "unexpected",
+            };
+            throw new InvalidOperationException($"應用儲存初始化失敗（{stage}／{reason}），請檢查資料目錄擁有者與權限及 KV 設定。");
+        }
     }
 }

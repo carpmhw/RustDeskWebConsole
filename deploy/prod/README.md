@@ -79,11 +79,98 @@
 
 5. 設定外層 nginx（下一節），重新載入 nginx，以瀏覽器開啟 `APP_PUBLIC_URL` 登入。
 
-6. 首次登入後，到「帳號安全」綁定雙重驗證並更改密碼，然後刪除初始密碼檔：
+6. 首次登入後，到「帳號安全」綁定雙重驗證；需要時可在同頁「變更密碼」。然後刪除初始密碼檔：
 
    ```sh
    sudo rm /etc/rdweb/secrets/bootstrap_admin_password
    ```
+
+### 另一種方式：進入執行中的容器建立管理員
+
+已刪除密碼檔、或要在服務執行中手動補建管理員時，可進入 backend 容器執行同一指令。密碼在容器內以不回顯方式輸入，不要用 `exec -e BOOTSTRAP_ADMIN_PASSWORD=…`（密碼會留在主機命令列與 shell history）：
+
+```sh
+rdweb-compose exec -it backend sh
+```
+
+在容器內：
+
+```sh
+stty -echo; printf '密碼：'; read -r p; stty echo; echo
+BOOTSTRAP_ADMIN_USERNAME=admin BOOTSTRAP_ADMIN_PASSWORD="$p" dotnet RdWeb.Api.dll bootstrap create-admin; echo "exit=$?"
+unset p; exit
+```
+
+- `exit=0`：成功；已有管理員時也回 0，且不覆寫既有帳號。
+- `exit=1`：帳號（3–128 個英數字或 `._-`）或密碼（12–1024 字元）格式不符，或資料庫無法開啟。
+- `rdweb-compose` 別名見〈日常操作〉。
+
+### 資料改放主機指定目錄（選用）
+
+預設資料放在 Docker volume。若要改放主機目錄（例如 `/srv/rdweb/data`），請不要直接修改 `compose.yml`（受 git 追蹤，改了會讓 `update.sh` 因工作樹不乾淨而拒絕更新），改用 checkout 外的覆寫檔：
+
+1. 建立目錄，擁有者必須是容器使用者 1654、權限 0700（backend 會檢查並設定資料目錄權限，非擁有者會啟動失敗並顯示 `應用儲存初始化失敗（database／permission）`）：
+
+   ```sh
+   sudo install -d -o 1654 -g 1654 -m 0700 /srv/rdweb/data
+   ```
+
+2. 建立 `/etc/rdweb/compose.override.yml`：
+
+   ```yaml
+   services:
+     backend:
+       volumes:
+         - type: bind
+           source: /srv/rdweb/data
+           target: /app/data
+   ```
+
+   SELinux 主機（RHEL、Rocky、Fedora 等）需在 bind 加上 `bind: { selinux: Z }`；Ubuntu／Debian 不需要。
+
+3. 之後所有 compose 指令都加上 `-f /etc/rdweb/compose.override.yml`（放在 `-f …/compose.yml` 之後），例如別名改為：
+
+   ```sh
+   alias rdweb-compose='sudo docker compose -p rdweb -f /opt/rdweb/deploy/prod/compose.yml -f /etc/rdweb/compose.override.yml --env-file /etc/rdweb/rdweb.conf'
+   ```
+
+4. 維運腳本以 `RDWEB_COMPOSE_EXTRA` 指定覆寫檔。`sudo` 會清除環境變數，必須寫在 `sudo env` 之後，**每次都要帶**；漏帶時 `restore.sh` 會還原到預設 volume 而不是你的目錄：
+
+   ```sh
+   sudo env RDWEB_COMPOSE_EXTRA=/etc/rdweb/compose.override.yml sh /opt/rdweb/deploy/prod/backup.sh
+   sudo env RDWEB_COMPOSE_EXTRA=/etc/rdweb/compose.override.yml sh /opt/rdweb/deploy/prod/restore.sh <備份檔>
+   sudo env RDWEB_COMPOSE_EXTRA=/etc/rdweb/compose.override.yml sh /opt/rdweb/deploy/prod/update.sh <tag>
+   ```
+
+   首次安裝第 4 步的三個指令也要加上 `-f /etc/rdweb/compose.override.yml`。
+
+### 帳號與密碼管理
+
+- **同事帳號**：管理員在「使用者」頁新增帳號（可「自動產生」初始密碼，只顯示一次），以其他管道交給同事。被建立或被管理員重設密碼的帳號，首次登入後必須先設定新密碼才能使用其他功能。
+- **自己變更密碼**：任何角色都可在「帳號安全」頁的「變更密碼」輸入目前密碼與新密碼；完成後其他已登入的裝置會被登出。
+- **雙重驗證政策**：管理員在「使用者」頁設定「不要求／只要求管理員／要求所有人」，需再次驗證後立即生效。
+
+### 管理員忘記密碼或遺失雙重驗證裝置
+
+還有其他管理員時，請他在「使用者」頁重設你的密碼（及雙重驗證）。只有一位管理員時，在 Docker 主機上執行救援指令（能 `exec` 進容器即代表已具主機權限，網頁上沒有此功能）：
+
+```sh
+rdweb-compose exec -it backend sh
+```
+
+在容器內（新密碼以不回顯方式輸入，不會留在主機命令列或 shell history）：
+
+```sh
+stty -echo; printf '新密碼：'; read -r p; stty echo; echo
+RECOVER_ADMIN_PASSWORD="$p" dotnet RdWeb.Api.dll recover-admin <管理員帳號> --reset-totp; echo "exit=$?"
+unset p; exit
+```
+
+- 只重設密碼時省略 `--reset-totp`；加上時會同時清除驗證器與備援碼。
+- 成功輸出 `{"status":"ok","totp_reset":true}`（或 `false`），帳號會被重新啟用、所有登入工作階段失效，並要求下次登入後先設定新密碼；若系統要求雙重驗證，接著重新綁定。
+- 指令在服務之外執行，無法中斷**已在進行中的遠端連線**。若懷疑帳號外洩，完成後執行 `rdweb-compose restart backend` 立即中斷所有進行中的連線（其他使用者需重新連線）。
+- `exit=1` 時錯誤輸出為固定分類：`not_admin`（帳號不存在或不是管理員）、`invalid_password`（密碼須 12–1024 字元），或資料庫錯誤分類。
+- 密碼不可放在 `recover-admin` 的命令列參數；也可改用 `RECOVER_ADMIN_PASSWORD_FILE` 指向容器內的檔案。
 
 ## 外層 nginx
 
@@ -208,15 +295,16 @@ rdweb-compose run --rm --no-deps \
 
 ## 疑難排解
 
-| 現象                                          | 檢查                                                                                                                      |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `docker compose` 提示 `請在 rdweb.conf 設定…` | 指令缺少 `--env-file /etc/rdweb/rdweb.conf`，或設定檔缺少該項。                                                           |
-| backend 一直不健康                            | `rdweb-compose logs backend`；常見原因為秘密檔不存在、權限或擁有者不是 1654、`APP_PUBLIC_URL` 與 `APP_BASE_PATH` 不一致。 |
-| web 啟動即結束                                | `rdweb-compose logs web`；`OUTER_PROXY_ADDRESSES` 或 `APP_BASE_PATH` 格式不合法會直接拒絕啟動。                           |
-| 頁面空白或資源 404                            | 外層 nginx 的 `__BASE__` 與 `APP_BASE_PATH` 不一致，或根目錄部署未刪除「子路徑專用」行。                                  |
-| 登入或連線一律被拒（HTTP 403）                | 瀏覽器網址與 `APP_PUBLIC_URL`（協定、網域、port）不一致；後端以此檢查 Origin。                                            |
-| 遠端畫面連不上、立即斷線                      | 外層 nginx 缺少 WebSocket 升級標頭或逾時設定；伺服器為私網位址卻未勾選允許私網；Docker 主機連不到 hbbs／hbbr。            |
-| 啟動時報子網衝突                              | 修改 `RDWEB_SUBNET`，並同步 `RDWEB_WEB_ADDRESS`（須在新子網內）與 `OUTER_PROXY_ADDRESSES` 的 gateway 位址。               |
+| 現象                                          | 檢查                                                                                                                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker compose` 提示 `請在 rdweb.conf 設定…` | 指令缺少 `--env-file /etc/rdweb/rdweb.conf`，或設定檔缺少該項。                                                                                                                         |
+| backend 一直不健康                            | `rdweb-compose logs backend`；常見原因為秘密檔不存在、權限或擁有者不是 1654、`APP_PUBLIC_URL` 與 `APP_BASE_PATH` 不一致。                                                               |
+| `應用儲存初始化失敗（database／permission）`  | 資料目錄（改放主機目錄時）擁有者不是 1654 或無法寫入，執行 `sudo chown -R 1654:1654 <目錄> && sudo chmod 0700 <目錄>`。`database／sqlite` 表示資料庫檔損毀或不是 SQLite，請以備份還原。 |
+| web 啟動即結束                                | `rdweb-compose logs web`；`OUTER_PROXY_ADDRESSES` 或 `APP_BASE_PATH` 格式不合法會直接拒絕啟動。                                                                                         |
+| 頁面空白或資源 404                            | 外層 nginx 的 `__BASE__` 與 `APP_BASE_PATH` 不一致，或根目錄部署未刪除「子路徑專用」行。                                                                                                |
+| 登入或連線一律被拒（HTTP 403）                | 瀏覽器網址與 `APP_PUBLIC_URL`（協定、網域、port）不一致；後端以此檢查 Origin。                                                                                                          |
+| 遠端畫面連不上、立即斷線                      | 外層 nginx 缺少 WebSocket 升級標頭或逾時設定；伺服器為私網位址卻未勾選允許私網；Docker 主機連不到 hbbs／hbbr。                                                                          |
+| 啟動時報子網衝突                              | 修改 `RDWEB_SUBNET`，並同步 `RDWEB_WEB_ADDRESS`（須在新子網內）與 `OUTER_PROXY_ADDRESSES` 的 gateway 位址。                                                                             |
 
 ## 其他反向代理的必要條件（未驗證）
 

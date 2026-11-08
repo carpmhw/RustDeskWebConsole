@@ -97,9 +97,10 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
     }
 
     // 敏感操作的二次驗證亦限流、鎖定與 TOTP 重播保護。
-    public async Task ReauthenticateAsync(User user, ReauthenticationRequest proof, string ip, CancellationToken cancellationToken)
+    // scope 區分限流範圍：本人變更密碼使用 "password"，與其他敏感操作的 "reauth" 配額分開，門檻相同。
+    public async Task ReauthenticateAsync(User user, ReauthenticationRequest proof, string ip, CancellationToken cancellationToken, string scope = "reauth")
     {
-        await limiter.CheckAsync(user.NormalizedUsername, ip, cancellationToken, "reauth");
+        await limiter.CheckAsync(user.NormalizedUsername, ip, cancellationToken, scope);
         var valid = proof.Password != null && await hasher.VerifyAsync(proof.Password, user.PasswordHash);
         if (!valid && proof.Code != null && user.TotpEnabledAt != null) valid = await VerifyTotpAsync(user.Id, Envelope(user), proof.Code, cancellationToken);
         if (!valid || user.LockedUntil > auth.Now)

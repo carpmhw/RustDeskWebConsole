@@ -68,3 +68,13 @@ export interface AvailableUser {
   role: 'admin' | 'operator' | 'viewer'
   is_active: boolean
 }
+
+export interface UserRow {
+  id: string
+  username: string
+  email: string | null
+  role: 'admin' | 'operator' | 'viewer'
+  is_active: boolean
+  totp_enabled: boolean
+  password_change_required: boolean
+}

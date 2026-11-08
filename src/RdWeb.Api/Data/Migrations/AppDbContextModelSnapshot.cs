@@ -566,6 +566,10 @@ namespace RdWeb.Api.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("normalized_username");
 
+                    b.Property<bool>("PasswordChangeRequired")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("password_change_required");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)

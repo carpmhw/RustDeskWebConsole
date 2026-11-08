@@ -12,6 +12,7 @@ const user: NonNullable<SessionAuth['user']> = {
   role: 'operator',
   totp_enabled: true,
   mfa_enrollment_required: false,
+  password_change_required: false,
 }
 const workers = new Set<PublicWorker>()
 const boundary = { requests: 0, workers: 0, probes: 0, starts: 0 }

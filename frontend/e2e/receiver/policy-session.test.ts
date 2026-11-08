@@ -22,6 +22,7 @@ async function fixture() {
     role: 'operator',
     totp_enabled: true,
     mfa_enrollment_required: false,
+    password_change_required: false,
   }
   const target: TargetRow = {
     id: policyTarget,

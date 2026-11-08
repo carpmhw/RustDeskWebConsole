@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  createUser,
   api,
   base,
   createFixture,
@@ -15,6 +16,19 @@ import { totpCode } from './helpers/totp'
 
 // Auth案例各有全新backend／DB／KV，避免安全限流跨案例造成干擾。
 test.beforeEach(() => resetStack())
+
+// 登入頁只提供登入表單；服務狀態只在登入後的頁面顯示，匿名頁面不呼叫 health。
+test('login page shows no service status', async ({ page }) => {
+  let healthRequests = 0
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/api/v1/health')) healthRequests++
+  })
+  await page.goto(base + '/login')
+  await expect(page.getByRole('heading', { name: '登入主控台', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '服務狀態', exact: true })).toHaveCount(0)
+  await page.waitForLoadState('networkidle')
+  expect(healthRequests).toBe(0)
+})
 
 // 帳密、reload、跨分頁refresh与logout均由真正API完成。
 test('sign in, restore in two tabs and revoke on logout @proxy', async ({ page, context }) => {
@@ -118,7 +132,10 @@ test('TOTP and recovery code lifecycle uses real authentication', async ({ page 
     await expect(page).toHaveURL(origin + base + '/')
     await page.goto(base + '/security')
     await page.getByRole('button', { name: '重新產生備援碼', exact: true }).click()
-    await fillPrivate(page.getByLabel('目前密碼', { exact: true }), password)
+    await fillPrivate(
+      page.getByTestId('reauth-panel').getByLabel('目前密碼', { exact: true }),
+      password,
+    )
     await page.getByRole('button', { name: '確認操作', exact: true }).click()
     try {
       await page.waitForFunction(
@@ -131,7 +148,10 @@ test('TOTP and recovery code lifecycle uses real authentication', async ({ page 
     expect(regenerated.some((value) => result.codes.includes(value))).toBe(false)
     await page.getByTestId('codes-saved').click()
     await page.getByRole('button', { name: '停用雙重驗證', exact: true }).click()
-    await fillPrivate(page.getByLabel('目前密碼', { exact: true }), password)
+    await fillPrivate(
+      page.getByTestId('reauth-panel').getByLabel('目前密碼', { exact: true }),
+      password,
+    )
     const disabled = page.waitForResponse((response) =>
       response.url().endsWith('/api/v1/auth/totp/disable'),
     )
@@ -166,12 +186,11 @@ test('required MFA redirects and unlocks only after confirmation', async ({ page
       { code: totpCode(pending.secret) },
       adminLogin.access_token,
     )
-    const target = await api<{ username: string }>(
+    const target = await createUser(
       fixture.context,
-      'users',
-      'POST',
-      { username: fixture.user.username + '-op', password, role: 'operator' },
       verified.access_token,
+      fixture.user.username + '-op',
+      'operator',
     )
     await api(
       fixture.context,

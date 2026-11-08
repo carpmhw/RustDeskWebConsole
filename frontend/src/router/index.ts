@@ -10,6 +10,8 @@ import NotFound from '../views/NotFound.vue'
 import Servers from '../views/Servers.vue'
 import Targets from '../views/Targets.vue'
 import Console from '../views/Console.vue'
+import SetPassword from '../views/SetPassword.vue'
+import Users from '../views/Users.vue'
 
 export const router = createRouter({
   history: createWebHistory(runtimeBase() || '/'),
@@ -17,6 +19,8 @@ export const router = createRouter({
     { path: '/', name: 'overview', component: Overview, meta: { auth: true } },
     { path: '/login', name: 'login', component: Login },
     { path: '/security', name: 'security', component: Security, meta: { auth: true } },
+    { path: '/password', name: 'password', component: SetPassword, meta: { auth: true } },
+    { path: '/users', name: 'users', component: Users, meta: { auth: true } },
     { path: '/preferences', name: 'preferences', component: Preferences, meta: { auth: true } },
     { path: '/servers', name: 'servers', component: Servers, meta: { auth: true } },
     { path: '/targets', name: 'targets', component: Targets, meta: { auth: true } },

@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePreferencesStore } from '../stores/preferences'
 import { buildQr } from '../utils/qr'
 import RecoveryCodes from '../components/RecoveryCodes.vue'
+import ChangePassword from '../components/ChangePassword.vue'
 const { t, te } = useI18n()
 const auth = useAuthStore()
 const preferences = usePreferencesStore()
@@ -300,6 +301,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </section>
+        <ChangePassword mode="voluntary" />
         <section v-if="operation" class="card" data-testid="reauth-panel">
           <div class="card-header">
             <h2>{{ t('reauth') }}</h2>

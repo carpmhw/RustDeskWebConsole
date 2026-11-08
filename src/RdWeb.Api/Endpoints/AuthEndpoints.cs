@@ -13,6 +13,7 @@ public static class AuthEndpoints
         var group = app.MapGroup("/api/v1/auth").AddEndpointFilter<AuthApiFilter>().RequireRateLimiting("auth-work");
         group.MapPost("/login", LoginAsync); group.MapPost("/refresh", RefreshAsync); group.MapPost("/logout", LogoutAsync);
         group.MapGet("/csrf", CsrfAsync); group.MapGet("/me", MeAsync).RequireAuthorization();
+        group.MapPost("/password", ChangePasswordAsync).RequireAuthorization();
         MfaEndpoints.Map(group);
     }
 
@@ -65,7 +66,18 @@ public static class AuthEndpoints
 
     // Restricted session 仍可查詢綁定要求，不能看到 secret 欄位。
     private static async Task<IResult> MeAsync(ClaimsPrincipal principal, SessionValidator sessions, AuthService auth, CancellationToken cancellationToken)
-        => Results.Ok(await auth.MeAsync(await sessions.RequireAsync(principal, full: false, cancellationToken: cancellationToken), principal.FindFirstValue("mfa") == "1", cancellationToken));
+        => Results.Ok(await auth.MeAsync(await sessions.RequireAsync(principal, full: false, allowPasswordChange: true, cancellationToken: cancellationToken), principal.FindFirstValue("mfa") == "1", cancellationToken));
+
+    // 本人變更密碼只接受目前密碼（不以驗證碼代替）；成功後換發工作階段，其他裝置登出。
+    private static async Task<IResult> ChangePasswordAsync(ChangePasswordRequest request, ClaimsPrincipal principal, HttpContext http, SessionValidator sessions,
+        MfaService mfa, AuthService auth, AppOptions app, CancellationToken cancellationToken)
+    {
+        var user = await mfa.LoadAsync((await sessions.RequireAsync(principal, full: false, allowPasswordChange: true, cancellationToken: cancellationToken)).Id, cancellationToken);
+        await mfa.ReauthenticateAsync(user, new(request.CurrentPassword, null), MfaEndpoints.Ip(http), cancellationToken, "password");
+        var family = Guid.Parse(principal.FindFirstValue("sid")!);
+        var grant = await auth.ChangePasswordAsync(user, family, request.NewPassword, MfaEndpoints.Ip(http), cancellationToken);
+        return await GrantAsync(http, grant, auth, app, cancellationToken);
+    }
 
     // Cookie 自動附帶不足以刷新或登出，必須有綁定的 CSRF header。
     internal static string RequireCsrf(HttpContext http, TokenService tokens)

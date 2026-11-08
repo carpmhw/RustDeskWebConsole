@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using RdWeb.Api.Data;
 using RdWeb.Api.Data.Entities;
 
@@ -7,6 +8,35 @@ namespace RdWeb.Tests;
 
 public sealed class AppDbContextTests
 {
+    // 升級前已存在的使用者在新增旗標的 migration 後預設不需改密碼。
+    [Fact]
+    public async Task MigrationDefaultsPasswordChangeRequiredToFalse()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "rdweb-flag-" + Guid.NewGuid());
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "app.db");
+        try
+        {
+            var id = Guid.NewGuid();
+            await using (var database = CreateContext(path))
+            {
+                await database.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>().MigrateAsync("20261009044335_TargetPermissions");
+                var now = DateTime.UtcNow;
+                await database.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO users (id, username, normalized_username, password_hash, role, is_active, auth_version, failed_login_count, created_at, updated_at, version) VALUES ({id}, {"legacy"}, {"LEGACY"}, {"public-test-hash"}, {"viewer"}, {true}, {1}, {0}, {now}, {now}, {1})");
+            }
+            await using (var database = CreateContext(path))
+            {
+                await database.Database.MigrateAsync();
+                Assert.False((await database.Users.SingleAsync(user => user.Id == id)).PasswordChangeRequired);
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(directory, true);
+        }
+    }
+
     // 正式 schema 必須可以使用 migration 重建，不得只靠測試建表。
     [Fact]
     public void ApplicationSchemaHasMigrations()

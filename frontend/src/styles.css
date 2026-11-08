@@ -157,6 +157,17 @@ button.secondary {
   color: var(--accent);
   background: var(--subtle);
 }
+a.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--control-radius);
+  color: var(--accent);
+  background: var(--subtle);
+  text-decoration: none;
+}
 button.text-button {
   border: 0;
   background: transparent;
@@ -582,18 +593,6 @@ summary {
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 1.4px;
-}
-.login-health {
-  margin-top: 23px;
-}
-.login-health .card-header h2 {
-  font-size: 16px;
-}
-.login-health .card-body {
-  padding: 18px 23px;
-}
-.login-health .details {
-  margin-top: 0;
 }
 .health-card select {
   display: block;

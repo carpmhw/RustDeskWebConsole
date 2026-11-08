@@ -15,7 +15,8 @@ function setConsoleFocusMode(value: boolean): void {
     value &&
     router.currentRoute.value.name === 'console' &&
     auth.phase === 'authenticated' &&
-    !auth.user?.mfa_enrollment_required
+    !auth.user?.mfa_enrollment_required &&
+    !auth.user?.password_change_required
 }
 // 任何路由／目標變更都恢復管理導覽，不留上一頁的專注外觀。
 watch(
@@ -26,14 +27,26 @@ watch(
 )
 // 跨分頁撤銷與MFA限制也會觸發安全導向，不只在點擊導覽時判斷。
 watch(
-  () => [auth.phase, auth.user?.mfa_enrollment_required],
+  () => [auth.phase, auth.user?.mfa_enrollment_required, auth.user?.password_change_required],
   () => {
-    if (auth.phase !== 'authenticated' || auth.user?.mfa_enrollment_required)
+    if (
+      auth.phase !== 'authenticated' ||
+      auth.user?.mfa_enrollment_required ||
+      auth.user?.password_change_required
+    )
       consoleFocusMode.value = false
     if (auth.phase === 'anonymous' && router.currentRoute.value.meta.auth)
       void router.replace({ name: 'login' })
+    // 必須改密碼優先於雙重驗證綁定，與 routeDecision 一致。
     if (
       auth.phase === 'authenticated' &&
+      auth.user?.password_change_required &&
+      router.currentRoute.value.name !== 'password'
+    )
+      void router.replace({ name: 'password' })
+    else if (
+      auth.phase === 'authenticated' &&
+      !auth.user?.password_change_required &&
       auth.user?.mfa_enrollment_required &&
       router.currentRoute.value.name !== 'security'
     )
