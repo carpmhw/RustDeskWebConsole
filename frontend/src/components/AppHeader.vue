@@ -66,6 +66,11 @@ function toggleNavigation(): void {
             :to="{ name: 'servers' }"
             >{{ t('servers') }}</RouterLink
           >
+          <RouterLink
+            v-if="!auth.user?.mfa_enrollment_required && auth.user?.role === 'admin'"
+            :to="{ name: 'users' }"
+            >{{ t('usersUI.nav') }}</RouterLink
+          >
           <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'preferences' }">{{
             t('preferences')
           }}</RouterLink>

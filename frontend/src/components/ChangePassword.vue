@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
           maxlength="1024"
           required
         />
-        <p class="hint">{{ t('passwordUI.lengthHint') }}</p>
+        <p class="muted">{{ t('passwordUI.lengthHint') }}</p>
         <button class="primary" type="submit" :disabled="busy">
           {{
             busy

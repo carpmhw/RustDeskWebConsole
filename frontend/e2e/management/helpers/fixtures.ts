@@ -168,12 +168,12 @@ export async function loginUi(page: Page, username: string): Promise<void> {
   )
   if (!initial) return
   // 首次登入被導到設定新密碼頁，以真正的表單改為測試密碼後離開該頁。
-  await page.waitForURL((url) => url.pathname === base + '/password')
+  await page.waitForURL((url) => url.pathname === base + '/password', { timeout: 30000 })
   await fillPrivate(page.getByLabel('目前密碼', { exact: true }), initial)
   await fillPrivate(page.getByLabel('新密碼', { exact: true }), password)
   await fillPrivate(page.getByLabel('再輸入一次新密碼', { exact: true }), password)
   await page.getByRole('button', { name: '設定新密碼', exact: true }).click()
-  await page.waitForURL((url) => url.pathname !== base + '/password')
+  await page.waitForURL((url) => url.pathname !== base + '/password', { timeout: 30000 })
 }
 
 // 等待遠端cookie撤銷，避免立即換頁取消仍在傳送的logout。
