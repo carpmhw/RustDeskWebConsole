@@ -766,6 +766,29 @@ summary {
 .management-editor {
   margin-bottom: 22px;
 }
+/* 頁面內多張卡片與訊息的垂直排列，間距統一。 */
+.page-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.page-stack > .management-editor {
+  margin-bottom: 0;
+}
+/* 表格直接置於卡片頂端時，裁切表頭以貼合卡片圓角。 */
+.card > .table-scroll:first-child {
+  border-radius: calc(var(--panel-radius) - 1px);
+}
+/* 標籤下方的欄位與按鈕並排，等高對齊。 */
+.inline-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.inline-field select {
+  min-width: 220px;
+}
 .management-dialog {
   background: var(--surface);
   color: var(--ink);
@@ -888,7 +911,7 @@ textarea {
   padding: 14px 16px;
   text-align: left;
   border-bottom: 1px solid var(--soft-line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 .management-table th {
   background: var(--raised);
@@ -898,6 +921,9 @@ textarea {
 }
 .management-table td small {
   display: block;
+}
+.management-table td .status-pill {
+  margin-left: var(--space-1);
 }
 .management-table tbody tr:last-child td {
   border-bottom: 0;
@@ -912,7 +938,8 @@ textarea {
   font-size: 14px;
   white-space: nowrap;
 }
-.row-actions a.primary {
+.row-actions a.primary,
+.row-actions a.secondary {
   padding: 5px 12px;
   font-size: 14px;
   white-space: nowrap;

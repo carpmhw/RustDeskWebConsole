@@ -184,184 +184,190 @@ onBeforeUnmount(() => {
         {{ t('usersUI.add') }}
       </button>
     </div>
-    <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
-    <p v-if="success && !reveal" class="success-message" role="status">{{ t('usersUI.saved') }}</p>
-    <section v-if="reveal" class="card" data-testid="generated-password">
-      <div class="card-header">
-        <h2>{{ t('usersUI.generatedTitle') }}</h2>
-        <p>{{ t('usersUI.generatedHint') }}</p>
-      </div>
-      <div class="card-body">
-        <code>{{ reveal }}</code>
-        <button class="secondary" type="button" @click="copy">
-          {{ t(copied ? 'usersUI.copied' : 'usersUI.copy') }}
-        </button>
-        <button class="primary" type="button" @click="dismiss">{{ t('usersUI.done') }}</button>
-      </div>
-    </section>
-    <section v-if="operation" class="card management-editor">
-      <div class="card-header">
-        <h2>
-          {{
-            operation.kind === 'create'
-              ? t('usersUI.add')
-              : operation.kind === 'edit'
-                ? t('usersUI.edit') + '：' + operation.row.username
-                : operation.kind === 'reset-password'
-                  ? t('usersUI.resetPassword') + '：' + operation.row.username
-                  : t('usersUI.resetTotp') + '：' + operation.row.username
-          }}
-        </h2>
-        <p v-if="operation.kind === 'reset-totp'">{{ t('usersUI.resetTotpHint') }}</p>
-      </div>
-      <form class="card-body" @submit.prevent="submit">
-        <template v-if="operation.kind === 'create'">
-          <label for="user-username">{{ t('username') }}</label
-          ><input
-            id="user-username"
-            v-model="draft.username"
-            required
-            minlength="3"
-            maxlength="128"
-            pattern="[A-Za-z0-9._\-]+"
-            autocomplete="off"
-            spellcheck="false"
-            :disabled="busy"
-          />
-        </template>
-        <template v-if="operation.kind === 'create' || operation.kind === 'edit'">
-          <label for="user-email">{{ t('usersUI.email') }}</label
-          ><input
-            id="user-email"
-            v-model="draft.email"
-            type="email"
-            maxlength="320"
-            autocomplete="off"
-            :disabled="busy"
-          />
-          <label for="user-role">{{ t('role') }}</label
-          ><select id="user-role" v-model="draft.role" :disabled="busy">
-            <option value="viewer">{{ t('roles.viewer') }}</option>
-            <option value="operator">{{ t('roles.operator') }}</option>
-            <option value="admin">{{ t('roles.admin') }}</option>
-          </select>
-        </template>
-        <label v-if="operation.kind === 'edit'" class="check-label"
-          ><input v-model="draft.is_active" type="checkbox" :disabled="busy" />
-          {{ t('usersUI.activeLabel') }}</label
-        >
-        <template v-if="operation.kind === 'create' || operation.kind === 'reset-password'">
-          <label for="user-secret">{{
-            operation.kind === 'create' ? t('usersUI.initialPassword') : t('passwordUI.newPassword')
-          }}</label
-          ><input
-            id="user-secret"
-            v-model="secret"
-            type="password"
-            autocomplete="new-password"
-            minlength="12"
-            maxlength="1024"
-            required
-            :disabled="busy"
-            @input="typed"
-          />
-          <button class="secondary" type="button" :disabled="busy" @click="generate">
-            {{ t('usersUI.generate') }}
+    <div class="page-stack">
+      <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
+      <p v-if="success && !reveal" class="success-message" role="status">
+        {{ t('usersUI.saved') }}
+      </p>
+      <section v-if="reveal" class="card" data-testid="generated-password">
+        <div class="card-header">
+          <h2>{{ t('usersUI.generatedTitle') }}</h2>
+          <p>{{ t('usersUI.generatedHint') }}</p>
+        </div>
+        <div class="card-body">
+          <code>{{ reveal }}</code>
+          <button class="secondary" type="button" @click="copy">
+            {{ t(copied ? 'usersUI.copied' : 'usersUI.copy') }}
           </button>
-          <p class="muted">{{ t('passwordUI.lengthHint') }}</p>
-        </template>
-        <ReauthProof
-          v-if="operation.kind === 'reset-password' || operation.kind === 'reset-totp'"
-          v-model:method="method"
-          v-model:password="proofPassword"
-          v-model:code="proofCode"
-          id-prefix="user"
-          :disabled="busy"
-        />
-        <div class="button-row">
-          <button class="primary" type="submit" :disabled="busy">
+          <button class="primary" type="button" @click="dismiss">{{ t('usersUI.done') }}</button>
+        </div>
+      </section>
+      <section v-if="operation" class="card management-editor">
+        <div class="card-header">
+          <h2>
             {{
               operation.kind === 'create'
-                ? t('usersUI.create')
+                ? t('usersUI.add')
                 : operation.kind === 'edit'
-                  ? t('usersUI.save')
+                  ? t('usersUI.edit') + '：' + operation.row.username
                   : operation.kind === 'reset-password'
-                    ? t('usersUI.confirmReset')
-                    : t('usersUI.confirmResetTotp')
+                    ? t('usersUI.resetPassword') + '：' + operation.row.username
+                    : t('usersUI.resetTotp') + '：' + operation.row.username
             }}
-          </button>
-          <button class="text-button" type="button" :disabled="busy" @click="close">
-            {{ t('usersUI.cancel') }}
-          </button>
+          </h2>
+          <p v-if="operation.kind === 'reset-totp'">{{ t('usersUI.resetTotpHint') }}</p>
         </div>
-      </form>
-    </section>
-    <section class="card">
-      <div class="table-scroll" tabindex="0" role="region" :aria-label="t('usersUI.title')">
-        <table class="management-table" data-testid="users-table">
-          <thead>
-            <tr>
-              <th>{{ t('username') }}</th>
-              <th>{{ t('usersUI.email') }}</th>
-              <th>{{ t('role') }}</th>
-              <th>{{ t('usersUI.status') }}</th>
-              <th>{{ t('usersUI.mfa') }}</th>
-              <th>{{ t('usersUI.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.id" data-testid="user-row">
-              <td>
-                {{ row.username }}<span v-if="row.id === me">{{ t('usersUI.you') }}</span>
-                <span
-                  v-if="row.password_change_required"
-                  class="status-pill status-pill--warning"
-                  >{{ t('usersUI.pendingChange') }}</span
-                >
-              </td>
-              <td>{{ row.email ?? '' }}</td>
-              <td>{{ t('roles.' + row.role) }}</td>
-              <td>{{ t(row.is_active ? 'usersUI.active' : 'usersUI.inactive') }}</td>
-              <td>{{ t(row.totp_enabled ? 'usersUI.mfaOn' : 'usersUI.mfaOff') }}</td>
-              <td>
-                <div class="row-actions">
-                  <button
-                    type="button"
-                    class="secondary"
-                    :disabled="busy"
-                    @click="open({ kind: 'edit', row })"
+        <form class="card-body" @submit.prevent="submit">
+          <template v-if="operation.kind === 'create'">
+            <label for="user-username">{{ t('username') }}</label
+            ><input
+              id="user-username"
+              v-model="draft.username"
+              required
+              minlength="3"
+              maxlength="128"
+              pattern="[A-Za-z0-9._\-]+"
+              autocomplete="off"
+              spellcheck="false"
+              :disabled="busy"
+            />
+          </template>
+          <template v-if="operation.kind === 'create' || operation.kind === 'edit'">
+            <label for="user-email">{{ t('usersUI.email') }}</label
+            ><input
+              id="user-email"
+              v-model="draft.email"
+              type="email"
+              maxlength="320"
+              autocomplete="off"
+              :disabled="busy"
+            />
+            <label for="user-role">{{ t('role') }}</label
+            ><select id="user-role" v-model="draft.role" :disabled="busy">
+              <option value="viewer">{{ t('roles.viewer') }}</option>
+              <option value="operator">{{ t('roles.operator') }}</option>
+              <option value="admin">{{ t('roles.admin') }}</option>
+            </select>
+          </template>
+          <label v-if="operation.kind === 'edit'" class="check-label"
+            ><input v-model="draft.is_active" type="checkbox" :disabled="busy" />
+            {{ t('usersUI.activeLabel') }}</label
+          >
+          <template v-if="operation.kind === 'create' || operation.kind === 'reset-password'">
+            <label for="user-secret">{{
+              operation.kind === 'create'
+                ? t('usersUI.initialPassword')
+                : t('passwordUI.newPassword')
+            }}</label
+            ><input
+              id="user-secret"
+              v-model="secret"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              maxlength="1024"
+              required
+              :disabled="busy"
+              @input="typed"
+            />
+            <button class="secondary" type="button" :disabled="busy" @click="generate">
+              {{ t('usersUI.generate') }}
+            </button>
+            <p class="muted">{{ t('passwordUI.lengthHint') }}</p>
+          </template>
+          <ReauthProof
+            v-if="operation.kind === 'reset-password' || operation.kind === 'reset-totp'"
+            v-model:method="method"
+            v-model:password="proofPassword"
+            v-model:code="proofCode"
+            id-prefix="user"
+            :disabled="busy"
+          />
+          <div class="button-row">
+            <button class="primary" type="submit" :disabled="busy">
+              {{
+                operation.kind === 'create'
+                  ? t('usersUI.create')
+                  : operation.kind === 'edit'
+                    ? t('usersUI.save')
+                    : operation.kind === 'reset-password'
+                      ? t('usersUI.confirmReset')
+                      : t('usersUI.confirmResetTotp')
+              }}
+            </button>
+            <button class="text-button" type="button" :disabled="busy" @click="close">
+              {{ t('usersUI.cancel') }}
+            </button>
+          </div>
+        </form>
+      </section>
+      <section class="card">
+        <div class="table-scroll" tabindex="0" role="region" :aria-label="t('usersUI.title')">
+          <table class="management-table" data-testid="users-table">
+            <thead>
+              <tr>
+                <th>{{ t('username') }}</th>
+                <th>{{ t('usersUI.email') }}</th>
+                <th>{{ t('role') }}</th>
+                <th>{{ t('usersUI.status') }}</th>
+                <th>{{ t('usersUI.mfa') }}</th>
+                <th>{{ t('usersUI.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in rows" :key="row.id" data-testid="user-row">
+                <td>
+                  {{ row.username }}<span v-if="row.id === me">{{ t('usersUI.you') }}</span>
+                  <span
+                    v-if="row.password_change_required"
+                    class="status-pill status-pill--warning"
+                    >{{ t('usersUI.pendingChange') }}</span
                   >
-                    {{ t('usersUI.edit') }}
-                  </button>
-                  <!-- 自己的密碼改在帳號安全頁變更：重設會撤銷自己的工作階段，自動產生的密碼來不及顯示。 -->
-                  <RouterLink v-if="row.id === me" class="secondary" :to="{ name: 'security' }">{{
-                    t('passwordUI.submitChange')
-                  }}</RouterLink>
-                  <button
-                    v-else
-                    type="button"
-                    class="secondary"
-                    :disabled="busy"
-                    @click="open({ kind: 'reset-password', row })"
-                  >
-                    {{ t('usersUI.resetPassword') }}
-                  </button>
-                  <button
-                    v-if="row.totp_enabled && row.id !== me"
-                    type="button"
-                    class="secondary"
-                    :disabled="busy"
-                    @click="open({ kind: 'reset-totp', row })"
-                  >
-                    {{ t('usersUI.resetTotp') }}
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-    <MfaPolicy />
+                </td>
+                <td>{{ row.email ?? '' }}</td>
+                <td>{{ t('roles.' + row.role) }}</td>
+                <td>{{ t(row.is_active ? 'usersUI.active' : 'usersUI.inactive') }}</td>
+                <td>{{ t(row.totp_enabled ? 'usersUI.mfaOn' : 'usersUI.mfaOff') }}</td>
+                <td>
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      class="secondary"
+                      :disabled="busy"
+                      @click="open({ kind: 'edit', row })"
+                    >
+                      {{ t('usersUI.edit') }}
+                    </button>
+                    <!-- 自己的密碼改在帳號安全頁變更：重設會撤銷自己的工作階段，自動產生的密碼來不及顯示。 -->
+                    <RouterLink v-if="row.id === me" class="secondary" :to="{ name: 'security' }">{{
+                      t('passwordUI.submitChange')
+                    }}</RouterLink>
+                    <button
+                      v-else
+                      type="button"
+                      class="secondary"
+                      :disabled="busy"
+                      @click="open({ kind: 'reset-password', row })"
+                    >
+                      {{ t('usersUI.resetPassword') }}
+                    </button>
+                    <button
+                      v-if="row.totp_enabled && row.id !== me"
+                      type="button"
+                      class="secondary"
+                      :disabled="busy"
+                      @click="open({ kind: 'reset-totp', row })"
+                    >
+                      {{ t('usersUI.resetTotp') }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <MfaPolicy />
+    </div>
   </main>
 </template>
