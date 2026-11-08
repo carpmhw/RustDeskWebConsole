@@ -167,7 +167,8 @@ unset p; exit
 ```
 
 - 只重設密碼時省略 `--reset-totp`；加上時會同時清除驗證器與備援碼。
-- 成功輸出 `{"status":"ok","totp_reset":true}`（或 `false`），帳號會被重新啟用、所有工作階段登出，並要求下次登入後先設定新密碼；若系統要求雙重驗證，接著重新綁定。
+- 成功輸出 `{"status":"ok","totp_reset":true}`（或 `false`），帳號會被重新啟用、所有登入工作階段失效，並要求下次登入後先設定新密碼；若系統要求雙重驗證，接著重新綁定。
+- 指令在服務之外執行，無法中斷**已在進行中的遠端連線**。若懷疑帳號外洩，完成後執行 `rdweb-compose restart backend` 立即中斷所有進行中的連線（其他使用者需重新連線）。
 - `exit=1` 時錯誤輸出為固定分類：`not_admin`（帳號不存在或不是管理員）、`invalid_password`（密碼須 12–1024 字元），或資料庫錯誤分類。
 - 密碼不可放在 `recover-admin` 的命令列參數；也可改用 `RECOVER_ADMIN_PASSWORD_FILE` 指向容器內的檔案。
 
