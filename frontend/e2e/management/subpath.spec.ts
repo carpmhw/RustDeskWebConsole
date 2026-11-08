@@ -33,14 +33,21 @@ test('deep route, runtime prefix and timezone preference', { tag: '@proxy' }, as
   expect(navigation?.status()).toBe(200)
   expect(navigation?.headers()['x-frame-options']).toBe('DENY')
   expect(navigation?.headers()['content-security-policy']).toContain("frame-ancestors 'none'")
-  await expect(page.getByTestId('health-status')).toHaveText('服務正常')
+  // 登入頁不顯示服務狀態；API 經執行期前綴可達改以同源 fetch 驗證。
+  await expect(page.getByRole('heading', { name: '登入主控台', exact: true })).toBeVisible()
+  await expect(page.getByTestId('health-status')).toHaveCount(0)
   await openAppearance(page)
   await expect(page.getByLabel('頁面時區')).toHaveValue('Asia/Taipei')
   await page.getByLabel('頁面時區').selectOption('UTC')
   await page.reload()
   await openAppearance(page)
   await expect(page.getByLabel('頁面時區')).toHaveValue('UTC')
-  await expect(page.getByTestId('health-status')).toHaveText('服務正常')
+  expect(
+    await page.evaluate(async (path) => {
+      const response = await fetch(path)
+      return response.ok && (await response.json()).status === 'ok'
+    }, base + '/api/v1/health'),
+  ).toBe(true)
   expect(wrongRequests).toEqual([])
   expect(errors).toEqual([])
 })
