@@ -333,7 +333,12 @@ onBeforeUnmount(() => {
                   >
                     {{ t('usersUI.edit') }}
                   </button>
+                  <!-- 自己的密碼改在帳號安全頁變更：重設會撤銷自己的工作階段，自動產生的密碼來不及顯示。 -->
+                  <RouterLink v-if="row.id === me" class="secondary" :to="{ name: 'security' }">{{
+                    t('passwordUI.submitChange')
+                  }}</RouterLink>
                   <button
+                    v-else
                     type="button"
                     class="secondary"
                     :disabled="busy"

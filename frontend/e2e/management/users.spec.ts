@@ -89,6 +89,13 @@ test('admin resets password, disables and changes role', async ({ page }) => {
     await expect(
       row(page, fixture.user.username).getByRole('button', { name: '重設雙重驗證', exact: true }),
     ).toHaveCount(0)
+    // 自己的密碼改在帳號安全頁變更，避免重設後立即登出而看不到自動產生的密碼。
+    await expect(
+      row(page, fixture.user.username).getByRole('button', { name: '重設密碼', exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      row(page, fixture.user.username).getByRole('link', { name: '變更密碼', exact: true }),
+    ).toHaveAttribute('href', base + '/security')
     const reset = password + '-reset'
     await row(page, username).getByRole('button', { name: '重設密碼', exact: true }).click()
     await fillPrivate(page.getByLabel('新密碼', { exact: true }), reset)
