@@ -73,7 +73,7 @@ public static class AuthEndpoints
         MfaService mfa, AuthService auth, AppOptions app, CancellationToken cancellationToken)
     {
         var user = await mfa.LoadAsync((await sessions.RequireAsync(principal, full: false, allowPasswordChange: true, cancellationToken: cancellationToken)).Id, cancellationToken);
-        await mfa.ReauthenticateAsync(user, new(request.CurrentPassword, null), MfaEndpoints.Ip(http), cancellationToken);
+        await mfa.ReauthenticateAsync(user, new(request.CurrentPassword, null), MfaEndpoints.Ip(http), cancellationToken, "password");
         var grant = await auth.ChangePasswordAsync(user, request.NewPassword, principal.FindFirstValue("mfa") == "1", MfaEndpoints.Ip(http), cancellationToken);
         return await GrantAsync(http, grant, auth, app, cancellationToken);
     }

@@ -182,4 +182,28 @@ public sealed class PasswordChangeTests
         using var enroll = await client.PostAsJsonAsync("/api/v1/auth/totp/enroll", new { password = Changed });
         Assert.Equal(HttpStatusCode.OK, enroll.StatusCode);
     }
+
+    // 自行變更密碼有獨立限流範圍：同一來源 60 秒內第 6 次回 429，且不消耗其他敏感操作的再次驗證配額。
+    // 以連續成功變更計數，避免錯誤嘗試觸發既有的帳號鎖定而混淆結果。
+    [Fact]
+    public async Task PasswordChangeHasItsOwnRateLimit()
+    {
+        await using var factory = new TestApplicationFactory();
+        await AuthIntegrationTests.SeedAsync(factory, "member", "viewer");
+        using var client = Client(factory);
+        Bearer(client, await LoginAsync(client, "member", AuthIntegrationTests.Password));
+        var current = AuthIntegrationTests.Password;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var next = current == Changed ? Initial : Changed;
+            using var changed = await client.PostAsJsonAsync("/api/v1/auth/password", new { current_password = current, new_password = next });
+            Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+            Bearer(client, await changed.Content.ReadFromJsonAsync<JsonElement>());
+            current = next;
+        }
+        using var limited = await client.PostAsJsonAsync("/api/v1/auth/password", new { current_password = current, new_password = AuthIntegrationTests.Password });
+        Assert.Equal((HttpStatusCode)429, limited.StatusCode);
+        using var enroll = await client.PostAsJsonAsync("/api/v1/auth/totp/enroll", new { password = current });
+        Assert.Equal(HttpStatusCode.OK, enroll.StatusCode);
+    }
 }
