@@ -5,7 +5,6 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { safeNext } from '../router/policy'
-import HealthPanel from '../components/HealthPanel.vue'
 const { t, te } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
@@ -136,6 +135,5 @@ onBeforeUnmount(() => {
         </button>
       </form>
     </section>
-    <aside class="login-health" :aria-label="t('healthTitle')"><HealthPanel /></aside>
   </main>
 </template>

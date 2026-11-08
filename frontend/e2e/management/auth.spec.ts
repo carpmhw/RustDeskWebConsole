@@ -16,6 +16,19 @@ import { totpCode } from './helpers/totp'
 // Auth案例各有全新backend／DB／KV，避免安全限流跨案例造成干擾。
 test.beforeEach(() => resetStack())
 
+// 登入頁只提供登入表單；服務狀態只在登入後的頁面顯示，匿名頁面不呼叫 health。
+test('login page shows no service status', async ({ page }) => {
+  let healthRequests = 0
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/api/v1/health')) healthRequests++
+  })
+  await page.goto(base + '/login')
+  await expect(page.getByRole('heading', { name: '登入主控台', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '服務狀態', exact: true })).toHaveCount(0)
+  await page.waitForLoadState('networkidle')
+  expect(healthRequests).toBe(0)
+})
+
 // 帳密、reload、跨分頁refresh与logout均由真正API完成。
 test('sign in, restore in two tabs and revoke on logout @proxy', async ({ page, context }) => {
   const fixture = await createFixture()
