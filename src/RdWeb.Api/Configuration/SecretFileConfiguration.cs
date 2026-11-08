@@ -6,7 +6,7 @@ namespace RdWeb.Api.Configuration;
 public static class SecretFileConfiguration
 {
     // 允許以 <NAME>_FILE 提供的秘密設定；清單外的 *_FILE 一律忽略。
-    public static readonly string[] SecretNames = ["SECRET_KEY", "VAULT_KEY", "BOOTSTRAP_ADMIN_PASSWORD", "ROTATE_OLD_KEY", "ROTATE_NEW_KEY"];
+    public static readonly string[] SecretNames = ["SECRET_KEY", "VAULT_KEY", "BOOTSTRAP_ADMIN_PASSWORD", "ROTATE_OLD_KEY", "ROTATE_NEW_KEY", "RECOVER_ADMIN_PASSWORD"];
 
     private const int MaxBytes = 4096;
 
