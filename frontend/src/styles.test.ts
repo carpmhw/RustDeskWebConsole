@@ -15,7 +15,8 @@ it('uses only px values from the approved scale', () => {
   css.split('\n').forEach((line, index) => {
     // 版面斷點不屬於間距與字級階層。
     if (line.includes('px-allow:') || line.trimStart().startsWith('@media')) return
-    for (const match of line.matchAll(/(?<![\w.-])(\d+(?:\.\d+)?)px/g)) {
+    // 負值同樣受檢查（只排除識別字與小數點後的數字）。
+    for (const match of line.matchAll(/(?<![\w.])(\d+(?:\.\d+)?)px/g)) {
       if (!allowed.has(Number(match[1]))) stray.push(`${index + 1}: ${match[0]}`)
     }
   })
@@ -42,4 +43,12 @@ it('defines the spacing, type and control tokens', () => {
     ['--form-width', '560px'],
   ])
     expect(root).toContain(`${name}: ${value};`)
+})
+
+// 字重只用 400／600／700，避免各處自訂中間值。
+it('uses only the approved font weights', () => {
+  const weights = [...css.matchAll(/font-weight:\s*([^;]+);/g)].map((match) => match[1]!.trim())
+  expect(
+    weights.filter((value) => !['400', '600', '700', 'inherit', 'normal'].includes(value)),
+  ).toEqual([])
 })

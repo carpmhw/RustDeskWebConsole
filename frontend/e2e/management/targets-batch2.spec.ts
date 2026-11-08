@@ -123,6 +123,12 @@ test('operator edits targets and transfers metadata through the UI', async ({ pa
     await page.getByRole('button', { name: '搜尋', exact: true }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    // 窄螢幕下批次列與篩選欄位共用同一左緣。
+    const searchX = (await page.getByLabel('搜尋', { exact: true }).boundingBox())!.x
+    const exportX = (await page
+      .getByRole('button', { name: '匯出 CSV', exact: true })
+      .boundingBox())!.x
+    expect(Math.abs(exportX - searchX)).toBeLessThanOrEqual(1)
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: '匯出 CSV', exact: true }).click()
     expect((await download).suggestedFilename()).toBe('targets.csv')

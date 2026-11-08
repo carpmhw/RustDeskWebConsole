@@ -193,6 +193,11 @@ test('mfa policy all forces enrollment and cancel keeps policy', async ({ page, 
       .getByTestId('mfa-policy')
       .getByRole('button', { name: '儲存政策', exact: true })
       .click()
+    // 再驗證欄位與其他單欄表單一樣限寬 560px。
+    expect(
+      (await page.getByTestId('mfa-policy').getByLabel('目前密碼', { exact: true }).boundingBox())!
+        .width,
+    ).toBeLessThanOrEqual(560)
     await fillPrivate(
       page.getByTestId('mfa-policy').getByLabel('目前密碼', { exact: true }),
       password,

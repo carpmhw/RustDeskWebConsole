@@ -114,7 +114,7 @@ onBeforeUnmount(() => {
           {{ t('usersUI.policySave') }}
         </button>
       </div>
-      <form v-if="confirming" @submit.prevent="apply">
+      <form v-if="confirming" class="form-narrow" @submit.prevent="apply">
         <ReauthProof
           v-model:method="method"
           v-model:password="proofPassword"

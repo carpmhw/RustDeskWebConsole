@@ -159,6 +159,14 @@ for (const role of ['admin', 'operator', 'viewer'] as const) {
           await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1),
         ).toBe(false)
       }
+      // 入口取得焦點時整列標示，與滑鼠懸停一致。
+      await workspace.getByRole('link', { name: '目標主機', exact: true }).focus()
+      expect(
+        await workspace
+          .getByRole('listitem')
+          .first()
+          .evaluate((node) => getComputedStyle(node).backgroundColor),
+      ).not.toBe('rgba(0, 0, 0, 0)')
       await workspace.getByRole('link', { name: '目標主機', exact: true }).click()
       await expect(page).toHaveURL(origin + base + '/targets')
     } finally {

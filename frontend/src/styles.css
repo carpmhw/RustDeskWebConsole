@@ -214,7 +214,7 @@ h1 {
   margin: 0 0 6px;
   font-size: var(--fs-xl);
   line-height: 1.4;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.02em;
 }
 h2 {
   margin: 0;
@@ -264,7 +264,7 @@ p {
 .brand strong {
   display: block;
   font-size: var(--fs-md);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.02em;
 }
 .brand small {
   display: block;
@@ -341,11 +341,13 @@ p {
   inset: 0;
   border-radius: var(--control-radius);
 }
-.entry-list li:hover {
+.entry-list li:hover,
+.entry-list li:focus-within {
   background: var(--subtle);
   border-radius: var(--control-radius);
 }
-.entry-list li:hover + li {
+.entry-list li:hover + li,
+.entry-list li:focus-within + li {
   border-top-color: transparent;
 }
 .entry-list p {
@@ -926,7 +928,6 @@ summary {
 }
 .file-button:has(input:disabled) {
   cursor: not-allowed;
-  opacity: 0.6;
 }
 .pagination {
   display: flex;
@@ -1045,6 +1046,10 @@ textarea {
   background: var(--raised);
 }
 @media (max-width: 640px) {
+  /* 須在 .transfer-toolbar 基本規則之後，窄螢幕與卡片內容同為 16px 內距。 */
+  .transfer-toolbar {
+    padding: 0 var(--space-3) var(--space-3);
+  }
   .form-grid {
     grid-template-columns: 1fr;
   }
