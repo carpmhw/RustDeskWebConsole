@@ -206,4 +206,32 @@ public sealed class PasswordChangeTests
         using var enroll = await client.PostAsJsonAsync("/api/v1/auth/totp/enroll", new { password = current });
         Assert.Equal(HttpStatusCode.OK, enroll.StatusCode);
     }
+
+    // 改密碼換發的工作階段沿用原本的絕對期限與登入時間，不能藉由反覆改密碼延長。
+    [Fact]
+    public async Task ChangePasswordKeepsOriginalSessionDeadline()
+    {
+        await using var factory = new TestApplicationFactory();
+        var id = await AuthIntegrationTests.SeedAsync(factory, "member", "viewer");
+        using var client = Client(factory);
+        Bearer(client, await LoginAsync(client, "member", AuthIntegrationTests.Password));
+        DateTime expires, authenticated;
+        await using (var database = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync())
+        {
+            var original = await database.RefreshTokens.AsNoTracking().SingleAsync(token => token.UserId == id);
+            (expires, authenticated) = (original.ExpiresAt, original.AuthenticatedAt);
+            await database.RefreshTokens.Where(token => token.UserId == id).ExecuteUpdateAsync(setters => setters
+                .SetProperty(token => token.ExpiresAt, token => token.ExpiresAt.AddDays(-3))
+                .SetProperty(token => token.AuthenticatedAt, token => token.AuthenticatedAt.AddDays(-3)));
+            (expires, authenticated) = (expires.AddDays(-3), authenticated.AddDays(-3));
+        }
+        using var changed = await client.PostAsJsonAsync("/api/v1/auth/password", new { current_password = AuthIntegrationTests.Password, new_password = Changed });
+        Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+        await using (var database = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync())
+        {
+            var fresh = await database.RefreshTokens.AsNoTracking().SingleAsync(token => token.UserId == id && token.RevokedAt == null);
+            Assert.Equal(expires, fresh.ExpiresAt, TimeSpan.FromSeconds(1));
+            Assert.Equal(authenticated, fresh.AuthenticatedAt, TimeSpan.FromSeconds(1));
+        }
+    }
 }
