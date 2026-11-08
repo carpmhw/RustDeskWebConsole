@@ -55,7 +55,7 @@ done
 trap - EXIT
 
 if [ "$generate_password" = 1 ]; then
-  printf '初始管理員密碼（只顯示這一次，請妥善保存）：%s\n' "$password"
+  printf '初始管理員密碼（只顯示這一次，首次登入後可在帳號安全頁變更）：%s\n' "$password"
 fi
 printf '%s\n' "已建立 $dir/secret_key、vault_key、bootstrap_admin_password。"
 printf '%s\n' '請另外離線保存 vault_key：遺失後已加密的 TOTP 與目標密碼將無法解開。'
