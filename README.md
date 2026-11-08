@@ -14,7 +14,7 @@
 RustDesk Web Console 使用瀏覽器管理並連線至既有 RustDesk 受控端。前端以 Vue 3 建置，後端使用 ASP.NET Core；RustDesk hbbs／hbbr 仍由你自行部署與管理，本專案不取代 RustDesk server。
 
 > [!IMPORTANT]
-> 專案仍在開發中，尚未完成正式部署（M4）與發布（M5）。目前驗收過的受控端組合為 Windows 11（RustDesk 1.5.1）與 Linux X11（RustDesk 1.5.0），瀏覽器為 Chromium 與 Microsoft Edge；其他用戶端版本、作業系統與瀏覽器尚未驗證。
+> 專案仍在開發中：正式部署（M4）已完成，尚未發布（M5）。目前驗收過的受控端組合為 Windows 11（RustDesk 1.5.1）與 Linux X11（RustDesk 1.5.0），瀏覽器為 Chromium 與 Microsoft Edge；其他用戶端版本、作業系統與瀏覽器尚未驗證。
 
 ## 功能
 
