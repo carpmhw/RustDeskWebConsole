@@ -64,51 +64,53 @@ onBeforeUnmount(() => {
       <h2>{{ t('passwordUI.changeTitle') }}</h2>
     </div>
     <div class="card-body">
-      <p v-if="mode === 'voluntary'">{{ t('passwordUI.changeHint') }}</p>
-      <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
-      <p v-if="done && mode === 'voluntary'" class="success-message" role="status">
-        {{ t('passwordUI.changed') }}
-      </p>
-      <form class="form-narrow" @submit.prevent="submit">
-        <label :for="prefix + '-current-password'">{{ t('currentPassword') }}</label
-        ><input
-          :id="prefix + '-current-password'"
-          v-model="current"
-          type="password"
-          autocomplete="current-password"
-          minlength="12"
-          maxlength="1024"
-          required
-        />
-        <label :for="prefix + '-new-password'">{{ t('passwordUI.newPassword') }}</label
-        ><input
-          :id="prefix + '-new-password'"
-          v-model="next"
-          type="password"
-          autocomplete="new-password"
-          minlength="12"
-          maxlength="1024"
-          required
-        />
-        <label :for="prefix + '-confirm-password'">{{ t('passwordUI.confirmPassword') }}</label
-        ><input
-          :id="prefix + '-confirm-password'"
-          v-model="confirmation"
-          type="password"
-          autocomplete="new-password"
-          minlength="12"
-          maxlength="1024"
-          required
-        />
-        <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
-        <button class="primary" type="submit" :disabled="busy">
-          {{
-            busy
-              ? t('busy')
-              : t(mode === 'required' ? 'passwordUI.submitRequired' : 'passwordUI.submitChange')
-          }}
-        </button>
-      </form>
+      <div class="form-narrow">
+        <p v-if="mode === 'voluntary'">{{ t('passwordUI.changeHint') }}</p>
+        <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
+        <p v-if="done && mode === 'voluntary'" class="success-message" role="status">
+          {{ t('passwordUI.changed') }}
+        </p>
+        <form @submit.prevent="submit">
+          <label :for="prefix + '-current-password'">{{ t('currentPassword') }}</label
+          ><input
+            :id="prefix + '-current-password'"
+            v-model="current"
+            type="password"
+            autocomplete="current-password"
+            minlength="12"
+            maxlength="1024"
+            required
+          />
+          <label :for="prefix + '-new-password'">{{ t('passwordUI.newPassword') }}</label
+          ><input
+            :id="prefix + '-new-password'"
+            v-model="next"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="1024"
+            required
+          />
+          <label :for="prefix + '-confirm-password'">{{ t('passwordUI.confirmPassword') }}</label
+          ><input
+            :id="prefix + '-confirm-password'"
+            v-model="confirmation"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="1024"
+            required
+          />
+          <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
+          <button class="primary" type="submit" :disabled="busy">
+            {{
+              busy
+                ? t('busy')
+                : t(mode === 'required' ? 'passwordUI.submitRequired' : 'passwordUI.submitChange')
+            }}
+          </button>
+        </form>
+      </div>
     </div>
   </section>
 </template>

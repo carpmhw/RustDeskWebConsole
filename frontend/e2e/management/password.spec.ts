@@ -79,6 +79,10 @@ test('mismatched new passwords are not submitted', async ({ page }) => {
     await fillPrivate(page.getByLabel('再輸入一次新密碼', { exact: true }), next + 'x')
     await page.getByRole('button', { name: '設定新密碼', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('兩次輸入的新密碼不一致')
+    // 限寬表單內的錯誤訊息與欄位同寬，不延伸到整張卡片。
+    const alertWidth = (await page.getByRole('alert').boundingBox())!.width
+    const fieldWidth = (await page.getByLabel('新密碼', { exact: true }).boundingBox())!.width
+    expect(Math.abs(alertWidth - fieldWidth)).toBeLessThanOrEqual(1)
     expect(sent).toBe(0)
     await expect(page).toHaveURL(origin + base + '/password')
   } finally {
