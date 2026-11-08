@@ -116,7 +116,7 @@ select {
   background: var(--input);
   color: var(--ink);
   border: 1px solid var(--control-line);
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-1) var(--space-2);
   min-height: var(--control-height);
   max-width: 100%;
 }
@@ -318,7 +318,7 @@ p {
 /* 概覽入口清單：名稱為連結並延伸成整列可點，說明在下方。 */
 .entry-list {
   display: grid;
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) calc(-1 * var(--space-3)) 0;
   padding: 0;
   list-style: none;
 }
@@ -539,6 +539,9 @@ p {
   font-size: var(--fs-sm);
   margin: var(--space-4) 0;
 }
+.card-body > .details:first-child {
+  margin-top: 0;
+}
 .details dt {
   color: var(--muted);
 }
@@ -715,10 +718,6 @@ summary {
   }
 }
 @media (max-width: 640px) {
-  .appearance-menu > .display-preferences {
-    left: 0;
-    right: auto;
-  }
   .preferences-grid {
     grid-template-columns: 1fr;
   }
@@ -728,10 +727,20 @@ summary {
   .brand strong {
     font-size: var(--fs-sm);
   }
+  .brand {
+    flex: 1;
+    min-width: 0;
+  }
+  .brand > div {
+    min-width: 0;
+  }
+  .brand strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .header-actions {
-    margin: 0;
-    width: 100%;
-    justify-content: space-between;
+    margin-left: auto;
     flex-wrap: wrap;
   }
   .app-nav {
