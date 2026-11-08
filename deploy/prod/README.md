@@ -79,7 +79,7 @@
 
 5. 設定外層 nginx（下一節），重新載入 nginx，以瀏覽器開啟 `APP_PUBLIC_URL` 登入。
 
-6. 首次登入後，到「帳號安全」綁定雙重驗證並更改密碼，然後刪除初始密碼檔：
+6. 首次登入後，到「帳號安全」綁定雙重驗證，然後刪除初始密碼檔（介面目前沒有變更密碼功能，需要時見〈變更密碼〉）：
 
    ```sh
    sudo rm /etc/rdweb/secrets/bootstrap_admin_password
@@ -143,6 +143,65 @@ unset p; exit
    ```
 
    首次安裝第 4 步的三個指令也要加上 `-f /etc/rdweb/compose.override.yml`。
+
+### 變更密碼（暫行方式）
+
+介面目前尚未提供變更密碼；後端已有管理員重設密碼的 API（`POST /api/v1/users/{id}/reset-password`）。以下腳本以管理員本人登入後重設自己的密碼：密碼以不回顯方式輸入並經 stdin 傳給 curl，存取權杖寫在 0600 暫存檔，都不會出現在命令列或 shell history。需要 `curl` 與 `sed`。
+
+1. 將下列內容存成例如 `/root/rdweb-reset-password.sh`：
+
+   ```sh
+   set -eu
+   url=${RDWEB_URL:?請設定 RDWEB_URL}
+   origin=$(printf '%s' "$url" | sed -E 's#^(https?://[^/]+).*#\1#')
+   work=$(mktemp -d)
+   trap 'rm -rf "$work"' EXIT
+   # 以不回顯方式讀取一行輸入。
+   ask() {
+     printf '%s' "$1" >&2
+     if [ -t 0 ]; then stty -echo; fi
+     IFS= read -r value || value=''
+     if [ -t 0 ]; then stty echo; fi
+     printf '\n' >&2
+     printf '%s' "$value"
+   }
+   # JSON 字串跳脫反斜線與雙引號。
+   esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+   # 從 JSON 取出字串欄位值。
+   field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
+   # 呼叫 API：body 由 stdin 傳入，token 放在 0600 暫存檔，皆不出現在命令列。
+   api() {
+     curl -sS -H 'Content-Type: application/json' -H "Origin: $origin" -H "@$work/auth" -X "$1" ${3:+--data @-} "$url/api/v1/$2"
+   }
+   : > "$work/auth"
+   printf '帳號：' >&2; IFS= read -r username
+   password=$(ask '目前密碼：')
+   code=$(ask '驗證碼（未啟用雙重驗證直接 Enter）：')
+   new=$(ask '新密碼（12–1024 字元）：')
+   [ "$new" = "$(ask '再輸入一次新密碼：')" ] || { echo '兩次新密碼不一致。' >&2; exit 2; }
+   reply=$(printf '{"username":"%s","password":"%s"}' "$(esc "$username")" "$(esc "$password")" | api POST auth/login body)
+   mfa=$(printf '%s' "$reply" | field mfa_token)
+   if [ -n "$mfa" ]; then
+     reply=$(printf '{"mfa_token":"%s","code":"%s"}' "$mfa" "$(esc "$code")" | api POST auth/mfa/verify body)
+   fi
+   token=$(printf '%s' "$reply" | field access_token)
+   [ -n "$token" ] || { echo '登入失敗。' >&2; exit 1; }
+   printf 'Authorization: Bearer %s\n' "$token" > "$work/auth"
+   id=$(api GET auth/me | field id)
+   # 重新驗證只需目前密碼；驗證碼已在登入時使用，不可重複使用。
+   status=$(printf '{"new_password":"%s","password":"%s"}' "$(esc "$new")" "$(esc "$password")" \
+     | curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -H "Origin: $origin" -H "@$work/auth" --data @- "$url/api/v1/users/$id/reset-password")
+   [ "$status" = 204 ] && echo '密碼已更新，所有已登入的工作階段已登出。' || { echo "更新失敗（HTTP $status）。" >&2; exit 1; }
+   ```
+
+2. 執行（`RDWEB_URL` 為 `APP_PUBLIC_URL`，不含結尾斜線）：
+
+   ```sh
+   sudo env RDWEB_URL=https://remote.example.com/rdweb sh /root/rdweb-reset-password.sh
+   ```
+
+   依序輸入帳號、目前密碼、驗證碼（已啟用雙重驗證時；未啟用直接 Enter）、新密碼兩次。成功時顯示「密碼已更新」，該帳號所有已登入的工作階段與進行中的遠端連線都會中斷，需以新密碼重新登入。
+   失敗時只顯示 HTTP 狀態碼：`401` 為目前密碼或驗證碼錯誤，`403` 多為系統要求管理員啟用雙重驗證但此帳號尚未啟用，`429` 為嘗試次數過多，請稍後再試。
 
 ## 外層 nginx
 
