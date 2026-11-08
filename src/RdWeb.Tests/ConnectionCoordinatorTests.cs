@@ -98,15 +98,20 @@ public sealed class ConnectionCoordinatorTests
         hbbs.Start(); hbbr.Start();
         using var signingKey = Key.Create(SignatureAlgorithm.Ed25519);
         var peerMessage = new Message { SignedId = new SignedId { Id = ByteString.CopyFrom(new byte[] { 1, 2, 3 }) } }.ToByteArray();
+        var peerHeader = RustDeskByteStreamCodec.EncodeHeader(peerMessage.Length);
+        var payloadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var hbbsTask = ServeHbbsAsync(hbbs, signingKey, "123456789", "12345678-1234-4234-8234-123456789abc",
             new(TaskCreationOptions.RunContinuationsAsynchronously), new(TaskCreationOptions.RunContinuationsAsynchronously), timeout.Token);
         var hbbrTask = Task.Run(async () =>
         {
-            // 送出首個peer frame後保持relay開啟，直到coordinator因撤銷而釋放upstream。
+            // TCP不保留寫入邊界：固定先送header、待browser收到後才送payload，重現frame被拆成兩段轉送的情況；
+            // 之後保持relay開啟，直到coordinator因撤銷而釋放upstream。
             using var client = await hbbr.AcceptTcpClientAsync(timeout.Token);
             var stream = client.GetStream();
             _ = await RustDeskByteStreamCodec.ReadControlFrameAsync(stream, timeout.Token);
-            await RustDeskByteStreamCodec.WriteControlFrameAsync(stream, peerMessage, timeout.Token);
+            await stream.WriteAsync(peerHeader, timeout.Token);
+            await payloadGate.Task.WaitAsync(timeout.Token);
+            await stream.WriteAsync(peerMessage, timeout.Token);
             while (await stream.ReadAsync(new byte[64], timeout.Token) > 0) { }
         }, timeout.Token);
         var setup = await CreateGrantAsync(hbbs, hbbr, Convert.ToBase64String(signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey)));
@@ -117,7 +122,18 @@ public sealed class ConnectionCoordinatorTests
         var run = scope.ServiceProvider.GetRequiredService<ConnectionCoordinator>().RunAsync(setup.Grant, browser, CancellationToken.None);
         var ready = await browser.Output.Reader.ReadAsync(timeout.Token);
         Assert.Equal(WebSocketMessageType.Text, ready.Type);
-        Assert.Equal(WebSocketMessageType.Binary, (await browser.Output.Reader.ReadAsync(timeout.Token)).Type);
+        // 以位元組總數收齊整個peer frame，不假設TCP轉送的訊息切分；收齊後再撤銷，之後不得有任何多餘輸出。
+        var header = await browser.Output.Reader.ReadAsync(timeout.Token);
+        Assert.Equal(WebSocketMessageType.Binary, header.Type);
+        var relayed = header.Data.Length;
+        payloadGate.SetResult();
+        while (relayed < peerHeader.Length + peerMessage.Length)
+        {
+            var chunk = await browser.Output.Reader.ReadAsync(timeout.Token);
+            Assert.Equal(WebSocketMessageType.Binary, chunk.Type);
+            relayed += chunk.Data.Length;
+        }
+        Assert.Equal(peerHeader.Length + peerMessage.Length, relayed);
 
         Assert.Equal(1, registry.Terminate(grant => grant.UserId == setup.Grant.UserId));
         await run.WaitAsync(timeout.Token);
