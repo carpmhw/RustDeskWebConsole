@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  createUser,
   api,
   base,
   createFixture,
@@ -131,7 +132,10 @@ test('TOTP and recovery code lifecycle uses real authentication', async ({ page 
     await expect(page).toHaveURL(origin + base + '/')
     await page.goto(base + '/security')
     await page.getByRole('button', { name: '重新產生備援碼', exact: true }).click()
-    await fillPrivate(page.getByLabel('目前密碼', { exact: true }), password)
+    await fillPrivate(
+      page.getByTestId('reauth-panel').getByLabel('目前密碼', { exact: true }),
+      password,
+    )
     await page.getByRole('button', { name: '確認操作', exact: true }).click()
     try {
       await page.waitForFunction(
@@ -144,7 +148,10 @@ test('TOTP and recovery code lifecycle uses real authentication', async ({ page 
     expect(regenerated.some((value) => result.codes.includes(value))).toBe(false)
     await page.getByTestId('codes-saved').click()
     await page.getByRole('button', { name: '停用雙重驗證', exact: true }).click()
-    await fillPrivate(page.getByLabel('目前密碼', { exact: true }), password)
+    await fillPrivate(
+      page.getByTestId('reauth-panel').getByLabel('目前密碼', { exact: true }),
+      password,
+    )
     const disabled = page.waitForResponse((response) =>
       response.url().endsWith('/api/v1/auth/totp/disable'),
     )
@@ -179,12 +186,11 @@ test('required MFA redirects and unlocks only after confirmation', async ({ page
       { code: totpCode(pending.secret) },
       adminLogin.access_token,
     )
-    const target = await api<{ username: string }>(
+    const target = await createUser(
       fixture.context,
-      'users',
-      'POST',
-      { username: fixture.user.username + '-op', password, role: 'operator' },
       verified.access_token,
+      fixture.user.username + '-op',
+      'operator',
     )
     await api(
       fixture.context,

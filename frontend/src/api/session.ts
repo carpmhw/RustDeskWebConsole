@@ -12,7 +12,8 @@ function parseUser(value: unknown): SessionUser {
     typeof user.username !== 'string' ||
     !['admin', 'operator', 'viewer'].includes(user.role ?? '') ||
     typeof user.totp_enabled !== 'boolean' ||
-    typeof user.mfa_enrollment_required !== 'boolean'
+    typeof user.mfa_enrollment_required !== 'boolean' ||
+    typeof user.password_change_required !== 'boolean'
   )
     throw new HttpError('service_unavailable', 503)
   return {
@@ -21,6 +22,7 @@ function parseUser(value: unknown): SessionUser {
     role: user.role!,
     totp_enabled: user.totp_enabled,
     mfa_enrollment_required: user.mfa_enrollment_required,
+    password_change_required: user.password_change_required,
   }
 }
 
@@ -178,7 +180,10 @@ export class AuthSession {
   ): Promise<T> {
     if (!this.#access) throw new HttpError('unauthorized', 401)
     const epoch = this.#epoch
-    const changesCookie = path === 'api/v1/auth/totp/confirm' || path === 'api/v1/auth/totp/disable'
+    const changesCookie =
+      path === 'api/v1/auth/totp/confirm' ||
+      path === 'api/v1/auth/totp/disable' ||
+      path === 'api/v1/auth/password'
     // 只有會改cookie的操作加鎖；401後restore在鎖外，避免重入deadlock。
     const send = () =>
       this.client.send<T>(path, method, body, this.#access, undefined, signal, format)
@@ -231,6 +236,20 @@ export class AuthSession {
     this.adopt(value)
     this.#channel?.postMessage('changed')
     return codes
+  }
+  // 本人變更密碼成功後後端換發工作階段並登出其他裝置；採用新 grant 並通知其它分頁重新恢復。
+  async changePassword(current: string, next: string, signal?: AbortSignal): Promise<void> {
+    const epoch = this.#epoch
+    const value = await this.request<SessionGrant>(
+      'api/v1/auth/password',
+      'POST',
+      { current_password: current, new_password: next },
+      signal,
+    )
+    if (epoch !== this.#epoch || signal?.aborted) throw new HttpError('cancelled', 0)
+    this.#epoch++
+    this.adopt(value)
+    this.#channel?.postMessage('changed')
   }
   // 重產只回當次codes，後端保證舊碼作廢與二次驗證。
   async regenerate(

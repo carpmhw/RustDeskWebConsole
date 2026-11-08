@@ -8,6 +8,7 @@ const user = {
   role: 'admin',
   totp_enabled: false,
   mfa_enrollment_required: false,
+  password_change_required: false,
 }
 const grant = {
   access_token: 'public.access.token',
@@ -220,4 +221,51 @@ it('retries an unauthorized request only once', async () => {
   spy.mockRejectedValueOnce(new HttpError('unauthorized', 401))
   await expect(session.request('api/v1/auth/me')).rejects.toThrow('unauthorized')
   expect(spy).toHaveBeenCalledTimes(5)
+})
+
+// 必須改密碼旗標缺漏或非布林時拒絕 grant，避免以 truthy 字串繞過關卡。
+it('rejects a missing or malformed password change flag', async () => {
+  for (const flag of [undefined, 'false', 0]) {
+    const client = new HttpClient()
+    vi.spyOn(client, 'send').mockResolvedValue({
+      ...grant,
+      user: { ...user, password_change_required: flag },
+    })
+    const session = new AuthSession(client)
+    await expect(session.login('fixture', 'public-fixture-password')).rejects.toThrow(
+      'service_unavailable',
+    )
+    expect(session.state.phase === 'authenticated').toBe(false)
+  }
+})
+
+// 自行變更密碼經 cookie 鎖送出，採用回應的新工作階段，公開狀態仍不含憑證。
+it('changes password and adopts the rotated session', async () => {
+  const client = new HttpClient()
+  const flagged = { ...grant, user: { ...user, password_change_required: true } }
+  const rotated = { ...grant, access_token: 'rotated.access.token' }
+  const spy = vi
+    .spyOn(client, 'send')
+    .mockImplementation(async (path) =>
+      path.endsWith('/csrf')
+        ? { csrf_token: 'a'.repeat(43) }
+        : path.endsWith('/password')
+          ? rotated
+          : flagged,
+    )
+  const session = new AuthSession(client)
+  await session.restore()
+  expect(session.state.user?.password_change_required).toBe(true)
+  await session.changePassword('public-current-password', 'public-next-password')
+  expect(spy).toHaveBeenCalledWith(
+    'api/v1/auth/password',
+    'POST',
+    { current_password: 'public-current-password', new_password: 'public-next-password' },
+    'public.access.token',
+    undefined,
+    undefined,
+    'json',
+  )
+  expect(session.state.user?.password_change_required).toBe(false)
+  expect(JSON.stringify(session.state).includes('rotated')).toBe(false)
 })

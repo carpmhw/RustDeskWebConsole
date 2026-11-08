@@ -17,6 +17,7 @@ const user: SessionUser = {
   role: 'operator',
   totp_enabled: true,
   mfa_enrollment_required: false,
+  password_change_required: false,
 }
 const row: TargetRow = {
   id,

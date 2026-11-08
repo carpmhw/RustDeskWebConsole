@@ -53,25 +53,31 @@ function toggleNavigation(): void {
         :class="{ 'is-open': navigationOpen }"
         :aria-label="t('navigation')"
       >
-        <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'overview' }">{{
-          t('overview')
-        }}</RouterLink>
-        <RouterLink :to="{ name: 'security' }">{{ t('security') }}</RouterLink>
-        <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'targets' }">{{
-          t('targets')
-        }}</RouterLink>
-        <RouterLink
-          v-if="!auth.user?.mfa_enrollment_required && auth.user?.role === 'admin'"
-          :to="{ name: 'servers' }"
-          >{{ t('servers') }}</RouterLink
-        >
-        <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'preferences' }">{{
-          t('preferences')
-        }}</RouterLink>
+        <template v-if="!auth.user?.password_change_required">
+          <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'overview' }">{{
+            t('overview')
+          }}</RouterLink>
+          <RouterLink :to="{ name: 'security' }">{{ t('security') }}</RouterLink>
+          <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'targets' }">{{
+            t('targets')
+          }}</RouterLink>
+          <RouterLink
+            v-if="!auth.user?.mfa_enrollment_required && auth.user?.role === 'admin'"
+            :to="{ name: 'servers' }"
+            >{{ t('servers') }}</RouterLink
+          >
+          <RouterLink v-if="!auth.user?.mfa_enrollment_required" :to="{ name: 'preferences' }">{{
+            t('preferences')
+          }}</RouterLink>
+        </template>
       </nav>
       <div class="header-actions">
         <details
-          v-if="auth.phase !== 'authenticated' || auth.user?.mfa_enrollment_required"
+          v-if="
+            auth.phase !== 'authenticated' ||
+            auth.user?.mfa_enrollment_required ||
+            auth.user?.password_change_required
+          "
           class="appearance-menu"
           data-testid="appearance-menu"
         >

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import {
+  createUser,
   api,
   base,
   createFixture,
@@ -264,12 +265,11 @@ test('administrator grants metadata and reveal clears after thirty seconds', asy
     await page.getByRole('button', { name: '新增授權', exact: true }).click()
     await page.getByLabel('授權角色', { exact: true }).selectOption('role:viewer')
     await page.getByRole('button', { name: '保存權限', exact: true }).click()
-    const reader = await api<{ username: string }>(
+    const reader = await createUser(
       fixture.context,
-      'users',
-      'POST',
-      { username: 'reader-' + randomUUID().replaceAll('-', ''), password, role: 'viewer' },
       fixture.admin.access_token,
+      'reader-' + randomUUID().replaceAll('-', ''),
+      'viewer',
     )
     const viewer = await context.browser()!.newContext({ baseURL: origin, acceptDownloads: false })
     try {

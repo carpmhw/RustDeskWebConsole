@@ -77,6 +77,20 @@ export async function api<T>(
   body?: unknown,
   token?: string,
 ): Promise<T> {
+  const login = body as { username?: string } | undefined
+  const initial =
+    path === 'auth/login' && login?.username ? pendingInitial.get(login.username) : undefined
+  if (initial) {
+    pendingInitial.delete(login!.username!)
+    const first = await api<Grant>(context, path, method, { ...login, password: initial })
+    return api<T>(
+      context,
+      'auth/password',
+      'POST',
+      { current_password: initial, new_password: password },
+      first.access_token,
+    )
+  }
   try {
     const response = await context.fetch(origin + base + '/api/v1/' + path, {
       method,
@@ -90,6 +104,29 @@ export async function api<T>(
   }
 }
 
+// 管理員建立的帳號首次登入必須改密碼。為不多耗正式登入限流，建立時只記下一次性初始密碼，
+// 在該帳號第一次登入（loginUi 或 api auth/login）時才以正式流程改為測試密碼。
+const pendingInitial = new Map<string, string>()
+
+// 建立帳號並登記待完成的首次改密碼。
+export async function createUser(
+  context: APIRequestContext,
+  adminToken: string,
+  username: string,
+  role: 'viewer' | 'operator' | 'admin',
+): Promise<FixtureUser> {
+  const initial = password + '-initial'
+  const user = await api<FixtureUser>(
+    context,
+    'users',
+    'POST',
+    { username, password: initial, role },
+    adminToken,
+  )
+  pendingInitial.set(username, initial)
+  return user
+}
+
 // Bootstrap只建立管理員，測試使用者透過正式CRUD API建立。
 export async function createFixture(
   role: 'viewer' | 'operator' | 'admin' = 'operator',
@@ -99,12 +136,11 @@ export async function createFixture(
     username: process.env.RDWEB_E2E_USERNAME,
     password,
   })
-  const user = await api<FixtureUser>(
+  const user = await createUser(
     context,
-    'users',
-    'POST',
-    { username: 'e2e-' + randomUUID().replaceAll('-', ''), password, role },
     admin.access_token,
+    'e2e-' + randomUUID().replaceAll('-', ''),
+    role,
   )
   return { user, admin, context }
 }
@@ -115,8 +151,10 @@ export async function loginUi(page: Page, username: string): Promise<void> {
   const appearance = page.getByTestId('appearance-menu')
   if (await appearance.count()) await appearance.locator('summary').click()
   await page.getByLabel('語言', { exact: true }).selectOption('zh-TW')
+  const initial = pendingInitial.get(username)
+  if (initial) pendingInitial.delete(username)
   await page.getByLabel('帳號', { exact: true }).fill(username)
-  await fillPrivate(page.getByLabel('密碼', { exact: true }), password)
+  await fillPrivate(page.getByLabel('密碼', { exact: true }), initial ?? password)
   const completed = page.waitForResponse((response) =>
     response.url().endsWith('/api/v1/auth/login'),
   )
@@ -128,6 +166,14 @@ export async function loginUi(page: Page, username: string): Promise<void> {
       location.pathname !== prefix + '/login' || document.querySelector('#mfa-code') !== null,
     base,
   )
+  if (!initial) return
+  // 首次登入被導到設定新密碼頁，以真正的表單改為測試密碼後離開該頁。
+  await page.waitForURL((url) => url.pathname === base + '/password')
+  await fillPrivate(page.getByLabel('目前密碼', { exact: true }), initial)
+  await fillPrivate(page.getByLabel('新密碼', { exact: true }), password)
+  await fillPrivate(page.getByLabel('再輸入一次新密碼', { exact: true }), password)
+  await page.getByRole('button', { name: '設定新密碼', exact: true }).click()
+  await page.waitForURL((url) => url.pathname !== base + '/password')
 }
 
 // 等待遠端cookie撤銷，避免立即換頁取消仍在傳送的logout。
@@ -141,7 +187,11 @@ export async function logoutUi(page: Page): Promise<void> {
 
 // 真正的enrol／QR／confirm，codes只讀RAM，所有斷言只輸出布林或計數。
 export async function enrollUi(page: Page): Promise<{ secret: string; codes: string[] }> {
-  await fillPrivate(page.getByLabel('目前密碼', { exact: true }), password)
+  // 帳號安全頁另有變更密碼區塊，限定在綁定表單內取「目前密碼」。
+  const form = page.locator('form', {
+    has: page.getByRole('button', { name: '開始綁定', exact: true }),
+  })
+  await fillPrivate(form.getByLabel('目前密碼', { exact: true }), password)
   await page.getByRole('button', { name: '開始綁定', exact: true }).click()
   try {
     await page.locator('[data-testid=manual-secret]').waitFor({ state: 'attached' })

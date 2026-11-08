@@ -7,16 +7,19 @@ export type AppRoute =
   | 'servers'
   | 'targets'
   | 'console'
+  | 'password'
+  | 'users'
   | 'login'
   | 'not-found'
 // 只接受已知站內路由名稱，不把任意query當作redirect URL。
 export function safeNext(
   value: unknown,
-): 'overview' | 'security' | 'preferences' | 'servers' | 'targets' {
+): 'overview' | 'security' | 'preferences' | 'servers' | 'targets' | 'users' {
   return value === 'security' ||
     value === 'preferences' ||
     value === 'servers' ||
-    value === 'targets'
+    value === 'targets' ||
+    value === 'users'
     ? value
     : 'overview'
 }
@@ -28,6 +31,11 @@ export function routeDecision(
 ): AppRoute | null {
   if (state.phase === 'unknown') return null
   if (needsAuth && state.phase !== 'authenticated') return 'login'
+  // 必須改密碼優先於雙重驗證綁定；完成後才進入其他限制或頁面。
+  if (state.phase === 'authenticated' && state.user?.password_change_required)
+    return target === 'password' ? null : 'password'
+  if (state.phase === 'authenticated' && target === 'password')
+    return state.user?.mfa_enrollment_required ? 'security' : 'overview'
   if (
     state.phase === 'authenticated' &&
     state.user?.mfa_enrollment_required &&
@@ -37,7 +45,11 @@ export function routeDecision(
   if (state.phase === 'authenticated' && target === 'login') return 'overview'
   if (state.phase === 'authenticated' && target === 'console' && state.user?.role === 'viewer')
     return 'targets'
-  if (state.phase === 'authenticated' && target === 'servers' && state.user?.role !== 'admin')
+  if (
+    state.phase === 'authenticated' &&
+    (target === 'servers' || target === 'users') &&
+    state.user?.role !== 'admin'
+  )
     return 'overview'
   return null
 }
