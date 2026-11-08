@@ -30,6 +30,15 @@
   --space-3: 16px;
   --space-4: 24px;
   --space-5: 32px;
+  --space-half: 4px;
+  --fs-xs: 12px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 28px;
+  --control-height: 40px;
+  --control-height-sm: 32px;
+  --form-width: 560px;
   --panel-radius: 14px;
   --control-radius: 8px;
 }
@@ -68,7 +77,8 @@ body {
     -apple-system,
     'Segoe UI',
     sans-serif;
-  line-height: 1.65;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
 }
 button,
 input,
@@ -106,8 +116,8 @@ select {
   background: var(--input);
   color: var(--ink);
   border: 1px solid var(--control-line);
-  padding: 10px 12px;
-  min-height: 42px;
+  padding: var(--space-1) var(--space-2);
+  min-height: var(--control-height);
   max-width: 100%;
 }
 input {
@@ -119,12 +129,17 @@ input::placeholder {
 }
 label {
   display: block;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-weight: 600;
-  margin: 17px 0 6px;
+  margin: var(--space-3) 0 6px;
 }
 button {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
   border: 1px solid var(--control-line);
   background: var(--surface);
   color: var(--ink);
@@ -134,13 +149,13 @@ a.primary {
   background: var(--primary);
   color: var(--on-primary);
   border-color: var(--primary);
-  font-weight: 650;
+  font-weight: 600;
 }
 a.primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--primary);
   border-radius: var(--control-radius);
   text-decoration: none;
@@ -161,7 +176,7 @@ a.secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--control-line);
   border-radius: var(--control-radius);
   color: var(--accent);
@@ -187,7 +202,7 @@ textarea:disabled {
   width: 100%;
 }
 form > button {
-  margin-top: 20px;
+  margin-top: var(--space-4);
 }
 h1,
 h2,
@@ -196,22 +211,22 @@ p {
   overflow-wrap: anywhere;
 }
 h1 {
-  margin: 0 0 5px;
-  font-size: clamp(25px, 4vw, 31px);
+  margin: 0 0 6px;
+  font-size: var(--fs-xl);
   line-height: 1.4;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.02em;
 }
 h2 {
   margin: 0;
-  font-size: 19px;
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 h3 {
-  font-size: 16px;
-  margin: 0 0 7px;
+  font-size: var(--fs-md);
+  margin: 0 0 var(--space-1);
 }
 p {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-2);
 }
 .muted {
   color: var(--muted);
@@ -224,42 +239,42 @@ p {
   max-width: var(--content-width);
   margin: auto;
   min-height: 72px;
-  padding: 12px 24px;
+  padding: var(--space-2) var(--space-4);
   display: flex;
   align-items: center;
-  gap: 23px;
+  gap: var(--space-4);
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--space-2);
   white-space: nowrap;
 }
 .brand-mark {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  font-size: 12px;
-  font-weight: 800;
+  border-radius: 8px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
   background: var(--primary);
   color: var(--on-primary);
 }
 .brand strong {
   display: block;
-  font-size: 15px;
-  letter-spacing: -0.3px;
+  font-size: var(--fs-md);
+  letter-spacing: -0.02em;
 }
 .brand small {
   display: block;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: 1px;
   color: var(--muted);
 }
 .app-nav {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
 }
 .navigation-toggle {
@@ -269,7 +284,7 @@ p {
   position: relative;
 }
 .appearance-menu > summary {
-  padding: 8px 12px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   color: var(--ink);
@@ -280,7 +295,7 @@ p {
 .appearance-menu > .display-preferences {
   position: absolute;
   right: 0;
-  top: calc(100% + 8px);
+  top: calc(100% + var(--space-1));
   z-index: 2;
   width: min(360px, calc(100vw - 32px));
   padding: var(--space-3);
@@ -300,22 +315,49 @@ p {
   align-items: start;
   gap: var(--space-4);
 }
-.workspace-links {
+/* 概覽入口清單：名稱為連結並延伸成整列可點，說明在下方。 */
+.entry-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  margin: var(--space-2) calc(-1 * var(--space-3)) 0;
+  padding: 0;
+  list-style: none;
 }
-.workspace-links a {
-  padding: var(--space-3);
-  background: var(--subtle);
-  border: 1px solid var(--line);
-  border-radius: var(--control-radius);
+.entry-list li {
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--soft-line);
+}
+.entry-list li:first-child {
+  border-top: 0;
+}
+.entry-list a {
+  font-size: var(--fs-md);
   font-weight: 600;
   text-decoration: none;
-  overflow-wrap: anywhere;
 }
-.workspace-links a:hover {
-  text-decoration: underline;
+.entry-list a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--control-radius);
+}
+.entry-list li:hover,
+.entry-list li:focus-within {
+  background: var(--subtle);
+  border-radius: var(--control-radius);
+}
+.entry-list li:hover + li,
+.entry-list li:focus-within + li {
+  border-top-color: transparent;
+}
+.entry-list p {
+  margin: var(--space-half) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+/* 單欄表單限寬，避免欄位在寬螢幕被拉長。 */
+.form-narrow {
+  max-width: var(--form-width);
 }
 .empty-state {
   display: grid;
@@ -326,41 +368,43 @@ p {
   .overview-grid {
     grid-template-columns: 1fr;
   }
+  h1 {
+    font-size: var(--fs-lg);
+  }
 }
 .app-nav a {
-  padding: 8px 12px;
+  padding: var(--space-1) var(--space-2);
   border-radius: 6px;
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .app-nav a.router-link-exact-active {
   background: var(--subtle);
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 600;
 }
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   margin-left: auto;
 }
 .header-actions select {
-  font-size: 12px;
-  padding: 5px 8px;
-  min-height: 34px;
+  font-size: var(--fs-sm);
+  padding: 6px var(--space-1);
+  min-height: var(--control-height-sm);
 }
 .theme-buttons {
   display: flex;
-  padding: 3px;
+  padding: var(--space-half);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   gap: 2px;
 }
 .theme-buttons button {
-  font-size: 12px;
-  padding: 5px 7px;
+  font-size: var(--fs-sm);
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -369,7 +413,7 @@ p {
 .theme-buttons button[aria-pressed='true'] {
   color: var(--accent);
   background: var(--subtle);
-  font-weight: 650;
+  font-weight: 600;
 }
 .app-main {
   max-width: var(--content-width);
@@ -380,21 +424,21 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 23px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 .page-intro p,
 .intro-copy {
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .status-pill {
   display: inline-block;
   border-radius: 20px;
   color: var(--accent);
   background: var(--subtle);
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: var(--space-half) var(--space-2);
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .status-pill--neutral {
@@ -421,10 +465,10 @@ p {
 }
 .card-header {
   display: flex;
-  gap: 12px;
+  gap: var(--space-2);
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
+  padding: var(--space-3) var(--space-4);
   background: var(--raised);
   border-radius: var(--panel-radius) var(--panel-radius) 0 0;
   border-bottom: 1px solid var(--soft-line);
@@ -433,16 +477,16 @@ p {
   padding: var(--space-4);
 }
 .card-body > button {
-  margin-top: 15px;
+  margin-top: var(--space-3);
 }
 .notice,
 .error-message,
 .success-message {
   border-radius: 8px;
   border: 1px solid var(--line);
-  padding: 13px 16px;
-  font-size: 14px;
-  margin: 0 0 20px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  margin: 0 0 var(--space-4);
 }
 .notice {
   color: var(--warning);
@@ -458,44 +502,47 @@ p {
 }
 .global-notice {
   max-width: calc(var(--content-width) - 48px);
-  margin: 20px auto 0;
+  margin: var(--space-4) auto 0;
 }
 .loading {
-  margin: 60px auto;
+  margin: 64px auto;
   text-align: center;
   color: var(--muted);
 }
 .security-grid {
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
-  gap: 22px;
+  grid-template-columns: 270px minmax(0, 1fr); /* px-allow: 摘要欄寬 */
+  gap: var(--space-4);
 }
 .summary {
   align-self: start;
-  padding: 23px 21px;
+  padding: var(--space-4) var(--space-4);
 }
 .summary-icon {
-  width: 43px;
-  height: 43px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   background: var(--support);
   color: var(--on-support);
-  border-radius: 11px;
-  font-size: 19px;
-  margin-bottom: 16px;
+  border-radius: 8px;
+  font-size: var(--fs-md);
+  margin-bottom: var(--space-3);
 }
 .summary p {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--muted);
-  margin-top: 9px;
+  margin-top: var(--space-1);
 }
 .details {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 12px;
-  font-size: 13px;
-  margin: 22px 0;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  margin: var(--space-4) 0;
+}
+.card-body > .details:first-child {
+  margin-top: 0;
 }
 .details dt {
   color: var(--muted);
@@ -506,69 +553,69 @@ p {
   overflow-wrap: anywhere;
 }
 .summary .details {
-  padding-top: 18px;
+  padding-top: var(--space-3);
   border-top: 1px solid var(--soft-line);
 }
 .main-column {
   display: grid;
-  gap: 18px;
+  gap: var(--space-3);
   min-width: 0;
 }
 .steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  font-size: 13px;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
   color: var(--accent);
   border-bottom: 1px solid var(--soft-line);
-  padding-bottom: 19px;
+  padding-bottom: var(--space-3);
 }
 .steps span {
-  padding: 3px 7px;
+  padding: var(--space-half) var(--space-1);
   background: var(--subtle);
-  border-radius: 5px;
+  border-radius: 4px;
 }
 .enroll-grid {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 21px;
+  grid-template-columns: 190px minmax(0, 1fr); /* px-allow: QR 欄寬 */
+  gap: var(--space-4);
   align-items: center;
-  margin-top: 23px;
+  margin-top: var(--space-4);
 }
 .qr-panel img {
   display: block;
   max-width: 100%;
   height: auto;
   border: 1px solid var(--control-line);
-  border-radius: 5px;
+  border-radius: 4px;
   background: #fff;
 }
 .enroll-grid p,
 .card-body > p:not(.notice):not(.error-message):not(.success-message) {
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .secret-key {
   display: block;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   overflow-wrap: anywhere;
   background: var(--input);
-  padding: 10px;
-  margin-top: 8px;
+  padding: var(--space-2);
+  margin-top: var(--space-1);
 }
 summary {
   cursor: pointer;
   color: var(--accent);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .choice-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin: 15px 0;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
 }
 .choice-buttons button {
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .choice-buttons button[aria-pressed='true'] {
   background: var(--subtle);
@@ -577,22 +624,22 @@ summary {
 .button-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 20px;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
 }
 .login-main {
   max-width: 560px;
-  margin: 44px auto 0;
-  padding: 0 24px;
+  margin: 48px auto 0;
+  padding: 0 var(--space-4);
 }
 .login-card {
-  padding: 31px 32px;
+  padding: var(--space-5) var(--space-5);
 }
 .login-eyebrow {
   color: var(--accent);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 1.4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 .health-card select {
   display: block;
@@ -601,22 +648,22 @@ summary {
 }
 .app-footer {
   max-width: var(--content-width);
-  margin: 28px auto 0;
-  padding: 18px 24px 25px;
+  margin: var(--space-5) auto 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .recovery-dialog {
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
-  max-width: 680px;
-  width: calc(100% - 30px);
-  padding: 27px;
+  max-width: 720px;
+  width: calc(100% - 32px);
+  padding: var(--space-4);
   max-height: 90dvh;
   overflow: auto;
 }
@@ -625,10 +672,10 @@ summary {
 }
 .recovery-note {
   color: var(--warning);
-  margin-top: 10px;
+  margin-top: var(--space-2);
 }
 .recovery-list {
-  padding-left: 25px;
+  padding-left: var(--space-4);
   font:
     14px ui-monospace,
     monospace;
@@ -638,13 +685,13 @@ summary {
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 @media (max-width: 1050px) {
   .header-inner {
     flex-wrap: wrap;
-    gap: 15px;
+    gap: var(--space-3);
   }
   .app-nav {
     display: none;
@@ -659,11 +706,11 @@ summary {
     flex-wrap: wrap;
   }
   .header-actions {
-    gap: 7px;
+    gap: var(--space-1);
   }
   .security-grid {
-    grid-template-columns: 230px minmax(0, 1fr);
-    gap: 17px;
+    grid-template-columns: 230px minmax(0, 1fr); /* px-allow: 窄螢幕摘要欄寬 */
+    gap: var(--space-3);
   }
   .enroll-grid {
     grid-template-columns: 1fr;
@@ -673,39 +720,42 @@ summary {
   }
 }
 @media (max-width: 640px) {
-  .workspace-links {
-    grid-template-columns: 1fr;
-  }
-  .appearance-menu > .display-preferences {
-    left: 0;
-    right: auto;
-  }
   .preferences-grid {
     grid-template-columns: 1fr;
   }
   .header-inner {
-    padding: 17px;
+    padding: var(--space-3);
   }
   .brand strong {
-    font-size: 14px;
+    font-size: var(--fs-sm);
+  }
+  .brand {
+    flex: 1;
+    min-width: 0;
+  }
+  .brand > div {
+    min-width: 0;
+  }
+  .brand strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .header-actions {
-    margin: 0;
-    width: 100%;
-    justify-content: space-between;
+    margin-left: auto;
     flex-wrap: wrap;
   }
   .app-nav {
-    gap: 3px;
+    gap: var(--space-half);
     flex-wrap: wrap;
   }
   .app-nav a {
-    font-size: 13px;
-    padding: 7px 9px;
+    font-size: var(--fs-xs);
+    padding: var(--space-1) var(--space-1);
   }
   .app-main {
-    margin-top: 23px;
-    padding: 0 17px;
+    margin-top: var(--space-4);
+    padding: 0 var(--space-3);
   }
   .page-intro {
     flex-wrap: wrap;
@@ -714,28 +764,28 @@ summary {
     grid-template-columns: 1fr;
   }
   .summary {
-    padding: 19px;
+    padding: var(--space-3);
   }
   .details {
-    grid-template-columns: 110px minmax(0, 1fr);
+    grid-template-columns: 110px minmax(0, 1fr); /* px-allow: 欄位名稱欄寬 */
   }
   .login-main {
-    margin-top: 27px;
-    padding: 0 17px;
+    margin-top: var(--space-4);
+    padding: 0 var(--space-3);
   }
   .login-card {
-    padding: 25px 23px;
+    padding: var(--space-4) var(--space-4);
   }
   .card-body,
   .card-header {
-    padding: 18px;
+    padding: var(--space-3);
   }
   .app-footer {
-    padding: 17px;
+    padding: var(--space-3);
     flex-wrap: wrap;
   }
   .global-notice {
-    margin: 17px 17px 0;
+    margin: var(--space-3) var(--space-3) 0;
   }
 }
 @media print {
@@ -764,44 +814,73 @@ summary {
 }
 
 .management-editor {
-  margin-bottom: 22px;
+  margin-bottom: var(--space-4);
+}
+/* 頁面內多張卡片與訊息的垂直排列，間距統一。 */
+.page-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.page-stack > .management-editor {
+  margin-bottom: 0;
+}
+/* 表格直接置於卡片頂端時，裁切表頭以貼合卡片圓角。 */
+.card > .table-scroll:first-child {
+  border-radius: calc(var(--panel-radius) - 1px);
+}
+/* 標籤下方的欄位與按鈕並排，等高對齊。 */
+/* 欄位下方的輔助說明。 */
+.field-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.inline-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.inline-field select {
+  min-width: 220px;
 }
 .management-dialog {
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
-  width: calc(100% - 30px);
+  width: calc(100% - 32px);
   max-width: 760px;
   max-height: 90vh;
   overflow: auto;
-  padding: 25px;
+  padding: var(--space-4);
 }
 .management-dialog::backdrop {
   background: #0008;
 }
 .management-dialog > h2 {
-  margin-bottom: 15px;
+  margin-bottom: var(--space-3);
 }
 .grant-row {
   border: 1px solid var(--line);
   border-radius: 8px;
-  margin: 15px 0;
-  padding: 15px;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
 }
 .grant-row legend {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .target-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 15px;
+  gap: var(--space-3);
 }
 .target-filters > div {
   flex: 1;
-  min-width: 180px;
+  min-width: 200px;
 }
 .target-filters label {
   margin-top: 0;
@@ -813,32 +892,55 @@ summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 0 23px 20px;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4);
 }
-.file-label {
+/* 檔案匯入以 label 呈現為一般按鈕；檔案輸入透明覆蓋其上，保留鍵盤與可存取名稱。 */
+.file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
   margin: 0;
-  font-size: 13px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--control-line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
   font-weight: 400;
+  cursor: pointer;
 }
-.file-label input {
-  width: auto;
-  max-width: 280px;
-  font-size: 12px;
-  padding: 5px;
+.file-button input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.file-button:focus-within {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.file-button:has(input:disabled) {
+  cursor: not-allowed;
 }
 .pagination {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 15px;
-  padding: 15px;
-  font-size: 13px;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  font-size: var(--fs-sm);
 }
 .management-table input[type='checkbox'] {
-  width: 18px;
-  min-height: 18px;
+  width: 18px; /* px-allow: 核取方塊尺寸 */
+  min-height: 18px; /* px-allow: 核取方塊尺寸 */
 }
 textarea:focus-visible {
   outline: 3px solid var(--accent);
@@ -847,7 +949,7 @@ textarea:focus-visible {
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0 20px;
+  gap: 0 var(--space-4);
 }
 .form-grid > * {
   min-width: 0;
@@ -855,10 +957,10 @@ textarea:focus-visible {
 textarea {
   display: block;
   width: 100%;
-  min-height: 95px;
+  min-height: 96px; /* px-allow: 約四行文字 */
   resize: vertical;
   font: inherit;
-  padding: 10px 12px;
+  padding: var(--space-2) var(--space-2);
   color: var(--ink);
   background: var(--input);
   border: 1px solid var(--control-line);
@@ -867,11 +969,11 @@ textarea {
 .check-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
 }
 .check-label input {
-  width: 18px;
-  min-height: 18px;
+  width: 18px; /* px-allow: 核取方塊尺寸 */
+  min-height: 18px; /* px-allow: 核取方塊尺寸 */
   margin: 0;
 }
 .table-scroll {
@@ -881,23 +983,26 @@ textarea {
 .management-table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .management-table th,
 .management-table td {
-  padding: 14px 16px;
+  padding: var(--space-3) var(--space-3);
   text-align: left;
   border-bottom: 1px solid var(--soft-line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 .management-table th {
   background: var(--raised);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .management-table td small {
   display: block;
+}
+.management-table td .status-pill {
+  margin-left: var(--space-1);
 }
 .management-table tbody tr:last-child td {
   border-bottom: 0;
@@ -908,13 +1013,23 @@ textarea {
   gap: 6px;
 }
 .row-actions button {
-  padding: 5px 9px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
-.row-actions a.primary {
-  padding: 5px 12px;
-  font-size: 14px;
+/* 列內、工具列與切換類的精簡控制項統一 32px 高。 */
+.row-actions button,
+.row-actions a.primary,
+.row-actions a.secondary,
+.theme-buttons button,
+.choice-buttons button,
+.pagination button {
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+}
+.row-actions a.primary,
+.row-actions a.secondary {
+  padding: 6px var(--space-2);
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 .empty-row {
@@ -922,28 +1037,32 @@ textarea {
   text-align: center !important;
 }
 .probe-result {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--accent);
-  margin: 10px 0 0;
+  margin: var(--space-2) 0 0;
   padding: var(--space-1);
   border: 1px solid var(--soft-line);
   border-radius: var(--control-radius);
   background: var(--raised);
 }
 @media (max-width: 640px) {
+  /* 須在 .transfer-toolbar 基本規則之後，窄螢幕與卡片內容同為 16px 內距。 */
+  .transfer-toolbar {
+    padding: 0 var(--space-3) var(--space-3);
+  }
   .form-grid {
     grid-template-columns: 1fr;
   }
   .management-table {
-    min-width: 650px;
+    min-width: 640px;
   }
 }
 .console-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 12px;
-  margin: 16px 0;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
 }
 /* 僅主控台使用有界可用高度；實際工具列與狀態高度由Grid量測，不推算輸入offset。 */
 #app:has(.console-workspace) {
@@ -958,7 +1077,7 @@ textarea {
   flex: 1;
   width: 100%;
   max-width: none;
-  min-height: 440px;
+  min-height: 440px; /* px-allow: 主控台工作區（不在本次範圍） */
   margin-top: var(--space-3);
 }
 /* 專注模式貼齊頁面上緣並縮小區塊間距，把高度讓給遠端畫面。 */
@@ -975,7 +1094,7 @@ textarea {
   min-width: 0;
 }
 .console-workspace-heading h1 {
-  font-size: 18px;
+  font-size: var(--fs-md);
 }
 .console-workspace-heading > div {
   display: flex;
@@ -996,7 +1115,7 @@ textarea {
 .console-workspace-heading p {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .console-workspace-panel {
   display: grid;
@@ -1014,6 +1133,13 @@ textarea {
 .console-workspace .console-toolbar {
   margin: 0;
   gap: var(--space-3);
+}
+/* 主控台工具列屬精簡控制項：按鈕與選單 32px，保留畫面高度給遠端影像。 */
+.console-workspace .console-toolbar button,
+.console-workspace .console-toolbar select {
+  min-height: var(--control-height-sm);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .console-toolgroup {
   display: flex;
@@ -1049,8 +1175,8 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
-  padding: 4px var(--space-3);
-  font-size: 13px;
+  padding: var(--space-half) var(--space-3);
+  font-size: var(--fs-xs);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -1113,9 +1239,9 @@ textarea {
 .console-ime.console-ime--composing {
   z-index: 2;
   width: min(20em, calc(100% - 16px));
-  height: calc(1.5em + 10px);
+  height: calc(1.5em + 10px); /* px-allow: 主控台組字列（不在本次範圍） */
   min-height: 0;
-  padding: 4px 8px;
+  padding: var(--space-half) var(--space-1);
   line-height: 1.5;
   overflow: hidden;
   border: 1px solid var(--accent);

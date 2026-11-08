@@ -123,9 +123,24 @@ test('operator edits targets and transfers metadata through the UI', async ({ pa
     await page.getByRole('button', { name: '搜尋', exact: true }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    // 窄螢幕下批次列與篩選欄位共用同一左緣。
+    const searchX = (await page.getByLabel('搜尋', { exact: true }).boundingBox())!.x
+    const exportX = (await page
+      .getByRole('button', { name: '匯出 CSV', exact: true })
+      .boundingBox())!.x
+    expect(Math.abs(exportX - searchX)).toBeLessThanOrEqual(1)
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: '匯出 CSV', exact: true }).click()
     expect((await download).suggestedFilename()).toBe('targets.csv')
+    // 匯入改為按鈕樣式的 label：鍵盤聚焦隱藏的檔案輸入時，按鈕外框必須可見，且與其他工具列按鈕同高。
+    await page.getByLabel('匯入 CSV 檔案', { exact: true }).focus()
+    await expect(page.locator('.file-button')).toHaveCSS('outline-style', 'solid')
+    const exportHeight = await page
+      .getByRole('button', { name: '匯出 CSV', exact: true })
+      .evaluate((node) => node.getBoundingClientRect().height)
+    expect(
+      await page.locator('.file-button').evaluate((node) => node.getBoundingClientRect().height),
+    ).toBe(exportHeight)
     await page.getByLabel('匯入 CSV 檔案', { exact: true }).setInputFiles({
       name: 'targets.csv',
       mimeType: 'text/csv',

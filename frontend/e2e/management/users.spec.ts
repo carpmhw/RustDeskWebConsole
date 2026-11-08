@@ -83,7 +83,7 @@ test('admin resets password, disables and changes role', async ({ page }) => {
   const fixture = await createFixture('admin')
   try {
     const username = 'mate-' + randomUUID().replaceAll('-', '').slice(0, 12)
-    await createUser(fixture.context, fixture.admin.access_token, username, 'admin')
+    const rowUser = await createUser(fixture.context, fixture.admin.access_token, username, 'admin')
     await loginUi(page, fixture.user.username)
     await page.goto(base + '/users')
     await expect(
@@ -103,7 +103,14 @@ test('admin resets password, disables and changes role', async ({ page }) => {
       page.getByTestId('reauth-proof').getByLabel('目前密碼', { exact: true }),
       password,
     )
+    // 帳號原本已是待改密碼，須等待重設 API 成功，不能以未變的列狀態判斷完成。
+    const resetResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith('/api/v1/users/' + rowUser.id + '/reset-password'),
+    )
     await page.getByRole('button', { name: '確認重設', exact: true }).click()
+    expect((await resetResponse).status()).toBe(204)
     await expect(row(page, username)).toContainText('待改密碼')
     expect(await loginStatus(username, reset)).toBe(200)
     await row(page, username).getByRole('button', { name: '編輯', exact: true }).click()
@@ -193,6 +200,11 @@ test('mfa policy all forces enrollment and cancel keeps policy', async ({ page, 
       .getByTestId('mfa-policy')
       .getByRole('button', { name: '儲存政策', exact: true })
       .click()
+    // 再驗證欄位與其他單欄表單一樣限寬 560px。
+    expect(
+      (await page.getByTestId('mfa-policy').getByLabel('目前密碼', { exact: true }).boundingBox())!
+        .width,
+    ).toBeLessThanOrEqual(560)
     await fillPrivate(
       page.getByTestId('mfa-policy').getByLabel('目前密碼', { exact: true }),
       password,

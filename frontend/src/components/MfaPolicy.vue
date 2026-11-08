@@ -92,27 +92,29 @@ onBeforeUnmount(() => {
   <section class="card" data-testid="mfa-policy">
     <div class="card-header">
       <h2>{{ t('usersUI.policyTitle') }}</h2>
-      <p>{{ t('usersUI.policyHint') }}</p>
     </div>
     <div class="card-body">
+      <p>{{ t('usersUI.policyHint') }}</p>
       <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
       <p v-if="done" class="success-message" role="status">{{ t('usersUI.saved') }}</p>
-      <label for="mfa-policy">{{ t('usersUI.policyLabel') }}</label
-      ><select id="mfa-policy" v-model="selected" :disabled="!loaded || busy || confirming">
-        <option value="off">{{ t('usersUI.policyOff') }}</option>
-        <option value="admins">{{ t('usersUI.policyAdmins') }}</option>
-        <option value="all">{{ t('usersUI.policyAll') }}</option>
-      </select>
-      <button
-        v-if="!confirming"
-        class="secondary"
-        type="button"
-        :disabled="!loaded || busy || selected === saved"
-        @click="confirming = true"
-      >
-        {{ t('usersUI.policySave') }}
-      </button>
-      <form v-else @submit.prevent="apply">
+      <label for="mfa-policy">{{ t('usersUI.policyLabel') }}</label>
+      <div class="inline-field">
+        <select id="mfa-policy" v-model="selected" :disabled="!loaded || busy || confirming">
+          <option value="off">{{ t('usersUI.policyOff') }}</option>
+          <option value="admins">{{ t('usersUI.policyAdmins') }}</option>
+          <option value="all">{{ t('usersUI.policyAll') }}</option>
+        </select>
+        <button
+          v-if="!confirming"
+          class="secondary"
+          type="button"
+          :disabled="!loaded || busy || selected === saved"
+          @click="confirming = true"
+        >
+          {{ t('usersUI.policySave') }}
+        </button>
+      </div>
+      <form v-if="confirming" class="form-narrow" @submit.prevent="apply">
         <ReauthProof
           v-model:method="method"
           v-model:password="proofPassword"
@@ -120,10 +122,12 @@ onBeforeUnmount(() => {
           id-prefix="policy"
           :disabled="busy"
         />
-        <button class="primary" type="submit" :disabled="busy">{{ t('usersUI.confirm') }}</button>
-        <button class="text-button" type="button" :disabled="busy" @click="cancel">
-          {{ t('usersUI.cancel') }}
-        </button>
+        <div class="button-row">
+          <button class="primary" type="submit" :disabled="busy">{{ t('usersUI.confirm') }}</button>
+          <button class="text-button" type="button" :disabled="busy" @click="cancel">
+            {{ t('usersUI.cancel') }}
+          </button>
+        </div>
       </form>
     </div>
   </section>
