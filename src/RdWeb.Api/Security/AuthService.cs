@@ -118,7 +118,7 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
 
     // 絕不將包含 hash／secret 的 EF 實體直接回傳。
     public async Task<object> MeAsync(User user, bool verified, CancellationToken cancellationToken) => new
-    { id = user.Id, username = user.Username, role = user.Role, totp_enabled = user.TotpEnabledAt != null, mfa_enrollment_required = !await sessions.IsFullAsync(user, verified, cancellationToken) };
+    { id = user.Id, username = user.Username, role = user.Role, totp_enabled = user.TotpEnabledAt != null, password_change_required = user.PasswordChangeRequired, mfa_enrollment_required = !await sessions.IsFullAsync(user, verified, cancellationToken) };
 
     // 只記分類原因、已解析身分及來源，不記認證輸入。
     public Task AuditAsync(AuditAction action, AuditResult result, Guid? userId, AuditReason? reason, string? ip, CancellationToken cancellationToken, Guid? objectId = null, string objectType = "user")

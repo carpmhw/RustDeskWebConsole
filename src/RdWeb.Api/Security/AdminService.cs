@@ -17,7 +17,7 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
     {
         _ = await sessions.RequireAsync(principal, admin: true, cancellationToken: ct);
         return await database.Users.AsNoTracking().OrderBy(user => user.NormalizedUsername).Select(user => new
-        { id = user.Id, username = user.Username, email = user.Email, role = user.Role, is_active = user.IsActive, totp_enabled = user.TotpEnabledAt != null }).ToListAsync(ct);
+        { id = user.Id, username = user.Username, email = user.Email, role = user.Role, is_active = user.IsActive, totp_enabled = user.TotpEnabledAt != null, password_change_required = user.PasswordChangeRequired }).ToListAsync(ct);
     }
     // 新使用者沿用 Argon2id，唯一性由 SQLite 與 normalized username 保證。
     public async Task<object> CreateAsync(ClaimsPrincipal principal, CreateUserRequest request, string ip, CancellationToken ct)
@@ -25,7 +25,7 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         var actor = await sessions.RequireAsync(principal, admin: true, cancellationToken: ct);
         var normalized = request.Username.ToUpperInvariant();
         if (await database.Users.AnyAsync(user => user.NormalizedUsername == normalized, ct)) throw new AuthException("username_conflict", 409);
-        var user = new User { Username = request.Username, NormalizedUsername = normalized, Email = request.Email, Role = request.Role, PasswordHash = await hasher.HashAsync(request.Password) };
+        var user = new User { Username = request.Username, NormalizedUsername = normalized, Email = request.Email, Role = request.Role, PasswordHash = await hasher.HashAsync(request.Password), PasswordChangeRequired = true };
         database.Users.Add(user); await database.SaveChangesAsync(ct);
         await auth.AuditAsync(AuditAction.UserChanged, AuditResult.Success, actor.Id, null, ip, ct, user.Id);
         return View(user);
@@ -55,7 +55,8 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         await mfa.ReauthenticateAsync(actor, new(request.Password, request.Code), ip, ct);
         var user = await FindAsync(id, ct); var hash = await hasher.HashAsync(request.NewPassword);
         await using var transaction = await database.Database.BeginTransactionAsync(ct);
-        user.PasswordHash = hash; user.AuthVersion++; user.FailedLoginCount = 0; user.LockedUntil = null;
+        // 管理員交付的密碼只能用一次；對自己重設則是自己決定的密碼，不要求再改。
+        user.PasswordHash = hash; user.PasswordChangeRequired = user.Id != actor.Id; user.AuthVersion++; user.FailedLoginCount = 0; user.LockedUntil = null;
         await auth.RevokeUserAsync(user.Id, ct); await database.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         connections.Terminate(grant => grant.UserId == user.Id);
         await auth.AuditAsync(AuditAction.UserChanged, AuditResult.Success, actor.Id, null, ip, ct, user.Id);
@@ -97,5 +98,5 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
     // 不存在的管理目標返回固定錯誤，不附資料庫細節。
     private async Task<User> FindAsync(Guid id, CancellationToken ct) => await database.Users.SingleOrDefaultAsync(user => user.Id == id, ct) ?? throw new AuthException("not_found", 404);
     // 單一使用者回應也不能意外序列化敏感實體欄位。
-    private static object View(User user) => new { id = user.Id, username = user.Username, email = user.Email, role = user.Role, is_active = user.IsActive, totp_enabled = user.TotpEnabledAt != null };
+    private static object View(User user) => new { id = user.Id, username = user.Username, email = user.Email, role = user.Role, is_active = user.IsActive, totp_enabled = user.TotpEnabledAt != null, password_change_required = user.PasswordChangeRequired };
 }
