@@ -1,19 +1,19 @@
 :root {
   color-scheme: light;
-  --page: #f1ede5;
-  --surface: #fffdfa;
-  --raised: #f7f1e6;
-  --input: #fcf8f0;
-  --ink: #32291b;
-  --muted: #655640;
-  --line: #92816a;
-  --soft-line: #c1b39b;
+  --page: #f4f1ec;
+  --surface: #ffffff;
+  --raised: #f6f3ee;
+  --input: #fdfcfa;
+  --ink: #2e2720;
+  --muted: #5f5446;
+  --line: #8f8475;
+  --soft-line: #d9d2c7;
   --control-line: var(--line);
-  --primary: #805414;
-  --primary-hover: #69430d;
+  --primary: #7a4f14;
+  --primary-hover: #643f0c;
   --on-primary: #ffffff;
   --accent: #006d65;
-  --subtle: #faedcf;
+  --subtle: #efeae2;
   --support: var(--accent);
   --on-support: #ffffff;
   --support-soft: var(--subtle);
@@ -44,19 +44,19 @@
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --page: #191816;
-  --surface: #2a2925;
-  --raised: #39372f;
-  --input: #201f1b;
-  --ink: #faf6ed;
-  --muted: #d2c8b4;
-  --line: #948973;
-  --soft-line: #665f50;
-  --primary: #f3c56b;
-  --primary-hover: #ffda8a;
-  --on-primary: #352403;
+  --page: #1a1816;
+  --surface: #26231f;
+  --raised: #322e29;
+  --input: #1e1c19;
+  --ink: #f6f1e8;
+  --muted: #cfc5b5;
+  --line: #8f8576;
+  --soft-line: #4a443c;
+  --primary: #f0c063;
+  --primary-hover: #ffd585;
+  --on-primary: #33230a;
   --accent: #8ddcd3;
-  --subtle: #49391e;
+  --subtle: #36312a;
   --on-support: #14342f;
   --success: #5ee9aa;
   --success-bg: #183f3a;
@@ -169,7 +169,7 @@ a.primary:active {
   background: var(--primary-hover);
 }
 button.secondary {
-  color: var(--accent);
+  color: var(--ink);
   background: var(--subtle);
 }
 a.secondary {
@@ -179,7 +179,7 @@ a.secondary {
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--control-line);
   border-radius: var(--control-radius);
-  color: var(--accent);
+  color: var(--ink);
   background: var(--subtle);
   text-decoration: none;
 }
@@ -253,13 +253,8 @@ p {
 .brand-mark {
   width: 40px;
   height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  background: var(--primary);
-  color: var(--on-primary);
+  display: block;
+  flex: none;
 }
 .brand strong {
   display: block;
@@ -382,7 +377,7 @@ p {
 }
 .app-nav a.router-link-exact-active {
   background: var(--subtle);
-  color: var(--accent);
+  color: var(--ink);
   font-weight: 600;
 }
 .header-actions {

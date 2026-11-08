@@ -8,6 +8,9 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
 const navigationOpen = ref(false)
+// 品牌圖示與分頁圖示同檔（public/favicon.svg）；以執行期相對路徑經 <base href> 解析以支援掛載路徑，
+// 綁定常數避免模板編譯器把靜態 src 改寫成模組匯入（public 檔案不可匯入）。
+const brandMarkUrl = 'favicon.svg'
 // 換頁後收合本機導覽，不改認證或路由守衛。
 watch(
   () => router.currentRoute.value.fullPath,
@@ -30,7 +33,7 @@ function toggleNavigation(): void {
   <header class="app-header">
     <div class="header-inner">
       <div class="brand">
-        <span class="brand-mark">RD</span>
+        <img class="brand-mark" :src="brandMarkUrl" alt="" width="40" height="40" />
         <div>
           <strong>{{ t('brand') }}</strong>
         </div>
