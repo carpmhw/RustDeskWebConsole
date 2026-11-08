@@ -77,9 +77,12 @@ export async function api<T>(
   body?: unknown,
   token?: string,
 ): Promise<T> {
-  const login = body as { username?: string } | undefined
+  const login = body as { username?: string; password?: string } | undefined
+  // 只在呼叫端使用預設測試密碼時替換，避免掩蓋刻意以錯誤密碼驗證 401 的案例。
   const initial =
-    path === 'auth/login' && login?.username ? pendingInitial.get(login.username) : undefined
+    path === 'auth/login' && login?.username && login.password === password
+      ? pendingInitial.get(login.username)
+      : undefined
   if (initial) {
     pendingInitial.delete(login!.username!)
     const first = await api<Grant>(context, path, method, { ...login, password: initial })
@@ -125,6 +128,11 @@ export async function createUser(
   )
   pendingInitial.set(username, initial)
   return user
+}
+
+// 自訂登入流程（不經 api／loginUi 的 probe）使用前，先以正式流程完成首次改密碼。
+export async function activateUser(context: APIRequestContext, username: string): Promise<void> {
+  if (pendingInitial.has(username)) await api(context, 'auth/login', 'POST', { username, password })
 }
 
 // Bootstrap只建立管理員，測試使用者透過正式CRUD API建立。
