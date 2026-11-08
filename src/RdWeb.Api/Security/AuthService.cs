@@ -112,6 +112,21 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
     public Task<int> RevokeFamilyAsync(Guid family, CancellationToken cancellationToken) => database.RefreshTokens.Where(token => token.FamilyId == family && token.RevokedAt == null)
         .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RevokedAt, Now).SetProperty(token => token.Version, token => token.Version + 1).SetProperty(token => token.UpdatedAt, Now), cancellationToken);
 
+    // 本人變更密碼：拒絕與目前相同，於單一交易更新雜湊、清除必須改密碼旗標並撤銷全部工作階段，再為本次請求簽發新工作階段。
+    public async Task<SessionGrant> ChangePasswordAsync(User user, string newPassword, bool mfaVerified, string ip, CancellationToken cancellationToken)
+    {
+        if (await hasher.VerifyAsync(newPassword, user.PasswordHash)) throw new AuthException("password_reuse", 400);
+        var hash = await hasher.HashAsync(newPassword);
+        await using (var transaction = await database.Database.BeginTransactionAsync(cancellationToken))
+        {
+            user.PasswordHash = hash; user.PasswordChangeRequired = false; user.AuthVersion++;
+            await RevokeUserAsync(user.Id, cancellationToken); await database.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
+        }
+        connections.Terminate(grant => grant.UserId == user.Id);
+        await AuditAsync(AuditAction.UserChanged, AuditResult.Success, user.Id, null, ip, cancellationToken);
+        return await CompleteLoginAsync(user, mfaVerified, Now, ip, cancellationToken);
+    }
+
     // 認證狀態改變時撤銷使用者的全部工作階段。
     public Task<int> RevokeUserAsync(Guid id, CancellationToken cancellationToken) => database.RefreshTokens.Where(token => token.UserId == id && token.RevokedAt == null)
         .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RevokedAt, Now).SetProperty(token => token.Version, token => token.Version + 1).SetProperty(token => token.UpdatedAt, Now), cancellationToken);

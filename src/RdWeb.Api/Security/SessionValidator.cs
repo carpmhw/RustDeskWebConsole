@@ -23,9 +23,11 @@ public sealed class SessionValidator(IDbContextFactory<AppDbContext> factory, Ti
     }
 
     // 在寫入 gate 內再次驗證，避免等待中的 request 沿用已撤銷權限。
-    public async Task<User> RequireAsync(ClaimsPrincipal principal, bool full = true, bool admin = false, CancellationToken cancellationToken = default)
+    // allowPasswordChange 只給改自己密碼與 /auth/me；其他端點在必須改密碼時一律拒絕（含雙重驗證綁定），先於 MFA 檢查。
+    public async Task<User> RequireAsync(ClaimsPrincipal principal, bool full = true, bool admin = false, bool allowPasswordChange = false, CancellationToken cancellationToken = default)
     {
         var user = await ValidateAsync(principal, cancellationToken) ?? throw new AuthException("unauthorized");
+        if (user.PasswordChangeRequired && !allowPasswordChange) throw new AuthException("password_change_required", 403);
         if (full && !await IsFullAsync(user, principal.FindFirstValue("mfa") == "1", cancellationToken)) throw new AuthException("mfa_enrollment_required", 403);
         if (admin && user.Role != "admin") throw new AuthException("forbidden", 403);
         return user;
