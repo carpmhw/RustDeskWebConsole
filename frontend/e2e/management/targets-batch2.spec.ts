@@ -126,6 +126,15 @@ test('operator edits targets and transfers metadata through the UI', async ({ pa
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: '匯出 CSV', exact: true }).click()
     expect((await download).suggestedFilename()).toBe('targets.csv')
+    // 匯入改為按鈕樣式的 label：鍵盤聚焦隱藏的檔案輸入時，按鈕外框必須可見，且與其他工具列按鈕同高。
+    await page.getByLabel('匯入 CSV 檔案', { exact: true }).focus()
+    await expect(page.locator('.file-button')).toHaveCSS('outline-style', 'solid')
+    const exportHeight = await page
+      .getByRole('button', { name: '匯出 CSV', exact: true })
+      .evaluate((node) => node.getBoundingClientRect().height)
+    expect(
+      await page.locator('.file-button').evaluate((node) => node.getBoundingClientRect().height),
+    ).toBe(exportHeight)
     await page.getByLabel('匯入 CSV 檔案', { exact: true }).setInputFiles({
       name: 'targets.csv',
       mimeType: 'text/csv',

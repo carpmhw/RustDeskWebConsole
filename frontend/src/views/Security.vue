@@ -227,7 +227,7 @@ onBeforeUnmount(() => {
               ><span>{{ t('stepScan') }}</span
               ><span>{{ t('stepSave') }}</span>
             </div>
-            <form v-if="!secret" @submit.prevent="enroll">
+            <form v-if="!secret" class="form-narrow" @submit.prevent="enroll">
               <label for="enroll-password">{{ t('currentPassword') }}</label
               ><input
                 id="enroll-password"
@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
             <p class="notice">
               {{ t(operation === 'regenerate' ? 'regenerateWarning' : 'disableWarning') }}
             </p>
-            <form @submit.prevent="applyOperation">
+            <form class="form-narrow" @submit.prevent="applyOperation">
               <div class="choice-buttons">
                 <button
                   type="button"

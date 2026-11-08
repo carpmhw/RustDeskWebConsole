@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
       <div class="transfer-toolbar">
         <button type="button" :disabled="busy" @click="exportCsv">
           {{ t('targetUI.exportCsv') }}</button
-        ><label v-if="writer" class="file-label"
+        ><label v-if="writer" class="file-button"
           >{{ t('targetUI.importCsv')
           }}<input
             ref="fileInput"

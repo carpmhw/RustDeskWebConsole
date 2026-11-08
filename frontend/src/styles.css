@@ -315,22 +315,47 @@ p {
   align-items: start;
   gap: var(--space-4);
 }
-.workspace-links {
+/* 概覽入口清單：名稱為連結並延伸成整列可點，說明在下方。 */
+.entry-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
 }
-.workspace-links a {
-  padding: var(--space-3);
-  background: var(--subtle);
-  border: 1px solid var(--line);
-  border-radius: var(--control-radius);
+.entry-list li {
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--soft-line);
+}
+.entry-list li:first-child {
+  border-top: 0;
+}
+.entry-list a {
+  font-size: var(--fs-md);
   font-weight: 600;
   text-decoration: none;
-  overflow-wrap: anywhere;
 }
-.workspace-links a:hover {
-  text-decoration: underline;
+.entry-list a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--control-radius);
+}
+.entry-list li:hover {
+  background: var(--subtle);
+  border-radius: var(--control-radius);
+}
+.entry-list li:hover + li {
+  border-top-color: transparent;
+}
+.entry-list p {
+  margin: var(--space-half) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+/* 單欄表單限寬，避免欄位在寬螢幕被拉長。 */
+.form-narrow {
+  max-width: var(--form-width);
 }
 .empty-state {
   display: grid;
@@ -690,9 +715,6 @@ summary {
   }
 }
 @media (max-width: 640px) {
-  .workspace-links {
-    grid-template-columns: 1fr;
-  }
   .appearance-menu > .display-preferences {
     left: 0;
     right: auto;
@@ -862,16 +884,40 @@ summary {
   gap: var(--space-2);
   padding: 0 var(--space-4) var(--space-4);
 }
-.file-label {
+/* 檔案匯入以 label 呈現為一般按鈕；檔案輸入透明覆蓋其上，保留鍵盤與可存取名稱。 */
+.file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
   margin: 0;
-  font-size: var(--fs-xs);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--control-line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
   font-weight: 400;
+  cursor: pointer;
 }
-.file-label input {
-  width: auto;
-  max-width: 280px; /* px-allow: 暫時沿用，Task 2 以按鈕樣式取代 */
-  font-size: var(--fs-xs);
-  padding: 6px;
+.file-button input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.file-button:focus-within {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.file-button:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .pagination {
   display: flex;
@@ -1073,6 +1119,13 @@ textarea {
 .console-workspace .console-toolbar {
   margin: 0;
   gap: var(--space-3);
+}
+/* 主控台工具列屬精簡控制項：按鈕與選單 32px，保留畫面高度給遠端影像。 */
+.console-workspace .console-toolbar button,
+.console-workspace .console-toolbar select {
+  min-height: var(--control-height-sm);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .console-toolgroup {
   display: flex;

@@ -69,7 +69,7 @@ onBeforeUnmount(() => {
       <p v-if="done && mode === 'voluntary'" class="success-message" role="status">
         {{ t('passwordUI.changed') }}
       </p>
-      <form @submit.prevent="submit">
+      <form class="form-narrow" @submit.prevent="submit">
         <label :for="prefix + '-current-password'">{{ t('currentPassword') }}</label
         ><input
           :id="prefix + '-current-password'"

@@ -167,6 +167,13 @@ export const messages = {
     overview: '概覽',
     workspace: '工作區',
     workspaceHint: '選擇目標或管理入口；連線與操作權限依實際設定判定。',
+    overviewUI: {
+      targets: '搜尋目標、開啟遠端主控台與管理目標資料。',
+      security: '密碼、雙重驗證與備援碼。',
+      preferences: '主題、語言與頁面時區。',
+      servers: '管理 hbbs／hbbr 端點並測試連線。',
+      users: '建立同事帳號、角色與登入安全政策。',
+    },
     security: '帳號安全',
     preferences: '顯示偏好',
     logout: '登出',
@@ -505,6 +512,13 @@ export const messages = {
     workspace: 'Workspace',
     workspaceHint:
       'Open a target or management page. Saved permissions determine which actions are available.',
+    overviewUI: {
+      targets: 'Search targets, open the remote console and manage target details.',
+      security: 'Password, two-factor authentication and recovery codes.',
+      preferences: 'Theme, language and page time zone.',
+      servers: 'Manage hbbs/hbbr endpoints and test connections.',
+      users: 'Create colleague accounts, roles and the sign-in security policy.',
+    },
     security: 'Account security',
     preferences: 'Preferences',
     logout: 'Sign out',

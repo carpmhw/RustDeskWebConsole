@@ -150,6 +150,9 @@ for (const role of ['admin', 'operator', 'viewer'] as const) {
       await expect(
         workspace.getByRole('link', { name: 'RustDesk 伺服器', exact: true }),
       ).toHaveCount(role === 'admin' ? 1 : 0)
+      await expect(workspace.getByRole('link', { name: '使用者', exact: true })).toHaveCount(
+        role === 'admin' ? 1 : 0,
+      )
       for (const width of [375, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 })
         expect(

@@ -219,87 +219,89 @@ onBeforeUnmount(() => {
           </h2>
         </div>
         <form class="card-body" @submit.prevent="submit">
-          <p v-if="operation.kind === 'reset-totp'">{{ t('usersUI.resetTotpHint') }}</p>
-          <template v-if="operation.kind === 'create'">
-            <label for="user-username">{{ t('username') }}</label
-            ><input
-              id="user-username"
-              v-model="draft.username"
-              required
-              minlength="3"
-              maxlength="128"
-              pattern="[A-Za-z0-9._\-]+"
-              autocomplete="off"
-              spellcheck="false"
-              :disabled="busy"
-            />
-          </template>
-          <template v-if="operation.kind === 'create' || operation.kind === 'edit'">
-            <label for="user-email">{{ t('usersUI.email') }}</label
-            ><input
-              id="user-email"
-              v-model="draft.email"
-              type="email"
-              maxlength="320"
-              autocomplete="off"
-              :disabled="busy"
-            />
-            <label for="user-role">{{ t('role') }}</label
-            ><select id="user-role" v-model="draft.role" :disabled="busy">
-              <option value="viewer">{{ t('roles.viewer') }}</option>
-              <option value="operator">{{ t('roles.operator') }}</option>
-              <option value="admin">{{ t('roles.admin') }}</option>
-            </select>
-          </template>
-          <label v-if="operation.kind === 'edit'" class="check-label"
-            ><input v-model="draft.is_active" type="checkbox" :disabled="busy" />
-            {{ t('usersUI.activeLabel') }}</label
-          >
-          <template v-if="operation.kind === 'create' || operation.kind === 'reset-password'">
-            <label for="user-secret">{{
-              operation.kind === 'create'
-                ? t('usersUI.initialPassword')
-                : t('passwordUI.newPassword')
-            }}</label
-            ><input
-              id="user-secret"
-              v-model="secret"
-              type="password"
-              autocomplete="new-password"
-              minlength="12"
-              maxlength="1024"
-              required
-              :disabled="busy"
-              @input="typed"
-            />
-            <button class="secondary" type="button" :disabled="busy" @click="generate">
-              {{ t('usersUI.generate') }}
-            </button>
-            <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
-          </template>
-          <ReauthProof
-            v-if="operation.kind === 'reset-password' || operation.kind === 'reset-totp'"
-            v-model:method="method"
-            v-model:password="proofPassword"
-            v-model:code="proofCode"
-            id-prefix="user"
-            :disabled="busy"
-          />
-          <div class="button-row">
-            <button class="primary" type="submit" :disabled="busy">
-              {{
+          <div class="form-narrow">
+            <p v-if="operation.kind === 'reset-totp'">{{ t('usersUI.resetTotpHint') }}</p>
+            <template v-if="operation.kind === 'create'">
+              <label for="user-username">{{ t('username') }}</label
+              ><input
+                id="user-username"
+                v-model="draft.username"
+                required
+                minlength="3"
+                maxlength="128"
+                pattern="[A-Za-z0-9._\-]+"
+                autocomplete="off"
+                spellcheck="false"
+                :disabled="busy"
+              />
+            </template>
+            <template v-if="operation.kind === 'create' || operation.kind === 'edit'">
+              <label for="user-email">{{ t('usersUI.email') }}</label
+              ><input
+                id="user-email"
+                v-model="draft.email"
+                type="email"
+                maxlength="320"
+                autocomplete="off"
+                :disabled="busy"
+              />
+              <label for="user-role">{{ t('role') }}</label
+              ><select id="user-role" v-model="draft.role" :disabled="busy">
+                <option value="viewer">{{ t('roles.viewer') }}</option>
+                <option value="operator">{{ t('roles.operator') }}</option>
+                <option value="admin">{{ t('roles.admin') }}</option>
+              </select>
+            </template>
+            <label v-if="operation.kind === 'edit'" class="check-label"
+              ><input v-model="draft.is_active" type="checkbox" :disabled="busy" />
+              {{ t('usersUI.activeLabel') }}</label
+            >
+            <template v-if="operation.kind === 'create' || operation.kind === 'reset-password'">
+              <label for="user-secret">{{
                 operation.kind === 'create'
-                  ? t('usersUI.create')
-                  : operation.kind === 'edit'
-                    ? t('usersUI.save')
-                    : operation.kind === 'reset-password'
-                      ? t('usersUI.confirmReset')
-                      : t('usersUI.confirmResetTotp')
-              }}
-            </button>
-            <button class="text-button" type="button" :disabled="busy" @click="close">
-              {{ t('usersUI.cancel') }}
-            </button>
+                  ? t('usersUI.initialPassword')
+                  : t('passwordUI.newPassword')
+              }}</label
+              ><input
+                id="user-secret"
+                v-model="secret"
+                type="password"
+                autocomplete="new-password"
+                minlength="12"
+                maxlength="1024"
+                required
+                :disabled="busy"
+                @input="typed"
+              />
+              <button class="secondary" type="button" :disabled="busy" @click="generate">
+                {{ t('usersUI.generate') }}
+              </button>
+              <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
+            </template>
+            <ReauthProof
+              v-if="operation.kind === 'reset-password' || operation.kind === 'reset-totp'"
+              v-model:method="method"
+              v-model:password="proofPassword"
+              v-model:code="proofCode"
+              id-prefix="user"
+              :disabled="busy"
+            />
+            <div class="button-row">
+              <button class="primary" type="submit" :disabled="busy">
+                {{
+                  operation.kind === 'create'
+                    ? t('usersUI.create')
+                    : operation.kind === 'edit'
+                      ? t('usersUI.save')
+                      : operation.kind === 'reset-password'
+                        ? t('usersUI.confirmReset')
+                        : t('usersUI.confirmResetTotp')
+                }}
+              </button>
+              <button class="text-button" type="button" :disabled="busy" @click="close">
+                {{ t('usersUI.cancel') }}
+              </button>
+            </div>
           </div>
         </form>
       </section>

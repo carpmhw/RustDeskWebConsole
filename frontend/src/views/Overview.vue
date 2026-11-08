@@ -1,10 +1,23 @@
 <script setup lang="ts">
 defineOptions({ name: 'OverviewView' })
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import HealthPanel from '../components/HealthPanel.vue'
 const { t } = useI18n()
 const auth = useAuthStore()
+// 入口只列目前角色可用的頁面；伺服器與使用者管理僅限管理員。
+const entries = computed(() => [
+  { name: 'targets', label: 'targets' },
+  { name: 'security', label: 'security' },
+  { name: 'preferences', label: 'preferences' },
+  ...(auth.user?.role === 'admin'
+    ? [
+        { name: 'servers', label: 'servers' },
+        { name: 'users', label: 'usersUI.nav' },
+      ]
+    : []),
+])
 </script>
 <template>
   <main class="app-main">
@@ -24,13 +37,13 @@ const auth = useAuthStore()
         </div>
         <div class="card-body">
           <p class="muted">{{ t('workspaceHint') }}</p>
-          <nav class="workspace-links" :aria-label="t('workspace')">
-            <RouterLink :to="{ name: 'targets' }">{{ t('targets') }}</RouterLink>
-            <RouterLink :to="{ name: 'security' }">{{ t('security') }}</RouterLink>
-            <RouterLink :to="{ name: 'preferences' }">{{ t('preferences') }}</RouterLink>
-            <RouterLink v-if="auth.user?.role === 'admin'" :to="{ name: 'servers' }">{{
-              t('servers')
-            }}</RouterLink>
+          <nav :aria-label="t('workspace')">
+            <ul class="entry-list">
+              <li v-for="entry in entries" :key="entry.name">
+                <RouterLink :to="{ name: entry.name }">{{ t(entry.label) }}</RouterLink>
+                <p>{{ t('overviewUI.' + entry.name) }}</p>
+              </li>
+            </ul>
           </nav>
         </div>
       </section>
