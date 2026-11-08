@@ -62,9 +62,9 @@ onBeforeUnmount(() => {
   <section class="card" data-testid="change-password">
     <div v-if="mode === 'voluntary'" class="card-header">
       <h2>{{ t('passwordUI.changeTitle') }}</h2>
-      <p>{{ t('passwordUI.changeHint') }}</p>
     </div>
     <div class="card-body">
+      <p v-if="mode === 'voluntary'">{{ t('passwordUI.changeHint') }}</p>
       <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
       <p v-if="done && mode === 'voluntary'" class="success-message" role="status">
         {{ t('passwordUI.changed') }}
@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
           maxlength="1024"
           required
         />
-        <p class="muted">{{ t('passwordUI.lengthHint') }}</p>
+        <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
         <button class="primary" type="submit" :disabled="busy">
           {{
             busy

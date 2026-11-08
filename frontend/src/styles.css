@@ -780,6 +780,12 @@ summary {
   border-radius: calc(var(--panel-radius) - 1px);
 }
 /* 標籤下方的欄位與按鈕並排，等高對齊。 */
+/* 欄位下方的輔助說明。 */
+.field-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
 .inline-field {
   display: flex;
   flex-wrap: wrap;

@@ -192,14 +192,16 @@ onBeforeUnmount(() => {
       <section v-if="reveal" class="card" data-testid="generated-password">
         <div class="card-header">
           <h2>{{ t('usersUI.generatedTitle') }}</h2>
-          <p>{{ t('usersUI.generatedHint') }}</p>
         </div>
         <div class="card-body">
-          <code>{{ reveal }}</code>
-          <button class="secondary" type="button" @click="copy">
-            {{ t(copied ? 'usersUI.copied' : 'usersUI.copy') }}
-          </button>
-          <button class="primary" type="button" @click="dismiss">{{ t('usersUI.done') }}</button>
+          <p>{{ t('usersUI.generatedHint') }}</p>
+          <code class="secret-key">{{ reveal }}</code>
+          <div class="button-row">
+            <button class="secondary" type="button" @click="copy">
+              {{ t(copied ? 'usersUI.copied' : 'usersUI.copy') }}
+            </button>
+            <button class="primary" type="button" @click="dismiss">{{ t('usersUI.done') }}</button>
+          </div>
         </div>
       </section>
       <section v-if="operation" class="card management-editor">
@@ -215,9 +217,9 @@ onBeforeUnmount(() => {
                     : t('usersUI.resetTotp') + '：' + operation.row.username
             }}
           </h2>
-          <p v-if="operation.kind === 'reset-totp'">{{ t('usersUI.resetTotpHint') }}</p>
         </div>
         <form class="card-body" @submit.prevent="submit">
+          <p v-if="operation.kind === 'reset-totp'">{{ t('usersUI.resetTotpHint') }}</p>
           <template v-if="operation.kind === 'create'">
             <label for="user-username">{{ t('username') }}</label
             ><input
@@ -273,7 +275,7 @@ onBeforeUnmount(() => {
             <button class="secondary" type="button" :disabled="busy" @click="generate">
               {{ t('usersUI.generate') }}
             </button>
-            <p class="muted">{{ t('passwordUI.lengthHint') }}</p>
+            <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
           </template>
           <ReauthProof
             v-if="operation.kind === 'reset-password' || operation.kind === 'reset-totp'"
