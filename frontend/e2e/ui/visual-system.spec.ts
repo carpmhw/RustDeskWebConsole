@@ -3,17 +3,17 @@ import { contrastRatio, pageOverflows, readContrastSamples } from './helpers'
 
 const colors = {
   light: {
-    page: '#f1ede5',
-    surface: '#fffdfa',
-    raised: '#f7f1e6',
-    input: '#fcf8f0',
-    ink: '#32291b',
-    muted: '#655640',
-    line: '#92816a',
-    'soft-line': '#c1b39b',
-    primary: '#805414',
+    page: '#f4f1ec',
+    surface: '#ffffff',
+    raised: '#f6f3ee',
+    input: '#fdfcfa',
+    ink: '#2e2720',
+    muted: '#5f5446',
+    line: '#8f8475',
+    'soft-line': '#d9d2c7',
+    primary: '#7a4f14',
     'on-primary': '#ffffff',
-    subtle: '#faedcf',
+    subtle: '#efeae2',
     accent: '#006d65',
     success: '#08744f',
     'success-bg': '#e0f4e9',
@@ -23,17 +23,17 @@ const colors = {
     'danger-bg': '#ffebeb',
   },
   dark: {
-    page: '#191816',
-    surface: '#2a2925',
-    raised: '#39372f',
-    input: '#201f1b',
-    ink: '#faf6ed',
-    muted: '#d2c8b4',
-    line: '#948973',
-    'soft-line': '#665f50',
-    primary: '#f3c56b',
-    'on-primary': '#352403',
-    subtle: '#49391e',
+    page: '#1a1816',
+    surface: '#26231f',
+    raised: '#322e29',
+    input: '#1e1c19',
+    ink: '#f6f1e8',
+    muted: '#cfc5b5',
+    line: '#8f8576',
+    'soft-line': '#4a443c',
+    primary: '#f0c063',
+    'on-primary': '#33230a',
+    subtle: '#36312a',
     accent: '#8ddcd3',
     success: '#5ee9aa',
     'success-bg': '#183f3a',
@@ -54,7 +54,7 @@ test('contrast measurement uses linear sRGB and alpha compositing', () => {
 
 for (const theme of ['light', 'dark'] as const) {
   // 改錯正式色票或狀態class會失敗，非重複草圖宣告或測試自有CSS。
-  test(`graphite amber colors and semantic states: ${theme}`, async ({ page }) => {
+  test(`warm refined colors and semantic states: ${theme}`, async ({ page }) => {
     await page.goto('/e2e/ui/index.html')
     // 主題切換只設定既有的公開data attribute，不載入任何認證狀態。
     await page.evaluate((value) => {
@@ -95,6 +95,11 @@ for (const theme of ['light', 'dark'] as const) {
       }, colors[theme][key])
       await expect(page.locator('#' + id)).toHaveCSS('color', expected)
     }
+    // 次要按鈕用中性底與主要文字色，棕色只留給主要按鈕。
+    await expect(page.locator('#secondary')).toHaveCSS(
+      'color',
+      await page.locator('body').evaluate((node) => getComputedStyle(node).color),
+    )
     for (const sample of await readContrastSamples(page)) {
       expect(sample.ratio, sample.id).toBeGreaterThanOrEqual(sample.minimum)
     }

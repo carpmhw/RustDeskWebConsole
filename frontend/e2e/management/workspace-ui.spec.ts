@@ -75,6 +75,10 @@ test.beforeEach(() => resetStack())
 test('header keeps anonymous restricted appearance access', async ({ page }) => {
   await page.goto(base + '/login')
   await expect(page.locator('.app-nav')).toHaveCount(0)
+  // 頁首品牌圖示沿用分頁圖示，在各掛載路徑下都必須實際載入。
+  const mark = page.locator('img.brand-mark')
+  await expect(mark).toHaveJSProperty('complete', true)
+  expect(await mark.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0)
   const disclosure = page.getByTestId('appearance-menu')
   await expect(disclosure).toBeVisible()
   await disclosure.locator('summary').focus()
@@ -105,6 +109,11 @@ for (const role of ['admin', 'operator', 'viewer'] as const) {
       await expect(page.locator('.header-actions [data-theme-choice]')).toHaveCount(0)
       await nav.getByRole('link', { name: '顯示偏好', exact: true }).click()
       await expect(page.locator('main .display-preferences')).toBeVisible()
+      // 導覽選中項目用中性底與主要文字色，不再以強調色標示。
+      await expect(nav.getByRole('link', { name: '顯示偏好', exact: true })).toHaveCSS(
+        'color',
+        await page.locator('body').evaluate((node) => getComputedStyle(node).color),
+      )
       await expect(page.getByLabel('頁面時區')).toHaveCount(1)
       await expect(page.getByLabel('語言')).toHaveCount(1)
       await page.setViewportSize({ width: 1024, height: 900 })
