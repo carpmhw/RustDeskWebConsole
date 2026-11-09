@@ -63,6 +63,7 @@ node --test frontend/e2e/scripts/test-e2e-layout.mjs frontend/e2e/scripts/test-m
 - reconnect-security、longrun、ingress 與原始 50 次 reliability 依既有 scope 在 `/rdweb + preserve` 執行；不縮短期限、退避、限流或可靠性序列。公開 UI 與 proxy browser harness 也納入發布前檢查。Windows 原生操作、SAS／IME 與文字診斷仍需操作者 runtime，不由 Linux CI 代替。
 - `real/reconnect-routing.ts` 只校準 Main 的 Playwright WebSocket route；Dedicated Worker 不受該 API 攔截，Worker 中斷由 `proxy/worker.spec.ts` 的真 loopback 代理驗證，不將 Main route 的結果視為 Worker 通過。
 - 未指定 `RDWEB_E2E_MATRIX` 的管理 runner，以及其他 runner 的預設值，仍保留原本完整矩陣，供需要逐項交叉驗收時執行。
+- 正式部署：`deploy`（兩容器，`test-m4-deploy.sh`）與 `deploy-single`（單容器，先跑 `tools/test-single-supervise.mjs` 監督行為，再跑 `test-single-deploy.sh`）在 CI 各執行 `/rdweb + preserve` 一組，含重啟、備份還原與映像秘密檢查；單容器另含由兩容器版備份搬移後真實連線，以及兩版安全標頭一致。兩者的六組矩陣於本機發布前驗收執行（不設 `RDWEB_M4_*`／`RDWEB_SINGLE_*` 即為六組）。
 
 ```sh
 # 一組完整管理功能／布局（排除由代理矩陣執行的契約）

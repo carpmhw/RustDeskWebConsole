@@ -1,0 +1,57 @@
+# RustDesk Web Console 單容器正式部署（nginx＋後端同一映像，由監督腳本管理）。
+# 一律搭配非秘密設定檔：docker compose -p rdweb-single -f compose.yml --env-file /etc/rdweb/single.conf ...
+# 秘密只以 Docker secrets 檔案掛載至 /run/secrets，不進環境變數值、映像或命令列。
+# 與兩容器版（deploy/prod，專案 rdweb）為不同專案與不同 volume，兩者不可共用 SQLite 檔。
+name: rdweb-single
+services:
+  rdweb:
+    image: rdweb-single:local
+    build:
+      context: ../..
+      dockerfile: deploy/single/Dockerfile.single
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      APP_BASE_PATH: ${APP_BASE_PATH:-/}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?請在 single.conf 設定 APP_PUBLIC_URL}
+      DATA_PATH: /app/data/app.db
+      LOG_TIME_ZONE: ${LOG_TIME_ZONE:-UTC}
+      DEFAULT_DISPLAY_TIME_ZONE: ${DEFAULT_DISPLAY_TIME_ZONE:-Asia/Taipei}
+      # 外層 nginx 連入時的來源位址／CIDR；同主機時為本網路 gateway（預設 172.31.82.1）。
+      OUTER_PROXY_ADDRESSES: ${OUTER_PROXY_ADDRESSES:?請在 single.conf 設定 OUTER_PROXY_ADDRESSES}
+      VAULT_KEY_VERSION: ${VAULT_KEY_VERSION:-1}
+      SECRET_KEY_FILE: /run/secrets/secret_key
+      VAULT_KEY_FILE: /run/secrets/vault_key
+      TZ: UTC
+    secrets: [secret_key, vault_key]
+    ports:
+      - ${RDWEB_BIND:-127.0.0.1:8080}:8000
+    volumes:
+      # 掛在映像預先建立、屬於 app 的目錄；新 volume 會繼承其擁有者與 0700 權限。
+      - rdweb-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, /usr/local/bin/rdweb-healthcheck.sh]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    networks: [rdweb]
+secrets:
+  secret_key:
+    file: ${RDWEB_SECRETS_DIR:-/etc/rdweb/secrets}/secret_key
+  vault_key:
+    file: ${RDWEB_SECRETS_DIR:-/etc/rdweb/secrets}/vault_key
+volumes:
+  rdweb-data:
+networks:
+  # 固定子網只為讓同主機外層代理的來源（gateway）可預先設定；不指定容器位址。
+  # 不設 internal：後端需連到另一台主機上的 hbbs／hbbr。
+  rdweb:
+    ipam:
+      config:
+        - subnet: ${RDWEB_SUBNET:-172.31.82.0/24}

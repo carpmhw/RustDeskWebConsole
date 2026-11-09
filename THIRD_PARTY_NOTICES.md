@@ -33,6 +33,8 @@ NuGet／pnpm 鎖檔固定完整相依樹；以 `dotnet list ... --vulnerable --i
 
 M0 測試映像中的 Xvfb、Fluxbox、D-Bus、X11 工具與 Linux 圖形執行期套件已取得使用者同意；套件各自的 copyright／license 隨 Debian 套件安裝保留於映像內的 `/usr/share/doc/`。
 
+單容器正式映像（`deploy/single/Dockerfile.single`）以 `nginx:stable-trixie`（Debian 13，digest 鎖定，與兩容器 web 映像相同）為基底，複製官方 `aspnet:10.0` 映像內的 .NET runtime（MIT），並自 Debian 13 套件庫安裝 `libicu76`（ICU 授權，76.1-4）供 .NET 全球化與時區使用；其 copyright 隨 Debian 套件保留於映像內的 `/usr/share/doc/libicu76/`。
+
 ## Otp.NET 授權聲明
 
 來源：Otp.NET 1.4.1 套件中的 `LICENSE.txt`；以下保留原始條款。
