@@ -266,6 +266,7 @@ export const messages = {
       pendingChange: '待改密碼',
       initialPassword: '初始密碼',
       generate: '自動產生',
+      generatedPending: '已產生密碼，完成後會在頁面上方顯示一次，可複製。',
       generatedTitle: '初始密碼（只顯示這一次）',
       generatedHint: '請以其他管道交給同事；按下完成後無法再次查看。',
       copy: '複製',
@@ -612,6 +613,8 @@ export const messages = {
       pendingChange: 'Must change password',
       initialPassword: 'Initial password',
       generate: 'Generate',
+      generatedPending:
+        'Password generated. After you finish, it is shown once at the top of the page so you can copy it.',
       generatedTitle: 'Initial password (shown only once)',
       generatedHint:
         'Give it to your colleague through another channel. It cannot be shown again after you select Done.',

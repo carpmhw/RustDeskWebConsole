@@ -276,6 +276,9 @@ onBeforeUnmount(() => {
               <button class="secondary" type="button" :disabled="busy" @click="generate">
                 {{ t('usersUI.generate') }}
               </button>
+              <p v-if="generated" class="field-hint" role="status">
+                {{ t('usersUI.generatedPending') }}
+              </p>
               <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
             </template>
             <ReauthProof
