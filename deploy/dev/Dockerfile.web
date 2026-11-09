@@ -6,12 +6,12 @@ RUN corepack pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN corepack pnpm build
 
-FROM nginx:stable-bookworm@sha256:552e7481ca93ffccd046aa658dbbed22caefbc09c66fa7cd247cbb90b8a5c609
+FROM nginx:stable-trixie@sha256:42c68eab6f7e22611786a9fe1d1c019e275c50185bd54b8f75dc2b9184322703
 COPY --from=build /source/dist/ /usr/share/nginx/html/
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/nginx/html/
 COPY deploy/dev/nginx.conf.template deploy/dev/ingress.conf.template /etc/rdweb/
 COPY deploy/dev/entrypoint-web.sh /etc/rdweb/entrypoint.sh
-COPY deploy/dev/validate-outer-proxy.sh /etc/rdweb/validate-outer-proxy.sh
+COPY deploy/dev/validate-outer-proxy.sh deploy/dev/render-gateway.sh /etc/rdweb/
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx
 USER nginx
 EXPOSE 8080

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
@@ -26,6 +26,19 @@ const override = process.env.RDWEB_COMPOSE_EXTRA ?? ''
 const backups = process.env.RDWEB_BACKUP_DIR ?? ''
 const lifecycle = process.env.RDWEB_M4_LIFECYCLE === '1'
 const probeIp = /(^|:)172\.31\.81\.20$/
+// 同一份驗收涵蓋兩種部署：split 為兩容器（deploy/prod），single 為單容器（deploy/single）。
+const mode = process.env.RDWEB_DEPLOY_MODE === 'single' ? 'single' : 'split'
+const deployDir = mode === 'single' ? 'deploy/single' : 'deploy/prod'
+// single runner 先以兩容器版跑 migration-source 階段，產生搬移用備份與安全標頭基準。
+const stage = process.env.RDWEB_DEPLOY_STAGE ?? 'matrix'
+const migrationFile = join(work, 'migration.json')
+const comparedHeaders = [
+  'content-security-policy',
+  'x-content-type-options',
+  'x-frame-options',
+  'referrer-policy',
+  'cache-control',
+]
 
 // 只能由 test-m4-deploy.sh 提供隔離部署環境。
 test.beforeAll(() => {
@@ -45,7 +58,7 @@ function compose(args: string[]): string {
         '--env-file',
         conf,
         '-f',
-        join(repo, 'deploy/prod/compose.yml'),
+        join(repo, deployDir, 'compose.yml'),
         '-f',
         override,
         ...args,
@@ -70,7 +83,7 @@ function opsScript(script: string, args: string[]): void {
         `RDWEB_COMPOSE_EXTRA=${override}`,
         `RDWEB_BACKUP_DIR=${backups}`,
         'sh',
-        join(repo, 'deploy/prod', script),
+        join(repo, deployDir, script),
         ...args,
       ],
       { stdio: 'pipe' },
@@ -142,6 +155,26 @@ function probeLogin(url: string, spoofed: boolean): string {
     }),
     url,
   ])
+}
+
+// 從探測容器連線；連不上（例如後端只聽容器回環位址）時回傳 false。
+function probeReachable(url: string): boolean {
+  try {
+    compose(['run', '--rm', '--no-deps', '-T', 'probe', '--silent', '--output', '/dev/null', url])
+    return true
+  } catch {
+    return false
+  }
+}
+
+// 讀取頁面與 API 的安全標頭，供兩種部署比對。
+async function securityHeaders(context: APIRequestContext): Promise<Record<string, string>> {
+  const result: Record<string, string> = {}
+  for (const path of [base + '/', base + '/api/v1/health']) {
+    const response = await context.get(origin + path)
+    for (const name of comparedHeaders) result[path + ' ' + name] = response.headers()[name] ?? ''
+  }
+  return result
 }
 
 // 以管理員 API 建立官方 fixture 的 TCP 伺服器與目標；目標密碼只經 API 進 Vault。
@@ -220,6 +253,7 @@ test('deployed console logs in with TOTP, survives deep refresh and opens a real
   page,
   context,
 }) => {
+  test.skip(stage !== 'matrix', '只在部署矩陣階段執行')
   const fixture = await createFixture('admin')
   try {
     const own = await api<{ access_token: string }>(fixture.context, 'auth/login', 'POST', {
@@ -288,18 +322,27 @@ test('deployed console logs in with TOTP, survives deep refresh and opens a real
 
 // 稽核來源 IP 為外層 nginx 看到的用戶端；用戶端偽造或非外層來源送來的 X-Forwarded-For 都不被採信。
 test('real client ip reaches audit and spoofed forwarding is ignored', async () => {
+  test.skip(stage !== 'matrix', '只在部署矩陣階段執行')
   const viaOuter = `https://outer${base}/api/v1/auth/login`
   expect(probeLogin(viaOuter, false)).toBe('401')
   expect(probeLogin(viaOuter, true)).toBe('401')
-  expect(probeLogin(`http://web:8080${base}/api/v1/auth/login`, true)).toBe('401')
-  // backend 只信任 web 容器；同網路其他來源直連 backend 帶 XFF 也不得被採信。
-  expect(probeLogin('http://backend:8080/api/v1/auth/login', true)).toBe('401')
-  // 稽核由背景佇列寫入；以條件輪詢等待四筆皆落地後再判定。
+  const gateway = mode === 'single' ? 'rdweb:8000' : 'web:8080'
+  expect(probeLogin(`http://${gateway}${base}/api/v1/auth/login`, true)).toBe('401')
+  let expected = 3
+  if (mode === 'single') {
+    // 單容器後端只聽容器回環位址，同網路其他來源無法直連。
+    expect(probeReachable('http://rdweb:8080/api/v1/health')).toBe(false)
+  } else {
+    // backend 只信任 web 容器；同網路其他來源直連 backend 帶 XFF 也不得被採信。
+    expect(probeLogin('http://backend:8080/api/v1/auth/login', true)).toBe('401')
+    expected = 4
+  }
+  // 稽核由背景佇列寫入；以條件輪詢等待全部落地後再判定。
   await expect
     .poll(
       () => {
-        const sources = failedLoginSources(4)
-        return sources.length === 4 && sources.every((source) => probeIp.test(source))
+        const sources = failedLoginSources(expected)
+        return sources.length === expected && sources.every((source) => probeIp.test(source))
       },
       { timeout: 30000 },
     )
@@ -308,6 +351,7 @@ test('real client ip reaches audit and spoofed forwarding is ignored', async () 
 
 // 重啟後資料保留、記憶體內的舊連線 ticket 失效，新 ticket 仍可連線。
 test('restart keeps data and invalidates old tickets', async ({ page }) => {
+  test.skip(stage !== 'matrix', '只在部署矩陣階段執行')
   test.skip(!lifecycle, '生命週期案例只在 /rdweb preserve 執行')
   const name = 'm4-restart-' + randomUUID().slice(0, 8)
   const fixture = await createFixture('admin')
@@ -327,7 +371,7 @@ test('restart keeps data and invalidates old tickets', async ({ page }) => {
   } finally {
     await fixture.context.dispose()
   }
-  compose(['restart', 'backend', 'web'])
+  compose(['restart', ...(mode === 'single' ? ['rdweb'] : ['backend', 'web'])])
   compose(['up', '-d', '--wait', '--wait-timeout', '120'])
   expect(await targetNames()).toContain(name)
   await page.goto(base + '/login')
@@ -349,6 +393,7 @@ test('restart keeps data and invalidates old tickets', async ({ page }) => {
 
 // 以正式腳本線上備份、新增資料、還原後回到備份時的內容。
 test('backup and restore round trip', async () => {
+  test.skip(stage !== 'matrix', '只在部署矩陣階段執行')
   test.skip(!lifecycle, '生命週期案例只在 /rdweb preserve 執行')
   const suffix = randomUUID().slice(0, 8)
   const fixture = await createFixture('admin')
@@ -368,6 +413,7 @@ test('backup and restore round trip', async () => {
 
 // 映像與容器環境不含秘密值、不帶秘密類檔案，且兩個服務都以非 root 執行。
 test('images carry no secrets', () => {
+  test.skip(stage !== 'matrix', '只在部署矩陣階段執行')
   test.skip(!lifecycle, '生命週期案例只在 /rdweb preserve 執行')
   // 初始密碼檔已依文件在首次建立管理員後刪除，改用 runner 程序內的同一密碼比對。
   const secrets = [
@@ -377,10 +423,14 @@ test('images carry no secrets', () => {
     password,
   ]
   const leaks = (text: string) => secrets.some((secret) => text.includes(secret))
-  for (const [service, image, dirs] of [
-    ['backend', 'rdweb-backend:local', ['/app']],
-    ['web', 'rdweb-web:local', ['/usr/share/nginx/html', '/etc/rdweb']],
-  ] as const) {
+  const services: [string, string, string[]][] =
+    mode === 'single'
+      ? [['rdweb', 'rdweb-single:local', ['/app', '/usr/share/nginx/html', '/etc/rdweb']]]
+      : [
+          ['backend', 'rdweb-backend:local', ['/app']],
+          ['web', 'rdweb-web:local', ['/usr/share/nginx/html', '/etc/rdweb']],
+        ]
+  for (const [service, image, dirs] of services) {
     const container = compose(['ps', '-q', service])
     expect(
       leaks(
@@ -435,4 +485,62 @@ test('images carry no secrets', () => {
     expect(found.trim()).toBe('')
     expect(compose(['exec', '-T', service, 'id', '-u'])).not.toBe('0')
   }
+})
+
+// 搬移來源（兩容器版）：建立待搬移目標、以正式腳本備份，並記錄安全標頭基準。
+test('migration source prepares a two-container backup', async ({ request }) => {
+  test.skip(stage !== 'migration-source', '只在 single runner 的搬移來源階段執行')
+  const name = 'migrated-' + randomUUID().slice(0, 8)
+  const fixture = await createFixture('admin')
+  try {
+    await createTarget(fixture.context, fixture.admin.access_token, name)
+  } finally {
+    await fixture.context.dispose()
+  }
+  const record = { name, backup: backupNow(), headers: await securityHeaders(request) }
+  writeFileSync(migrationFile, JSON.stringify(record), { mode: 0o600 })
+})
+
+// 單容器還原兩容器版的備份後，資料可用，且目標密碼能以同一把 vault_key 解密並完成真實連線。
+test('two-container backup restores into the single container', async ({ page, context }) => {
+  test.skip(
+    stage !== 'matrix' || mode !== 'single' || !lifecycle,
+    '只在單容器 /rdweb preserve 執行',
+  )
+  const { name, backup } = JSON.parse(readFileSync(migrationFile, 'utf8')) as {
+    name: string
+    backup: string
+  }
+  opsScript('restore.sh', ['--yes', '--skip-backup', backup])
+  expect(await targetNames()).toContain(name)
+  const fixture = await createFixture('admin')
+  try {
+    await loginUi(page, fixture.user.username)
+    await page.goto(base + '/targets')
+    const row = page.locator('tbody tr').filter({ hasText: name })
+    await expect(row).toHaveCount(1)
+    // 登入輔助需解密搬移來的目標密碼，畫面驗證成功即代表 vault_key 與資料一致。
+    const popup = context.waitForEvent('page')
+    await row.getByRole('link', { name: '連線', exact: true }).click()
+    const consolePage = await popup
+    await expect(consolePage.getByTestId('console-verified')).toBeVisible({ timeout: 45000 })
+    await consolePage.getByTestId('console-end').click()
+    await expect(consolePage.getByTestId('console-phase')).toHaveText('連線已取消／關閉')
+    await consolePage.close()
+  } finally {
+    await fixture.context.dispose()
+  }
+})
+
+// 兩種部署回應的 CSP 與安全標頭相同。
+test('security headers match the two-container deployment', async ({ request }) => {
+  test.skip(
+    stage !== 'matrix' || mode !== 'single' || !lifecycle,
+    '只在單容器 /rdweb preserve 執行',
+  )
+  const { headers } = JSON.parse(readFileSync(migrationFile, 'utf8')) as {
+    headers: Record<string, string>
+  }
+  expect(Object.values(headers).every((value) => value !== '')).toBe(true)
+  expect(await securityHeaders(request)).toEqual(headers)
 })

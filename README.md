@@ -52,7 +52,10 @@ API（ASP.NET Core）── SQLite（正式資料）
 
 ## 正式部署
 
-在既有 Docker 主機與既有 nginx（HTTPS）後方長期部署、更新、備份與還原，見 [`deploy/prod/README.md`](deploy/prod/README.md)。
+在既有 Docker 主機與既有 nginx（HTTPS）後方長期部署、更新、備份與還原，有兩種形態，功能與資安設定相同：
+
+- 兩容器（`backend`＋`web`）：見 [`deploy/prod/README.md`](deploy/prod/README.md)。
+- 單容器（nginx 與後端同一映像，只有一個 compose 服務）：見 [`deploy/single/README.md`](deploy/single/README.md)。
 
 ## 快速啟動（開發環境）
 
@@ -135,13 +138,14 @@ Windows 真機、SAS 與 IME 測試需要操作者提供 runtime 與對應環境
 
 ## 專案結構
 
-| 路徑               | 內容                                                |
-| ------------------ | --------------------------------------------------- |
-| `src/RdWeb.Api/`   | ASP.NET Core API、認證、資料儲存與 RustDesk relay。 |
-| `src/RdWeb.Tests/` | xUnit 單元與整合測試。                              |
-| `frontend/`        | Vue 介面、瀏覽器 API 與 RustDesk Protocol Worker。  |
-| `frontend/e2e/`    | E2E 案例、設定、fixture、工具與專用容器環境。       |
-| `deploy/dev/`      | 共用開發 Compose、API／web 映像與 Redis 測試環境。  |
-| `tools/`           | 共用 fixture、回歸與授權檢查工具。                  |
+| 路徑                             | 內容                                                 |
+| -------------------------------- | ---------------------------------------------------- |
+| `src/RdWeb.Api/`                 | ASP.NET Core API、認證、資料儲存與 RustDesk relay。  |
+| `src/RdWeb.Tests/`               | xUnit 單元與整合測試。                               |
+| `frontend/`                      | Vue 介面、瀏覽器 API 與 RustDesk Protocol Worker。   |
+| `frontend/e2e/`                  | E2E 案例、設定、fixture、工具與專用容器環境。        |
+| `deploy/dev/`                    | 共用開發 Compose、API／web 映像與 Redis 測試環境。   |
+| `deploy/prod/`、`deploy/single/` | 正式部署：兩容器與單容器的 compose、維運腳本與文件。 |
+| `tools/`                         | 共用 fixture、回歸與授權檢查工具。                   |
 
 協定來源與雜湊見 [RustDesk 上游來源說明](src/RdWeb.Api/RustDesk/Protos/UPSTREAM.md)；第三方套件與來源資訊見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

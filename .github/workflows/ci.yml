@@ -131,7 +131,7 @@ jobs:
           node --test frontend/e2e/scripts/test-linux-host-handoff.mjs
           node --test frontend/e2e/scripts/test-windows-host-watchdog.mjs
           node --test frontend/e2e/scripts/test-windows-editor-geometry.mjs
-          node --test tools/test-deploy-scripts.mjs tools/test-web-outer-proxy.mjs
+          node --test tools/test-deploy-scripts.mjs tools/test-web-outer-proxy.mjs tools/test-gateway-render.mjs tools/test-nginx-base.mjs
   runtime:
     needs: changes
     if: needs.changes.outputs.mode == 'full'
@@ -191,6 +191,7 @@ jobs:
           - reconnect-ingress
           - reliability
           - deploy
+          - deploy-single
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -228,6 +229,12 @@ jobs:
               ;;
             # 正式部署：單組含重啟、備份還原與映像秘密檢查；六組矩陣於本機發布前驗收執行。
             deploy) RDWEB_M4_BASES=/rdweb RDWEB_M4_MODES=preserve bash frontend/e2e/scripts/test-m4-deploy.sh ;;
+            # 單容器：監督行為（程序結束、停止訊號、健康前不對外、inspect 無秘密）＋含搬移與標頭一致的單組部署；六組於本機發布前執行。
+            deploy-single)
+              docker build -f deploy/single/Dockerfile.single -t rdweb-single:local .
+              RDWEB_SINGLE_IMAGE=rdweb-single:local node --test --test-timeout=300000 tools/test-single-supervise.mjs
+              RDWEB_SINGLE_BASES=/rdweb RDWEB_SINGLE_MODES=preserve bash frontend/e2e/scripts/test-single-deploy.sh
+              ;;
             *) exit 2 ;;
           esac
       - name: Cleanup suite containers
