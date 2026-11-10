@@ -57,6 +57,16 @@ test('admin creates a user with a generated password shown once', async ({ page,
     await page.getByLabel('帳號', { exact: true }).fill(username)
     await page.getByLabel('角色', { exact: true }).selectOption('operator')
     await page.getByRole('button', { name: '自動產生', exact: true }).click()
+    // 欄位只顯示遮罩，提示管理員建立後才會看到可複製的密碼；手動改動後不再顯示密碼，提示也隨之消失。
+    const pending = page.getByText('已產生密碼，完成後會在頁面上方顯示一次，可複製。', {
+      exact: true,
+    })
+    await expect(pending).toBeVisible()
+    await page.getByLabel('初始密碼', { exact: true }).press('End')
+    await page.getByLabel('初始密碼', { exact: true }).press('x')
+    await expect(pending).toHaveCount(0)
+    await page.getByRole('button', { name: '自動產生', exact: true }).click()
+    await expect(pending).toBeVisible()
     await page.getByRole('button', { name: '建立', exact: true }).click()
     const shown = page.getByTestId('generated-password')
     await expect(shown).toBeVisible()
