@@ -118,6 +118,10 @@ sudo sh /opt/rdweb/deploy/single/restore.sh /var/backups/rdweb-single/rdweb-<時
 
 更新失敗時的回滾步驟、備份不含金鑰、還原會要求確認與結束碼 3 等細節，見兩容器版的 [〈更新〉](../prod/README.md#更新)、[〈備份〉](../prod/README.md#備份)、[〈還原〉](../prod/README.md#還原)。
 
+## 稽核紀錄
+
+稽核頁、匯出與保留天數的行為與兩容器版相同，見 [〈稽核紀錄〉](../prod/README.md#稽核紀錄)；需要縮小資料庫時，照該節步驟改用 `deploy/single/` 的 `backup.sh`、`restore.sh` 與 `/var/backups/rdweb-single/`。
+
 ## 從兩容器版搬到單容器版
 
 兩種部署使用不同的 volume，資料只透過備份與還原搬移。兩者都預設綁 `127.0.0.1:8080`，**不要同時啟動**。

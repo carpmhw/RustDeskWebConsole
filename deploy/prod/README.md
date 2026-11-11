@@ -264,6 +264,21 @@ sudo sh /opt/rdweb/deploy/prod/restore.sh /var/backups/rdweb/rdweb-<時間>-<編
 - 服務已無法啟動、無法先做線上備份時，可加 `--skip-backup`。
 - 已登入的使用者需重新登入；進行中的遠端連線會中斷。
 
+## 稽核紀錄
+
+管理員在導覽列的「稽核」頁查詢與匯出紀錄（登入、雙重驗證、設定與目標變更、目標密碼顯示、每次連線的開始／結束與時長）。
+
+- 匯出的 CSV 同時有 UTC 時間與「顯示偏好」時區的時間；單次最多 50,000 筆，超過時請縮小時間範圍。每次匯出本身也會記入稽核。
+- 同頁下方可設定保留天數（30–3650，預設 365），儲存需再次驗證。服務每天自動刪除超過期限的紀錄，刪除後無法復原。
+- SQLite 刪除資料後檔案不會自動縮小，空間會留給之後的紀錄重複使用；不縮小不影響正確性。確實需要縮小時，在主機上（需安裝 `sqlite3`）壓縮一份備份再還原，還原期間服務會短暫停止：
+
+  ```sh
+  sudo sh /opt/rdweb/deploy/prod/backup.sh            # 記下輸出的備份檔路徑
+  sudo cp /var/backups/rdweb/rdweb-<時間>-<編號>.db /var/backups/rdweb/compact.db
+  sudo sqlite3 /var/backups/rdweb/compact.db 'VACUUM;'
+  sudo sh /opt/rdweb/deploy/prod/restore.sh --yes /var/backups/rdweb/compact.db
+  ```
+
 ## 金鑰保管與輪替
 
 - `secret_key`：簽署登入權杖。更換後所有人需重新登入，不影響資料。
