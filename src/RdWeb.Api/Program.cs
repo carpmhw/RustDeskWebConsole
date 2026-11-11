@@ -50,6 +50,7 @@ public partial class Program
         AuthEndpoints.Map(app);
         UserEndpoints.Map(app);
         SettingsEndpoints.Map(app);
+        AuditEndpoints.Map(app);
         ServerEndpoints.Map(app);
         TargetEndpoints.Map(app);
         ConnectionEndpoints.Map(app);

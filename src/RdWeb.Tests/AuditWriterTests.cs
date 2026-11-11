@@ -42,6 +42,25 @@ public sealed class AuditWriterTests
         await Assert.ThrowsAsync<ArgumentException>(() => writer.WriteAsync(new(AuditAction.Login, AuditResult.Failure, Detail: new(BytesSent: -1))));
     }
 
+    // 匯出／清除稽核的筆數與篩選同樣只接受固定格式：負筆數、未知動作／結果與空或過長時區皆拒絕。
+    [Fact]
+    public async Task RejectsInvalidCountAndExportFilter()
+    {
+        using var writer = new AuditWriter(new TestDbFactory(":memory:"));
+        var from = DateTime.UtcNow.AddDays(-1);
+        var to = DateTime.UtcNow;
+        await Assert.ThrowsAsync<ArgumentException>(() => writer.WriteAsync(new(AuditAction.AuditPurged, AuditResult.Success, Detail: new(Count: -1))));
+        foreach (var filter in new AuditExportFilter[]
+        {
+            new(from, to, null, "DropTables", null, "UTC"),
+            new(from, to, null, null, "Maybe", "UTC"),
+            new(from, to, null, null, null, ""),
+            new(from, to, null, null, null, new string('x', 65))
+        })
+            await Assert.ThrowsAsync<ArgumentException>(() => writer.WriteAsync(new(AuditAction.AuditExported, AuditResult.Success, Detail: new(Count: 1, Filter: filter))));
+        await writer.WriteAsync(new(AuditAction.AuditExported, AuditResult.Success, Detail: new(Count: 1, Filter: new(from, to, null, "Login", "Success", "Asia/Taipei"))));
+    }
+
     // 寫入失敗不可靜默丟棄；消費者與後續 producer 都可觀察失敗。
     [Fact]
     public async Task StorageFailureClosesQueueAndIsObservable()

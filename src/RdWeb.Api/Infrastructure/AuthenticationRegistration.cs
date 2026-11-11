@@ -19,6 +19,7 @@ public static class AuthenticationRegistration
         services.AddScoped<AuthService>();
         services.AddScoped<MfaService>();
         services.AddScoped<AdminService>();
+        services.AddScoped<AuditQueryService>();
         services.AddSingleton<RdWeb.Api.RustDesk.IHostResolver, RdWeb.Api.RustDesk.NativeHostResolver>();
         services.AddSingleton<RdWeb.Api.RustDesk.ApprovedHostResolver>();
         services.AddSingleton<RdWeb.Api.RustDesk.RendezvousTransport>();
