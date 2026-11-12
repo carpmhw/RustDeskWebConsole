@@ -95,6 +95,25 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         await auth.AuditAsync(AuditAction.SettingsChanged, AuditResult.Success, actor.Id, null, ip, ct, setting.Id, "setting");
         return new { require_mfa = request.RequireMfa };
     }
+    // 讀取網頁閒置登出設定；僅管理員。
+    public async Task<object> GetSessionSettingAsync(ClaimsPrincipal principal, CancellationToken ct)
+    {
+        _ = await sessions.RequireAsync(principal, admin: true, cancellationToken: ct);
+        return new { idle_minutes = await SessionService.ReadIdleMinutesAsync(database, ct) };
+    }
+    // 修改網頁閒置登出設定：0 表示關閉，其餘須為 30–1440 分鐘，並完成管理員二次驗證。
+    public async Task<object> SetSessionSettingAsync(ClaimsPrincipal principal, SessionSettingRequest request, string ip, CancellationToken ct)
+    {
+        var actor = await mfa.LoadAsync((await sessions.RequireAsync(principal, admin: true, cancellationToken: ct)).Id, ct);
+        if (request.IdleMinutes is > 0 and < SessionService.MinIdleMinutes) throw new AuthException("invalid_request", 400);
+        await mfa.ReauthenticateAsync(actor, new(request.Password, request.Code), ip, ct);
+        var setting = await database.SystemSettings.SingleOrDefaultAsync(item => item.Key == SessionService.IdleMinutesKey, ct);
+        if (setting == null) { setting = new SystemSetting { Key = SessionService.IdleMinutesKey }; database.SystemSettings.Add(setting); }
+        setting.Value = JsonSerializer.Serialize(request.IdleMinutes);
+        await database.SaveChangesAsync(ct);
+        await auth.AuditAsync(AuditAction.SettingsChanged, AuditResult.Success, actor.Id, null, ip, ct, null, "setting");
+        return new { idle_minutes = request.IdleMinutes };
+    }
     // 讀取連線管控設定；僅管理員。
     public async Task<object> GetConnectionSettingAsync(ClaimsPrincipal principal, CancellationToken ct)
     {

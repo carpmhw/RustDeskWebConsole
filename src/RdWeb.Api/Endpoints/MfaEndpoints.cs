@@ -18,7 +18,7 @@ public static class MfaEndpoints
     // 二階段驗證失敗可重試，但舊票證始終失效。
     private static async Task<IResult> VerifyAsync(MfaRequest request, HttpContext http, MfaService mfa, AuthService auth, AppOptions app, CancellationToken ct)
     {
-        var result = await mfa.VerifyLoginAsync(request.MfaToken, request.Code, Ip(http), ct);
+        var result = await mfa.VerifyLoginAsync(request.MfaToken, request.Code, Ip(http), ct, UserAgent(http));
         return result is SessionGrant grant ? await AuthEndpoints.GrantAsync(http, grant, auth, app, ct)
             : Results.Json(new { code = "invalid_mfa", mfa_required = true, mfa_token = ((MfaRetry)result).Token }, statusCode: 401);
     }
@@ -28,7 +28,7 @@ public static class MfaEndpoints
     // 確認後發行新的已驗 MFA session，舊 access 不會自行升權。
     private static async Task<IResult> ConfirmAsync(CodeRequest request, ClaimsPrincipal principal, HttpContext http, SessionValidator sessions, MfaService mfa, AuthService auth, AppOptions app, CancellationToken ct)
     {
-        var result = await mfa.ConfirmAsync(await mfa.LoadAsync((await sessions.RequireAsync(principal, full: false, cancellationToken: ct)).Id, ct), request.Code, Ip(http), ct);
+        var result = await mfa.ConfirmAsync(await mfa.LoadAsync((await sessions.RequireAsync(principal, full: false, cancellationToken: ct)).Id, ct), request.Code, Ip(http), ct, UserAgent(http));
         return await AuthEndpoints.GrantAsync(http, result.Grant, auth, app, ct, result.Codes);
     }
     // 停用完成即撤銷 session，要求重新登入。
@@ -43,4 +43,10 @@ public static class MfaEndpoints
         => Results.Ok(new { recovery_codes = await mfa.RegenerateAsync(await mfa.LoadAsync((await sessions.RequireAsync(principal, cancellationToken: ct)).Id, ct), request, Ip(http), ct) });
     // 來源已由 TrustedProxy 處理，不能自行採信 request header。
     internal static string Ip(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    // 建立 session 時記錄的 User-Agent；截斷至欄位上限 512，空值為 null。
+    internal static string? UserAgent(HttpContext http)
+    {
+        var value = http.Request.Headers.UserAgent.ToString();
+        return value.Length == 0 ? null : value[..Math.Min(value.Length, 512)];
+    }
 }

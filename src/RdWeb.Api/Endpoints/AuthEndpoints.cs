@@ -14,6 +14,8 @@ public static class AuthEndpoints
         group.MapPost("/login", LoginAsync); group.MapPost("/refresh", RefreshAsync); group.MapPost("/logout", LogoutAsync);
         group.MapGet("/csrf", CsrfAsync); group.MapGet("/me", MeAsync).RequireAuthorization();
         group.MapPost("/password", ChangePasswordAsync).RequireAuthorization();
+        group.MapGet("/sessions", SessionsAsync).RequireAuthorization();
+        group.MapPost("/sessions/revoke-others", RevokeOthersAsync).RequireAuthorization();
         MfaEndpoints.Map(group);
     }
 
@@ -40,7 +42,8 @@ public static class AuthEndpoints
     // 第一階段有 MFA 時只回 challenge，不發登入 cookie。
     private static async Task<IResult> LoginAsync(LoginRequest request, HttpContext http, AuthService auth, AppOptions app, CancellationToken cancellationToken)
     {
-        var result = await auth.LoginAsync(request.Username, request.Password, http.Connection.RemoteIpAddress?.ToString() ?? "unknown", cancellationToken);
+        var result = await auth.LoginAsync(request.Username, request.Password, http.Connection.RemoteIpAddress?.ToString() ?? "unknown", cancellationToken,
+            MfaEndpoints.UserAgent(http));
         return result is SessionGrant grant ? await GrantAsync(http, grant, auth, app, cancellationToken) : Results.Ok(result);
     }
 
@@ -55,6 +58,14 @@ public static class AuthEndpoints
         http.Response.Cookies.Delete("rdweb_refresh", CookieOptions(app));
         return Results.NoContent();
     }
+
+    // 列出自己的登入 session。
+    private static async Task<IResult> SessionsAsync(ClaimsPrincipal principal, SessionService sessions, CancellationToken cancellationToken)
+        => Results.Ok(await sessions.ListAsync(principal, null, cancellationToken));
+
+    // 本人登出其他所有裝置。
+    private static async Task<IResult> RevokeOthersAsync(ClaimsPrincipal principal, HttpContext http, SessionService sessions, CancellationToken cancellationToken)
+        => Results.Ok(await sessions.RevokeAsync(principal, null, null, MfaEndpoints.Ip(http), cancellationToken));
 
     // 唯讀取得 CSRF，不延長／輪替工作階段。
     private static async Task<IResult> CsrfAsync(HttpContext http, AuthService auth, TokenService tokens, CancellationToken cancellationToken)

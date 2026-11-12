@@ -22,6 +22,8 @@ public sealed class TokenService(AuthOptions options, AppOptions app, TimeProvid
             AuthVersion = user.AuthVersion,
             MfaVerified = mfaVerified,
             AuthenticatedAt = authenticatedAt ?? now,
+            // 建立時間即最近一次登入或 refresh，閒置判斷依此計算，須與注入時鐘一致。
+            CreatedAt = now,
             ExpiresAt = expiry ?? now.AddDays(7)
         };
         var raw = token.Id.ToString("N") + "." + Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));

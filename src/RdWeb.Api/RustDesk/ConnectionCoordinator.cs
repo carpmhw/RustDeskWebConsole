@@ -85,6 +85,9 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
                 await audits.WriteAsync(new(AuditAction.ConnectionEnded, success ? AuditResult.Success : AuditResult.Failure,
                     grant.UserId, new(reason, watch.ElapsedMilliseconds, totals.BrowserToTargetBytes, totals.TargetToBrowserBytes),
                     "target", grant.TargetId), CancellationToken.None);
+                // 遠端操作期間網頁不會 refresh：連線結束時間計為此 session 的最近使用，避免剛結束長時間連線就被判定閒置。
+                if (grant.Session != null)
+                    await RdWeb.Api.Security.SessionService.MarkSeenAsync(store, grant.Session.FamilyId, clock.GetUtcNow().UtcDateTime, CancellationToken.None);
             }
         }
     }
