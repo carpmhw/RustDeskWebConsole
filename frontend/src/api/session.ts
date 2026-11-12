@@ -104,7 +104,11 @@ export class AuthSession {
         )
         if (epoch === this.#epoch) this.adopt(grant)
       } catch (error) {
-        if (epoch === this.#epoch) this.clear('anonymous')
+        if (epoch === this.#epoch)
+          this.clear(
+            'anonymous',
+            error instanceof HttpError && error.code === 'session_idle' ? 'idle' : undefined,
+          )
         if (!(error instanceof HttpError && error.status === 401)) throw error
       }
     }).finally(() => {
@@ -324,11 +328,11 @@ export class AuthSession {
     this.#challenge = undefined
     this.publish({ phase: 'authenticated', user })
   }
-  // 清除私有票證，只留下明確的匿名或待初始化狀態。
-  private clear(phase: 'unknown' | 'anonymous'): void {
+  // 清除私有票證，只留下明確的匿名或待初始化狀態；ended 只在後端因閒置登出時帶入。
+  private clear(phase: 'unknown' | 'anonymous', ended?: 'idle'): void {
     this.#access = undefined
     this.#challenge = undefined
-    this.publish({ phase, user: null })
+    this.publish(ended ? { phase, user: null, ended } : { phase, user: null })
   }
   // 安全snapshot每次替換，避免Pinia意外取得私有物件。
   private publish(state: AuthState): void {

@@ -8,6 +8,7 @@ import { usePreferencesStore } from '../stores/preferences'
 import { buildQr } from '../utils/qr'
 import RecoveryCodes from '../components/RecoveryCodes.vue'
 import ChangePassword from '../components/ChangePassword.vue'
+import SessionDevices from '../components/SessionDevices.vue'
 const { t, te } = useI18n()
 const auth = useAuthStore()
 const preferences = usePreferencesStore()
@@ -302,6 +303,18 @@ onBeforeUnmount(() => {
           </div>
         </section>
         <ChangePassword mode="voluntary" />
+        <section
+          v-if="!auth.user?.mfa_enrollment_required && !auth.user?.password_change_required"
+          class="card"
+        >
+          <div class="card-header">
+            <h2>{{ t('sessionsUI.title') }}</h2>
+          </div>
+          <div class="card-body">
+            <p>{{ t('sessionsUI.selfHint') }}</p>
+            <SessionDevices />
+          </div>
+        </section>
         <section v-if="operation" class="card" data-testid="reauth-panel">
           <div class="card-header">
             <h2>{{ t('reauth') }}</h2>

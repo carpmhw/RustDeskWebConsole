@@ -127,7 +127,10 @@ test('admin resets password, disables and changes role', async ({ page }) => {
     await page.getByLabel('Email', { exact: true }).fill('mate@example.com')
     await page.getByLabel('角色', { exact: true }).selectOption('viewer')
     await page.getByLabel('啟用', { exact: true }).uncheck()
-    await page.getByRole('button', { name: '儲存', exact: true }).click()
+    await page
+      .locator('.management-editor')
+      .getByRole('button', { name: '儲存', exact: true })
+      .click()
     await expect(row(page, username)).toContainText('mate@example.com')
     await expect(row(page, username)).toContainText('檢視者')
     await expect(row(page, username)).toContainText('已停用')
@@ -146,13 +149,19 @@ test('last admin cannot be disabled', async ({ page }) => {
     const bootstrap = process.env.RDWEB_E2E_USERNAME!
     await row(page, bootstrap).getByRole('button', { name: '編輯', exact: true }).click()
     await page.getByLabel('啟用', { exact: true }).uncheck()
-    await page.getByRole('button', { name: '儲存', exact: true }).click()
+    await page
+      .locator('.management-editor')
+      .getByRole('button', { name: '儲存', exact: true })
+      .click()
     await expect(row(page, bootstrap)).toContainText('已停用')
     await row(page, fixture.user.username)
       .getByRole('button', { name: '編輯', exact: true })
       .click()
     await page.getByLabel('啟用', { exact: true }).uncheck()
-    await page.getByRole('button', { name: '儲存', exact: true }).click()
+    await page
+      .locator('.management-editor')
+      .getByRole('button', { name: '儲存', exact: true })
+      .click()
     await expect(page.getByRole('alert')).toContainText('最後一位')
     await page.reload()
     await expect(row(page, fixture.user.username)).toContainText('啟用中')

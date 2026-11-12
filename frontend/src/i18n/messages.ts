@@ -240,6 +240,7 @@ export const messages = {
     cancel: '取消',
     apply: '確認操作',
     disabledDone: '已停用雙重驗證，請重新登入。',
+    sessionIdle: '因閒置過久已登出，請重新登入。',
     healthTitle: '服務狀態',
     healthOk: '服務正常',
     healthUnavailable: '服務未就緒',
@@ -280,6 +281,34 @@ export const messages = {
         '沒有操作超過此時間即結束連線，結束前 60 秒提示；0 表示關閉，否則為 5–480。此項由瀏覽器判斷。',
       hoursLabel: '單次連線上限（小時）',
       hoursHint: '連線持續超過此時間即由伺服器結束；0 表示不限制，否則為 1–24。',
+    },
+    sessionsUI: {
+      title: '登入裝置',
+      titleFor: '{user} 的登入裝置',
+      open: '登入裝置',
+      close: '關閉',
+      selfHint: '目前登入這個帳號的地方。在公用電腦忘了登出時，可以在這裡登出其他所有裝置。',
+      device: '裝置',
+      signedIn: '登入時間',
+      lastUsed: '最近使用',
+      current: '目前這個',
+      unknown: '未知裝置',
+      empty: '目前沒有登入中的裝置。',
+      gone: '這個裝置已經登出，列表已更新。',
+      revoke: '登出',
+      revokeAll: '全部登出',
+      revokeOthers: '登出其他所有裝置',
+      revoked: '已登出 {count} 個裝置。',
+      confirmTitle: '確認登出',
+      confirmOne: '確定要登出這個裝置嗎？該裝置上的遠端連線也會中斷，帳號與密碼不受影響。',
+      confirmAll:
+        '確定要登出這位使用者所有的裝置嗎？進行中的遠端連線也會中斷，帳號與密碼不受影響。',
+      confirmOthers: '確定要登出目前這個以外的所有裝置嗎？那些裝置上的遠端連線也會中斷。',
+      settingsTitle: '網頁閒置登出',
+      settingsHint:
+        '超過設定時間沒有使用就需要重新登入，實際登出可能再晚最多約 15 分鐘；修改需再次驗證，下次 refresh 時對所有登入生效。',
+      idleLabel: '閒置時間（分鐘）',
+      idleHint: '0 表示關閉，否則為 30–1440。遠端連線進行中視為使用中。',
     },
     auditUI: {
       nav: '稽核',
@@ -328,6 +357,7 @@ export const messages = {
         AuditExported: '匯出稽核',
         AuditPurged: '清除過期稽核',
         ConnectionTerminated: '管理員中斷連線',
+        SessionRevoked: '登出裝置',
       },
       reasons: {
         InvalidCredentials: '帳號或密碼錯誤',
@@ -407,6 +437,7 @@ export const messages = {
     },
     errors: {
       password_reuse: '新密碼不能與目前密碼相同。',
+      current_session: '不能在這裡登出目前這個裝置，請使用登出。',
       last_admin: '系統至少需要一位啟用中的管理員，不能停用或降權最後一位。',
       username_conflict: '帳號已存在。',
       password_change_required: '請先設定新密碼。',
@@ -686,6 +717,7 @@ export const messages = {
     cancel: 'Cancel',
     apply: 'Confirm action',
     disabledDone: 'Two-factor authentication disabled. Please sign in again.',
+    sessionIdle: 'You were signed out after being idle. Please sign in again.',
     healthTitle: 'Service status',
     healthOk: 'Service ready',
     healthUnavailable: 'Service not ready',
@@ -730,6 +762,37 @@ export const messages = {
       hoursLabel: 'Session limit (hours)',
       hoursHint:
         'The server closes connections that last longer than this. 0 means no limit; otherwise 1–24.',
+    },
+    sessionsUI: {
+      title: 'Signed-in devices',
+      titleFor: 'Signed-in devices for {user}',
+      open: 'Devices',
+      close: 'Close',
+      selfHint:
+        'Places where this account is signed in. If you forgot to sign out on a shared computer, sign out all other devices here.',
+      device: 'Device',
+      signedIn: 'Signed in',
+      lastUsed: 'Last used',
+      current: 'This device',
+      unknown: 'Unknown device',
+      empty: 'No signed-in devices.',
+      gone: 'That device is already signed out. The list was refreshed.',
+      revoke: 'Sign out',
+      revokeAll: 'Sign out all',
+      revokeOthers: 'Sign out all other devices',
+      revoked: 'Signed out {count} device(s).',
+      confirmTitle: 'Confirm sign-out',
+      confirmOne:
+        'Sign out this device? Its remote connections also close. The account and password are not changed.',
+      confirmAll:
+        "Sign out all of this user's devices? Their remote connections also close. The account and password are not changed.",
+      confirmOthers:
+        'Sign out every device except this one? Remote connections on those devices also close.',
+      settingsTitle: 'Idle sign-out',
+      settingsHint:
+        'People must sign in again after this long without use; the actual sign-out can be up to about 15 minutes later. Saving requires re-authentication and applies to every sign-in at its next refresh.',
+      idleLabel: 'Idle time (minutes)',
+      idleHint: '0 turns it off; otherwise 30–1440. An open remote connection counts as use.',
     },
     auditUI: {
       nav: 'Audit',
@@ -779,6 +842,7 @@ export const messages = {
         AuditExported: 'Audit exported',
         AuditPurged: 'Expired audit purged',
         ConnectionTerminated: 'Connection closed by administrator',
+        SessionRevoked: 'Devices signed out',
       },
       reasons: {
         InvalidCredentials: 'Wrong username or password',
@@ -863,6 +927,7 @@ export const messages = {
     },
     errors: {
       password_reuse: 'The new password must differ from the current one.',
+      current_session: 'This device cannot be signed out here. Use Sign out instead.',
       last_admin:
         'At least one active administrator is required. The last one cannot be disabled or demoted.',
       username_conflict: 'That username already exists.',

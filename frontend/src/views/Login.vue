@@ -72,6 +72,14 @@ onBeforeUnmount(() => {
       <p v-if="route.query.message === 'disabledDone'" class="success-message" role="status">
         {{ t('disabledDone') }}
       </p>
+      <p
+        v-if="auth.ended === 'idle' && auth.phase !== 'mfa'"
+        class="notice"
+        role="status"
+        data-testid="login-idle-notice"
+      >
+        {{ t('sessionIdle') }}
+      </p>
       <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
       <form :aria-label="t(auth.phase === 'mfa' ? 'mfaTitle' : 'login')" @submit.prevent="submit">
         <template v-if="auth.phase !== 'mfa'"
