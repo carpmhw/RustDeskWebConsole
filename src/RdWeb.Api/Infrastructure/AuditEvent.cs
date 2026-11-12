@@ -1,8 +1,8 @@
 namespace RdWeb.Api.Infrastructure;
 
-public enum AuditAction { Login, Mfa, UserChanged, SettingsChanged, TargetChanged, PasswordViewed, ConnectionStarted, ConnectionEnded, ServerChanged, ServerTested, VaultRotated, AuditExported, AuditPurged }
+public enum AuditAction { Login, Mfa, UserChanged, SettingsChanged, TargetChanged, PasswordViewed, ConnectionStarted, ConnectionEnded, ServerChanged, ServerTested, VaultRotated, AuditExported, AuditPurged, ConnectionTerminated }
 public enum AuditResult { Success, Failure }
-public enum AuditReason { InvalidCredentials, Locked, Denied, Expired, Disconnected, Completed, ConnectionFailed, Revoked }
+public enum AuditReason { InvalidCredentials, Locked, Denied, Expired, Disconnected, Completed, ConnectionFailed, Revoked, Idle, Terminated }
 public sealed record AuditDetail(AuditReason? ReasonCode = null, long? DurationMilliseconds = null, long? BytesSent = null, long? BytesReceived = null,
     long? Count = null, AuditExportFilter? Filter = null);
 // 稽核匯出時使用的篩選條件；只含已驗證的固定欄位，不含任何匯出內容。

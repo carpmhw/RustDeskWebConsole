@@ -51,6 +51,7 @@ public partial class Program
         UserEndpoints.Map(app);
         SettingsEndpoints.Map(app);
         AuditEndpoints.Map(app);
+        ConnectionAdminEndpoints.Map(app);
         ServerEndpoints.Map(app);
         TargetEndpoints.Map(app);
         ConnectionEndpoints.Map(app);

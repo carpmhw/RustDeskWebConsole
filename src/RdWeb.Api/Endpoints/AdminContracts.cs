@@ -16,6 +16,11 @@ public sealed record ResetPasswordRequest(
     [property: Required, StringLength(1024, MinimumLength = 12), JsonPropertyName("new_password")] string NewPassword,
     [property: StringLength(1024, MinimumLength = 12)] string? Password,
     [property: RegularExpression("^[0-9]{6}$")] string? Code);
+public sealed record ConnectionSettingRequest(
+    [property: Range(0, 480), JsonPropertyName("idle_minutes")] int IdleMinutes,
+    [property: Range(0, 24), JsonPropertyName("max_hours")] int MaxHours,
+    [property: StringLength(1024, MinimumLength = 12)] string? Password,
+    [property: RegularExpression("^[0-9]{6}$")] string? Code);
 public sealed record AuditSettingRequest(
     [property: Range(30, 3650), JsonPropertyName("retention_days")] int RetentionDays,
     [property: StringLength(1024, MinimumLength = 12)] string? Password,

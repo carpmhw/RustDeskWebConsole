@@ -4,7 +4,8 @@ using System.Text.Json.Serialization;
 
 namespace RdWeb.Api.Endpoints;
 
-public sealed record ConnectionTicketRequest;
+// reconnect 由主控台的自動重連帶入；首次與手動開啟不帶。
+public sealed record ConnectionTicketRequest([property: JsonPropertyName("reconnect")] bool Reconnect = false);
 public sealed record ConnectionTicketResponse(string Ticket, [property: JsonPropertyName("expires_in")] int ExpiresIn);
 public sealed record ConnectionGrant(Guid UserId, Guid TargetId, ConnectionSessionBinding? Session = null);
 public sealed record VerifiedPeerIdentity(string RustDeskId, string SigningKey);

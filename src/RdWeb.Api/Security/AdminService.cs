@@ -95,6 +95,35 @@ public sealed class AdminService(AppDbContext database, SessionValidator session
         await auth.AuditAsync(AuditAction.SettingsChanged, AuditResult.Success, actor.Id, null, ip, ct, setting.Id, "setting");
         return new { require_mfa = request.RequireMfa };
     }
+    // 讀取連線管控設定；僅管理員。
+    public async Task<object> GetConnectionSettingAsync(ClaimsPrincipal principal, CancellationToken ct)
+    {
+        _ = await sessions.RequireAsync(principal, admin: true, cancellationToken: ct);
+        var settings = await ConnectionPolicy.ReadAsync(database, ct);
+        return new { idle_minutes = settings.IdleMinutes, max_hours = settings.MaxHours };
+    }
+    // 主控台閒置倒數只需閒置分鐘數，所有完整登入者可讀。
+    public async Task<object> GetIdleSettingAsync(ClaimsPrincipal principal, CancellationToken ct)
+    {
+        _ = await sessions.RequireAsync(principal, cancellationToken: ct);
+        return new { idle_minutes = (await ConnectionPolicy.ReadAsync(database, ct)).IdleMinutes };
+    }
+    // 修改連線管控設定：0 表示關閉，其餘值須在範圍內（閒置 5–480 分鐘、上限 1–24 小時），並完成管理員二次驗證。
+    public async Task<object> SetConnectionSettingAsync(ClaimsPrincipal principal, ConnectionSettingRequest request, string ip, CancellationToken ct)
+    {
+        var actor = await mfa.LoadAsync((await sessions.RequireAsync(principal, admin: true, cancellationToken: ct)).Id, ct);
+        if (request.IdleMinutes is > 0 and < 5) throw new AuthException("invalid_request", 400);
+        await mfa.ReauthenticateAsync(actor, new(request.Password, request.Code), ip, ct);
+        foreach (var (key, value) in new[] { (ConnectionPolicy.IdleMinutesKey, request.IdleMinutes), (ConnectionPolicy.MaxHoursKey, request.MaxHours) })
+        {
+            var setting = await database.SystemSettings.SingleOrDefaultAsync(item => item.Key == key, ct);
+            if (setting == null) { setting = new SystemSetting { Key = key }; database.SystemSettings.Add(setting); }
+            setting.Value = JsonSerializer.Serialize(value);
+        }
+        await database.SaveChangesAsync(ct);
+        await auth.AuditAsync(AuditAction.SettingsChanged, AuditResult.Success, actor.Id, null, ip, ct, null, "setting");
+        return new { idle_minutes = request.IdleMinutes, max_hours = request.MaxHours };
+    }
     // 讀取稽核保留天數；僅管理員。
     public async Task<object> GetAuditSettingAsync(ClaimsPrincipal principal, CancellationToken ct)
     {

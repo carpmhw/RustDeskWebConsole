@@ -37,14 +37,13 @@ public static class ConnectionEndpoints
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted, application.ApplicationStopping);
         var grant = await tickets.ConsumeAsync(id, credentials[0][prefix.Length..], lifetime.Token);
         using var browser = await http.WebSockets.AcceptWebSocketAsync("rdweb.v1");
-        await coordinator.RunAsync(grant, browser, lifetime.Token);
+        await coordinator.RunAsync(grant, browser, lifetime.Token, MfaEndpoints.Ip(http));
     }
 
     // 只回短效ticket與存活時間，不把upstream設定帶到browser。
     private static async Task<IResult> IssueTicketAsync(Guid id, ConnectionTicketRequest request, ClaimsPrincipal principal,
         ConnectionTicketService service, CancellationToken cancellationToken)
     {
-        _ = request;
-        return Results.Json(await service.IssueAsync(principal, id, cancellationToken), statusCode: StatusCodes.Status201Created);
+        return Results.Json(await service.IssueAsync(principal, id, cancellationToken, request.Reconnect), statusCode: StatusCodes.Status201Created);
     }
 }
