@@ -122,6 +122,10 @@ sudo sh /opt/rdweb/deploy/single/restore.sh /var/backups/rdweb-single/rdweb-<時
 
 稽核頁、匯出與保留天數的行為與兩容器版相同，見 [〈稽核紀錄〉](../prod/README.md#稽核紀錄)；需要縮小資料庫時，照該節步驟改用 `deploy/single/` 的 `backup.sh`、`restore.sh` 與 `/var/backups/rdweb-single/`。
 
+## 作用中連線與連線管控
+
+「連線」頁、強制中斷與閒置／時間上限設定與兩容器版相同，見 [〈作用中連線與連線管控〉](../prod/README.md#作用中連線與連線管控)。
+
 ## 從兩容器版搬到單容器版
 
 兩種部署使用不同的 volume，資料只透過備份與還原搬移。兩者都預設綁 `127.0.0.1:8080`，**不要同時啟動**。
