@@ -315,3 +315,21 @@ it('does not reset stability during a pending native socket failure', async () =
   expect(f.states.at(-1)?.attempt).toBe(1)
   f.c.dispose()
 })
+// 閒置結束：關閉代碼必須在作廢目前 attempt 之前交給 host，清理時 Worker 才會帶 4003 關閉；且不再自動重連。
+it('hands the idle close code to the host before cancelling the attempt', async () => {
+  const f = fixture()
+  f.c.start(id)
+  await flush()
+  const cancelled: boolean[] = []
+  f.host.dispose.mockImplementation((code?: number) => {
+    // 交付代碼時目前 attempt 尚未清理（cleanup 未被呼叫）。
+    cancelled.push(code === 4003 && f.cleanup.mock.calls.length === 0)
+    f.lives.at(-1)?.handle.cancel()
+  })
+  f.c.cancel(4003)
+  expect(f.host.dispose).toHaveBeenCalledWith(4003)
+  expect(cancelled[0]).toBe(true)
+  await f.time(60_000)
+  expect(f.host.open).toHaveBeenCalledOnce()
+  f.c.dispose()
+})

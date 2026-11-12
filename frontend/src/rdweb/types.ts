@@ -42,6 +42,10 @@ export const FAILURE_CODES = [
   'reconnect_timeout',
   'input_backpressure',
   'access_revoked',
+  'time_limit',
+  'terminated',
+  'idle',
+  'connection_ended',
 ] as const
 export type FailureCode = (typeof FAILURE_CODES)[number]
 // 所有跨執行緒與UI錯誤只能使用固定分類，不傳原生或remote任意字串。

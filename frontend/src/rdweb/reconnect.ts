@@ -2,7 +2,8 @@ import type { RetryState, Terminal } from './interaction-types'
 import { INTERACTION_LIMITS as L } from './interaction-limits'
 export interface RetryPorts {
   // 每次由 Main 執行完整新 attempt，不復用 ticket 或 crypto。
-  run(signal: AbortSignal): Promise<Terminal>
+  // reconnect 為真表示由排程自動發起（非首次或手動），取票時據以標示。
+  run(signal: AbortSignal, reconnect: boolean): Promise<Terminal>
   // 由目前 operation 的已驗 activity 證明健康，不靠影格頻率。
   healthy(): boolean
   // 公開 UI 只接安全 literal 與有限次數。
@@ -91,7 +92,7 @@ export class RetryController {
     if (epoch !== this.epoch || !this.started || controller.signal.aborted) return
     try {
       void this.ports
-        .run(controller.signal)
+        .run(controller.signal, this.used > 0)
         .then(
           /* 匹配外層 epoch 才處理終態。 */ (terminal) => {
             if (epoch !== this.epoch || !this.started || this.closed) return

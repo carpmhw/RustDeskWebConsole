@@ -105,3 +105,16 @@ export interface AuditPage {
   page_size: number
   total: number
 }
+
+// 作用中連線的一列；名稱由後端解析，流量為目前累計位元組。
+export interface ActiveConnection {
+  id: string
+  user_id: string
+  user_name: string | null
+  target_id: string
+  target_name: string | null
+  started_at: string
+  source_ip: string | null
+  bytes_sent: number
+  bytes_received: number
+}

@@ -107,3 +107,27 @@ it('restricts audit to admins and allows returning to it after login', () => {
   ).toBeNull()
   expect(safeNext('audit')).toBe('audit')
 })
+
+// 作用中連線頁與稽核同為管理員專用；直接輸入網址也導回概覽，登入後可回到該頁。
+it('restricts connections to admins and allows returning to it after login', () => {
+  const user = {
+    id: 'u',
+    username: 'u',
+    role: 'operator' as const,
+    totp_enabled: false,
+    mfa_enrollment_required: false,
+    password_change_required: false,
+  }
+  for (const role of ['operator', 'viewer'] as const)
+    expect(
+      routeDecision({ phase: 'authenticated', user: { ...user, role } }, 'connections', true),
+    ).toBe('overview')
+  expect(
+    routeDecision(
+      { phase: 'authenticated', user: { ...user, role: 'admin' } },
+      'connections',
+      true,
+    ),
+  ).toBeNull()
+  expect(safeNext('connections')).toBe('connections')
+})

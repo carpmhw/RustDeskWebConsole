@@ -14,6 +14,7 @@ import { InputController } from '../rdweb/input-controller'
 import { ClipboardController } from '../rdweb/clipboard-controller'
 import { ClipboardDialog } from '../rdweb/clipboard-dialog'
 import { interactionClock } from '../rdweb/interaction-limits'
+import { IdleWatch, type IdleState } from '../rdweb/idle'
 import ConsoleWorkspace from '../components/ConsoleWorkspace.vue'
 defineOptions({ name: 'ConsoleView' })
 const emit = defineEmits<{ focusModeChange: [value: boolean] }>()
@@ -43,6 +44,47 @@ const quality = ref<Quality>('balanced')
 const fullscreenUnavailable = ref(false)
 let observer: ResizeObserver | null = null
 let ticker: ReturnType<typeof setInterval> | null = null
+// 閒置計時與 ticker 同源時鐘；設定載入前為 0（停用），不會提前結束連線。
+const idle = new IdleWatch(0, () => performance.now())
+const idleState = ref<IdleState>({ phase: 'off', remaining: 0 })
+const idleContinue = ref<HTMLButtonElement | null>(null)
+let idleMinutes = 0
+const idleSettings = new AbortController()
+// 本機鍵盤、滑鼠與滾輪操作都算活動；遠端畫面更新與協定保活不會觸發這些事件。
+function localActivity(): void {
+  idle.activity()
+}
+const activityEvents = ['keydown', 'pointerdown', 'pointermove', 'wheel'] as const
+// 讀取閒置分鐘數；失敗時維持停用，不因設定讀取失敗而結束連線。
+async function loadIdleMinutes(): Promise<void> {
+  try {
+    const value = await auth.request<{ idle_minutes: number }>(
+      'api/v1/settings/connections/idle',
+      'GET',
+      undefined,
+      idleSettings.signal,
+    )
+    if (!alive || !Number.isInteger(value.idle_minutes) || value.idle_minutes < 0) return
+    idleMinutes = value.idle_minutes
+    idle.configure(idleMinutes)
+  } catch {
+    /* 維持停用。 */
+  }
+}
+// 本次連線因閒置結束；取消連線後的狀態回呼會清掉一般錯誤，故另以旗標保留原因，直到重新連線。
+const idleEnded = ref(false)
+const shownError = computed(() => (idleEnded.value ? 'idle' : error.value))
+// 閒置到期：以 4003 結束連線（後端記錄閒置）、不自動重連，並說明原因。
+function endIdle(): void {
+  idleEnded.value = true
+  session.cancel(4003)
+  dropInput()
+  clipboard.close()
+  inputState.value = null
+  socketOpen.value = false
+  issue.value = null
+  phase.value = 'closed'
+}
 let input: InputController | null = null
 let channel: InputChannel | null = null
 let domClipboard: ClipboardDialog | null = null
@@ -254,6 +296,8 @@ function start(): void {
   issue.value = null
   quality.value = 'balanced'
   fullscreenUnavailable.value = false
+  idleEnded.value = false
+  idle.configure(idleMinutes)
   const id = String(route.params.targetId)
   if (
     !window.isSecureContext ||
@@ -264,6 +308,8 @@ function start(): void {
     return
   }
   session.setVisible(document.visibilityState !== 'hidden')
+  // 只在通過驗證、真正開始連線時讀取閒置設定，無效網址不發出任何請求。
+  void loadIdleMinutes()
   session.start(id)
   phase.value = 'connecting'
 }
@@ -419,9 +465,29 @@ onMounted(() => {
     session.tick()
     inputFocused.value = input?.focused ?? false
     inputBusy.value = channel?.inflight ?? false
+    // 只有串流中才計算閒置；連線中或已結束時不倒數。
+    if (phase.value !== 'streaming') idle.activity()
+    const next = idle.tick()
+    if (
+      next.phase === 'expired' &&
+      idleState.value.phase !== 'expired' &&
+      phase.value === 'streaming'
+    )
+      endIdle()
+    idleState.value = next
   }, 100)
+  for (const name of activityEvents)
+    window.addEventListener(name, localActivity, { capture: true, passive: true })
   start()
 })
+// 倒數出現時把焦點移到「繼續使用」，鍵盤使用者可直接按下。
+watch(
+  () => idleState.value.phase,
+  (value, previous) => {
+    if (value === 'warning' && previous !== 'warning')
+      void nextTick(() => idleContinue.value?.focus())
+  },
+)
 // 離頁先作廢callback再清所有native／HTTP／DOM排程。
 onBeforeUnmount(() => {
   alive = false
@@ -438,6 +504,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', resize)
   document.removeEventListener('visibilitychange', visibilityChanged)
   window.removeEventListener('pagehide', pageHidden)
+  for (const name of activityEvents)
+    window.removeEventListener(name, localActivity, { capture: true })
+  idleSettings.abort()
 })
 </script>
 <template>
@@ -454,8 +523,8 @@ onBeforeUnmount(() => {
       <p role="status" data-testid="console-phase" :class="{ 'sr-only': phase === 'streaming' }">
         {{ t('consoleUI.phases.' + phase) }}
       </p>
-      <p v-if="error" class="error-message" role="alert" :data-error-code="error">
-        {{ t('consoleUI.errors.' + error) }}
+      <p v-if="shownError" class="error-message" role="alert" :data-error-code="shownError">
+        {{ t('consoleUI.errors.' + shownError) }}
       </p>
       <p
         v-if="issue || clipboardUi.code"
@@ -485,6 +554,19 @@ onBeforeUnmount(() => {
       >
         {{ t('consoleUI.reconnecting', { count: retryState.attempt || 1 }) }}
       </p>
+      <div
+        v-if="idleState.phase === 'warning' && phase === 'streaming'"
+        class="notice"
+        role="alertdialog"
+        aria-live="assertive"
+        :aria-label="t('consoleUI.idleTitle')"
+        data-testid="console-idle-warning"
+      >
+        <p>{{ t('consoleUI.idleWarning', { seconds: idleState.remaining }) }}</p>
+        <button ref="idleContinue" type="button" class="primary" @click="localActivity">
+          {{ t('consoleUI.idleContinue') }}
+        </button>
+      </div>
       <p v-if="inputFocused" data-testid="console-input-active" role="status">
         {{ t('consoleUI.inputActive') }}
       </p>

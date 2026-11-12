@@ -15,7 +15,7 @@ import { prepareOfficialTarget, openOfficialConsole, observeConsole } from './fi
 import { prepareLinuxInputTarget, waitForInputVideo } from './input-fixtures'
 import type { ReconnectProxy } from './reconnect-proxy-types'
 
-// 八案各自隔離backend資料與quota；不降低正式限制或重置同案中的auth／KV。
+// 各案各自隔離backend資料與quota；不降低正式限制或重置同案中的auth／KV。
 test.beforeEach(() => resetStack())
 
 // 純auth安全案不建立target／observer，也不先做其他正式login。
@@ -437,6 +437,140 @@ for (const change of ['revoked permission', 'deactivated user'] as const) {
         reconnectProxy,
         before,
       )
+    } finally {
+      abort.abort()
+      try {
+        if (remote && !remote.isClosed()) await remote.close()
+      } finally {
+        await fixture.context.dispose()
+      }
+    }
+  })
+}
+
+// 稽核列表中與連線管控相關的一列；只讀安全欄位。
+interface AuditRow {
+  action: string
+  user_name: string | null
+  object_id: string | null
+  reason: string | null
+}
+
+// 讀取指定動作的稽核列，供連線結束原因與執行者斷言。
+async function auditRows(
+  fixture: { context: APIRequestContext },
+  token: string,
+  action: string,
+): Promise<AuditRow[]> {
+  return (
+    await api<{ items: AuditRow[] }>(
+      fixture.context,
+      `audit?action=${action}`,
+      'GET',
+      undefined,
+      token,
+    )
+  ).items
+}
+
+// 管理員中斷、時間上限、閒置三種結束：主控台顯示對應原因、不自動重連，稽核記錄原因（中斷另記執行者）。
+// 時間上限由測試 stack 以 Development 專用單位縮短（1 小時 = 20 秒）；閒置用正式最小值 5 分鐘並以假時鐘快轉。
+for (const end of ['admin terminate', 'time limit', 'idle timeout'] as const) {
+  test(`${end} closes session without reconnect`, async ({
+    page,
+    reconnectCase,
+    reconnectProxy,
+  }) => {
+    const before = counters(reconnectProxy),
+      resources = observeConsole(page.context())
+    const { fixture, token, operator } = await prepareOperatorTarget()
+    const lease = reconnectCase.begin(fixture.targetId),
+      abort = new AbortController()
+    const accepted = lease.nextAccepted(abort.signal)
+    void accepted.catch(/* finally取消時不留下unhandled waiter。 */ () => {})
+    let remote: Page | undefined
+    try {
+      if (end !== 'admin terminate')
+        await api(
+          fixture.context,
+          'settings/connections',
+          'PUT',
+          end === 'time limit'
+            ? { idle_minutes: 0, max_hours: 1, password }
+            : { idle_minutes: 5, max_hours: 8, password },
+          token,
+        )
+      // 假時鐘照常流動，只在需要時快轉；Worker 不受影響。
+      if (end === 'idle timeout') await page.context().clock.install()
+      await installCloseCodeDiagnostics(page.context())
+      remote = await openOfficialConsole(page, fixture)
+      await accepted
+      await waitForInputVideo(remote, fixture)
+      let code: 'terminated' | 'time_limit' | 'idle'
+      if (end === 'admin terminate') {
+        code = 'terminated'
+        const active = await api<{ items: Array<{ id: string; user_id: string }> }>(
+          fixture.context,
+          'connections',
+          'GET',
+          undefined,
+          token,
+        )
+        const row = active.items.find((item) => item.user_id === operator.id)
+        expect(row).toBeDefined()
+        await api(fixture.context, `connections/${row!.id}/terminate`, 'POST', {}, token)
+      } else if (end === 'time limit') code = 'time_limit'
+      else {
+        code = 'idle'
+        // 到期前 60 秒出現倒數提示，其後才結束。
+        await remote.clock.fastForward('04:05')
+        await expect(remote.getByTestId('console-idle-warning')).toBeVisible()
+        await expect(remote.locator('[data-error-code]')).toHaveCount(0)
+        await remote.clock.fastForward('01:00')
+      }
+      await expect(remote.locator(`[data-error-code="${code}"]`)).toBeVisible({
+        timeout: end === 'time limit' ? 60_000 : 10_000,
+      })
+      await expect(remote.getByTestId('console-reconnect')).toHaveCount(0)
+      // 後端結束的代碼須直接觀測為原生 close code；閒置由瀏覽器關閉，改以後端稽核的 Idle 證明收到 4003。
+      if (end !== 'idle timeout')
+        await expect
+          .poll(() => closeCodes(remote!))
+          .toEqual([end === 'admin terminate' ? 4002 : 4001])
+      await expect.poll(/* 原Worker真正關閉。 */ () => resources.closed).toBe(resources.opened)
+      expect(resources.opened).toBe(1)
+      const deadline = performance.now() + 10500
+      do {
+        const state = lease.summary()
+        expect({
+          accepted: state.accepted,
+          tickets: state.routes.ticket.requested,
+          workers: resources.opened,
+        }).toEqual({ accepted: 1, tickets: 1, workers: 1 })
+        await remote.waitForTimeout(Math.min(100, Math.max(1, deadline - performance.now())))
+      } while (performance.now() < deadline)
+      const reason = {
+        'admin terminate': 'Terminated',
+        'time limit': 'Expired',
+        'idle timeout': 'Idle',
+      }[end]
+      await expect
+        .poll(async () =>
+          (await auditRows(fixture, token, 'ConnectionEnded')).map((row) => [
+            row.user_name,
+            row.reason,
+          ]),
+        )
+        .toEqual([[operator.username, reason]])
+      if (end === 'admin terminate')
+        expect(
+          (await auditRows(fixture, token, 'ConnectionTerminated')).map((row) => [
+            row.user_name,
+            row.object_id,
+          ]),
+        ).toEqual([[process.env.RDWEB_E2E_USERNAME, operator.id]])
+      expect(resources.wrongPrefix).toBe(0)
+      record(end.replace(' ', '_'), reconnectProxy, before)
     } finally {
       abort.abort()
       try {

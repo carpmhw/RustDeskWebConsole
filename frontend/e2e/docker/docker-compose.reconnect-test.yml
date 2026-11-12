@@ -6,3 +6,5 @@ services:
   backend:
     environment:
       APP_PUBLIC_URL: http://127.0.0.1:18080${APP_BASE_PATH:-/}
+      # 只有 reconnect-security runner 設定：Development 下把時間上限的 1 小時縮為此秒數；空值維持 1 小時。
+      RDWEB_TEST_CONNECTION_HOUR_SECONDS: ${RDWEB_TEST_CONNECTION_HOUR_SECONDS:-}

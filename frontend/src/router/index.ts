@@ -13,6 +13,7 @@ import Console from '../views/Console.vue'
 import SetPassword from '../views/SetPassword.vue'
 import Users from '../views/Users.vue'
 import Audit from '../views/Audit.vue'
+import Connections from '../views/Connections.vue'
 
 export const router = createRouter({
   history: createWebHistory(runtimeBase() || '/'),
@@ -23,6 +24,7 @@ export const router = createRouter({
     { path: '/password', name: 'password', component: SetPassword, meta: { auth: true } },
     { path: '/users', name: 'users', component: Users, meta: { auth: true } },
     { path: '/audit', name: 'audit', component: Audit, meta: { auth: true } },
+    { path: '/connections', name: 'connections', component: Connections, meta: { auth: true } },
     { path: '/preferences', name: 'preferences', component: Preferences, meta: { auth: true } },
     { path: '/servers', name: 'servers', component: Servers, meta: { auth: true } },
     { path: '/targets', name: 'targets', component: Targets, meta: { auth: true } },

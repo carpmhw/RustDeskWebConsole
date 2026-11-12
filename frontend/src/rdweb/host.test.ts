@@ -111,6 +111,40 @@ it('returns a cancellable attempt before preflight and settles it once', async (
   host.dispose()
 })
 // 已abort的outer signal不得建worker，更不建立native probe／HTTP。
+// 以閒置代碼結束時，dispose 訊息帶入代碼交由 Worker 關閉 WebSocket；一般結束不帶。
+it('forwards an idle close code to the worker on dispose', async () => {
+  const { host, port } = await interactionFixture()
+  host.dispose(4003)
+  expect(port.messages.filter((m) => m.type === 'dispose')).toEqual([
+    expect.objectContaining({ type: 'dispose', code: 4003 }),
+  ])
+})
+// 自動重連的 attempt 取票時帶 reconnect 旗標；首次開啟不帶。
+it('marks reconnect ticket requests only for automatic attempts', async () => {
+  vi.stubGlobal('location', { origin: 'http://localhost' })
+  const bodies: unknown[] = []
+  for (const reconnect of [false, true]) {
+    const host = new ConsoleHost(
+      {
+        request: /* 只記錄取票請求本文。 */ async <T>(
+          path: string,
+          _method?: string,
+          body?: unknown,
+        ) => {
+          if (path.endsWith('/connect-ticket')) bodies.push(body)
+          return { ticket: 'a'.repeat(43), expires_in: 30 } as T
+        },
+      },
+      vi.fn(),
+      () => renderer,
+      () => new Port(),
+      probe,
+    )
+    await host.open('target', '123456789', undefined, reconnect).prepared
+    host.dispose()
+  }
+  expect(bodies).toEqual([{}, { reconnect: true }])
+})
 it('does not prepare a cancelled outer attempt', async () => {
   const create = vi.fn(() => new Port()),
     request = vi.fn(),
