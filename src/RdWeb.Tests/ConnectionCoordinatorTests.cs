@@ -150,6 +150,58 @@ public sealed class ConnectionCoordinatorTests
         Assert.Contains("\"Revoked\"", ended.Detail);
     }
 
+    // 瀏覽器不回應 close 時仍在等待上限內釋放連線、名額與稽核；撤銷後瀏覽器送來的輸入一律不轉送到受控端。
+    [Fact]
+    public async Task RevokedConnectionReleasesWithinCloseAckBoundWithoutForwardingInput()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var hbbs = new TcpListener(IPAddress.Loopback, 0);
+        using var hbbr = new TcpListener(IPAddress.Loopback, 0);
+        hbbs.Start(); hbbr.Start();
+        using var signingKey = Key.Create(SignatureAlgorithm.Ed25519);
+        var peerMessage = new Message { SignedId = new SignedId { Id = ByteString.CopyFrom(new byte[] { 1, 2, 3 }) } }.ToByteArray();
+        var revoked = 0;
+        long afterRevoke = 0;
+        var hbbsTask = ServeHbbsAsync(hbbs, signingKey, "123456789", "12345678-1234-4234-8234-123456789abc",
+            new(TaskCreationOptions.RunContinuationsAsynchronously), new(TaskCreationOptions.RunContinuationsAsynchronously), timeout.Token);
+        var hbbrTask = Task.Run(async () =>
+        {
+            // 記錄撤銷之後受控端仍收到的位元組數。
+            using var client = await hbbr.AcceptTcpClientAsync(timeout.Token);
+            var stream = client.GetStream();
+            _ = await RustDeskByteStreamCodec.ReadControlFrameAsync(stream, timeout.Token);
+            await RustDeskByteStreamCodec.WriteControlFrameAsync(stream, peerMessage, timeout.Token);
+            var buffer = new byte[4096];
+            int read;
+            try { while ((read = await stream.ReadAsync(buffer, timeout.Token)) > 0) if (Volatile.Read(ref revoked) == 1) Interlocked.Add(ref afterRevoke, read); }
+            catch (IOException) { }
+        }, timeout.Token);
+        var setup = await CreateGrantAsync(hbbs, hbbr, Convert.ToBase64String(signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey)));
+        await using var factory = setup.Factory;
+        var registry = factory.Services.GetRequiredService<ActiveConnectionRegistry>();
+        using var browser = new RelayBridgeTests.ScriptSocket(abortOnCancel: true, ignoreClose: true);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var run = scope.ServiceProvider.GetRequiredService<ConnectionCoordinator>().RunAsync(setup.Grant, browser, CancellationToken.None);
+        Assert.Equal(WebSocketMessageType.Text, (await browser.Output.Reader.ReadAsync(timeout.Token)).Type);
+        Assert.Equal(WebSocketMessageType.Binary, (await browser.Output.Reader.ReadAsync(timeout.Token)).Type);
+        Volatile.Write(ref revoked, 1);
+        var started = Stopwatch.StartNew();
+        Assert.Equal(1, registry.Terminate(grant => grant.UserId == setup.Grant.UserId));
+        for (var index = 0; index < 8; index++) browser.Input.Writer.TryWrite(new(new byte[] { 0, 0, 0, 0 }, WebSocketMessageType.Binary, true));
+        await run.WaitAsync(timeout.Token);
+        // 上限為 CloseAckTimeout 兩段（排空已送出畫面、等待 close），另留排程餘裕。
+        Assert.InRange(started.Elapsed, TimeSpan.Zero, RelayBridge.CloseAckTimeout * 2 + TimeSpan.FromSeconds(3));
+        await Task.WhenAll(hbbsTask, hbbrTask);
+        Assert.Equal(0, Interlocked.Read(ref afterRevoke));
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, browser.SentCloseStatus);
+        Assert.Equal(0, registry.Count);
+        await factory.Services.GetRequiredService<AuditWriter>().StopAsync(timeout.Token);
+        await using var db = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
+        Assert.Contains("\"Revoked\"", (await db.AuditLogs.SingleAsync(log => log.Action == "ConnectionEnded")).Detail);
+        var store = factory.Services.GetRequiredService<IKvStore>();
+        Assert.Equal("0", await store.GetAsync("conn:all"));
+    }
+
     // Signed relay response必須先驗證，延遲300ms後才連到admin-saved hbbr並送RequestRelay。
     [Fact]
     public async Task ValidSignedIdentityConnectsSavedRelayAfterDelay()

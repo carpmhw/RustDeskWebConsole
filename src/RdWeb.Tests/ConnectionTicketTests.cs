@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RdWeb.Api.Data;
 using RdWeb.Api.Data.Entities;
+using RdWeb.Api.Infrastructure.Kv;
 using RdWeb.Api.RustDesk;
 using RdWeb.Api.Security;
 
@@ -142,6 +143,29 @@ public sealed class ConnectionTicketTests
         var expired = await Assert.ThrowsAsync<AuthException>(() => tickets.ConsumeAsync(setup.TargetId, issued.Ticket, CancellationToken.None));
 
         Assert.Equal("unauthorized", expired.Code);
+    }
+
+    // 被中斷或到期的連線所屬 session，在 5 分鐘內帶 reconnect 旗標取票被拒絕；未帶旗標（手動開啟）照常發票；期限過後放行。
+    [Fact]
+    public async Task AutomaticReconnectIsRefusedForEndedSession()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        await using var factory = CreateFactory(clock);
+        var setup = await CreateOwnerTargetAsync(factory, "123456789");
+        using var owner = setup.Owner;
+        Guid family;
+        await using (var database = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync())
+            family = await database.RefreshTokens.Where(token => token.RevokedAt == null).Select(token => token.FamilyId).SingleAsync();
+        await ConnectionTicketService.MarkEndedAsync(factory.Services.GetRequiredService<IKvStore>(), family, setup.TargetId, CancellationToken.None);
+        using (var refused = await owner.PostAsJsonAsync($"/api/v1/targets/{setup.TargetId}/connect-ticket", new { reconnect = true }))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Contains("connection_ended", await refused.Content.ReadAsStringAsync());
+        }
+        _ = await IssueTicketAsync(owner, setup.TargetId);
+        clock.Advance(ConnectionTicketService.EndedReconnectWindow + TimeSpan.FromSeconds(1));
+        using var allowed = await owner.PostAsJsonAsync($"/api/v1/targets/{setup.TargetId}/connect-ticket", new { reconnect = true });
+        Assert.Equal(HttpStatusCode.Created, allowed.StatusCode);
     }
 
     // 使用可控UTC時鐘驗證TTL，不更動production ticket期限。

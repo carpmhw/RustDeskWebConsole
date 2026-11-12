@@ -24,8 +24,8 @@ export interface SocketPort {
   onclose: ((event: Pick<CloseEvent, 'code'>) => void) | null
   // 只送當次加密或握手binary。
   send(bytes: Uint8Array): void
-  // 取消或失敗關閉同一WS。
-  close(): void
+  // 取消或失敗關閉同一WS；code／reason 只用於閒置結束（4003）。
+  close(code?: number, reason?: string): void
 }
 export interface WorkerDependencies {
   query: (config: VideoDecoderConfig) => Promise<VideoDecoderSupport>
@@ -93,7 +93,7 @@ export class ProtocolWorkerSession {
     }
     try {
       if (value.type === 'start') this.start(value)
-      else if (value.type === 'dispose') this.dispose()
+      else if (value.type === 'dispose') this.dispose(value.code)
       else if (value.type === 'assist-failed') this.fail('login_assist_failed')
       else if (value.type === 'assist-result') {
         if (!this.#resolve) {
@@ -416,7 +416,8 @@ export class ProtocolWorkerSession {
     this.finish({ code: failureCode(code), cause: 'fatal' })
   }
   // 清私有key／native/frame／timer/listeners，Main再有限fallback terminate。
-  dispose(): void {
+  // code 為閒置結束的應用代碼；未指定時以一般關閉結束。
+  dispose(code?: 4003): void {
     if (this.#closed) return
     this.#closed = true
     if (this.#networkTimer) clearTimeout(this.#networkTimer)
@@ -446,7 +447,8 @@ export class ProtocolWorkerSession {
       this.#socket.onerror = null
       this.#socket.onclose = null
       try {
-        this.#socket.close()
+        if (code === 4003) this.#socket.close(code, 'idle')
+        else this.#socket.close()
       } catch {
         /* 避免原生WS exception內容進入診斷。 */
       }

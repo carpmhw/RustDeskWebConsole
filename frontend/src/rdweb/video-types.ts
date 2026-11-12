@@ -86,7 +86,8 @@ export type VideoOnlyMainEvent =
   | { type: 'assist-failed'; revision: number }
   | ({ type: 'presented' } & Presented)
   | { type: 'quality'; revision: number; quality: Quality }
-  | { type: 'dispose'; revision: number }
+  // code 只用於閒置結束（4003），由 Worker 以該代碼關閉 WebSocket。
+  | { type: 'dispose'; revision: number; code?: 4003 }
 export type VideoOnlyWorkerEvent =
   | { type: 'capabilities'; revision: number; capabilities: CodecCapabilities; frame: VideoFrame }
   | { type: 'phase'; revision: number; phase: Phase }

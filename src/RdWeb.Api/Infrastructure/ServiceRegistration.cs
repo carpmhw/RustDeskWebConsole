@@ -33,6 +33,7 @@ public static class ServiceRegistration
         services.AddHostedService<KvCleanupService>();
         services.AddSingleton<AuditWriter>();
         services.AddHostedService(provider => provider.GetRequiredService<AuditWriter>());
+        services.AddHostedService<AuditRetentionService>();
     }
 
     // 在 HTTP 啟動前完成 migration、依賴探測與連線計數清理。

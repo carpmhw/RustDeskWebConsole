@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import HealthPanel from '../components/HealthPanel.vue'
 const { t } = useI18n()
 const auth = useAuthStore()
-// 入口只列目前角色可用的頁面；伺服器與使用者管理僅限管理員。
+// 入口只列目前角色可用的頁面；伺服器、使用者、稽核與連線僅限管理員。
 const entries = computed(() => [
   { name: 'targets', label: 'targets' },
   { name: 'security', label: 'security' },
@@ -15,6 +15,8 @@ const entries = computed(() => [
     ? [
         { name: 'servers', label: 'servers' },
         { name: 'users', label: 'usersUI.nav' },
+        { name: 'audit', label: 'auditUI.nav' },
+        { name: 'connections', label: 'connectionsUI.nav' },
       ]
     : []),
 ])

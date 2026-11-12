@@ -158,6 +158,8 @@ export class ConsoleHost {
   #rejectProbe: (() => void) | null = null
   #state: ConsoleState = { revision: 0, phase: 'closed' }
   #socketOpen = false
+  // 下一次清理時要交給 Worker 的關閉代碼（只有閒置結束會設定）。
+  #closeCode: 4003 | undefined
   #clipboardSequence = 0
   #clipboardPending: ClipboardPending | null = null
   #clipboardCancelling: (ClipboardTag & { deadline: number }) | null = null
@@ -185,7 +187,7 @@ export class ConsoleHost {
     })
   }
   // 同步取得handle，準備工作與終態分開，不以prepared假裝streaming。
-  open(target: string, peer: string, signal?: AbortSignal): HostAttempt {
+  open(target: string, peer: string, signal?: AbortSignal, reconnect = false): HostAttempt {
     this.dispose()
     const revision = ++this.#revision,
       life = new AttemptLifecycle(
@@ -211,7 +213,7 @@ export class ConsoleHost {
     })
     this.publish({})
     if (signal?.aborted || !this.live(revision)) life.handle.cancel()
-    else void this.prepare(target, peer, life)
+    else void this.prepare(target, peer, life, reconnect)
     return life.handle
   }
   // 保留B2 caller語意，等待bounded準備工作，不等長連線finished。
@@ -219,7 +221,12 @@ export class ConsoleHost {
     await this.open(target, peer).prepared
   }
   // 真native probe成功且matchingepoch後才取ticket；所有catch在此固定分類。
-  private async prepare(target: string, peer: string, life: AttemptLifecycle): Promise<void> {
+  private async prepare(
+    target: string,
+    peer: string,
+    life: AttemptLifecycle,
+    reconnect = false,
+  ): Promise<void> {
     const revision = life.handle.revision,
       controller = life.controller
     try {
@@ -289,7 +296,7 @@ export class ConsoleHost {
       const grant = await this.auth.request<{ ticket: string; expires_in: number }>(
         `api/v1/targets/${target}/connect-ticket`,
         'POST',
-        {},
+        reconnect ? { reconnect: true } : {},
         controller.signal,
       )
       try {
@@ -657,8 +664,9 @@ export class ConsoleHost {
     if (this.live(value.revision) && this.#worker)
       this.post(this.#worker, { type: 'presented', ...value })
   }
-  // publicdispose只取消目前life；old handle.cancel不可能關新operation。
-  dispose(): void {
+  // publicdispose只取消目前life；old handle.cancel不可能關新operation。code 只用於閒置結束。
+  dispose(code?: 4003): void {
+    this.#closeCode = code
     this.#life?.handle.cancel()
   }
   // 作廢revision先於任何nativecallback，釋放順序與old waiter引用都固定。
@@ -711,7 +719,11 @@ export class ConsoleHost {
       }
       worker.onerror = null
       try {
-        worker.postMessage({ type: 'dispose', revision })
+        const code = this.#closeCode
+        this.#closeCode = undefined
+        worker.postMessage(
+          code === undefined ? { type: 'dispose', revision } : { type: 'dispose', revision, code },
+        )
       } catch {
         finish()
       }

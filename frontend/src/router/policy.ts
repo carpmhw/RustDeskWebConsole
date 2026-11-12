@@ -9,17 +9,29 @@ export type AppRoute =
   | 'console'
   | 'password'
   | 'users'
+  | 'audit'
+  | 'connections'
   | 'login'
   | 'not-found'
 // 只接受已知站內路由名稱，不把任意query當作redirect URL。
 export function safeNext(
   value: unknown,
-): 'overview' | 'security' | 'preferences' | 'servers' | 'targets' | 'users' {
+):
+  | 'overview'
+  | 'security'
+  | 'preferences'
+  | 'servers'
+  | 'targets'
+  | 'users'
+  | 'audit'
+  | 'connections' {
   return value === 'security' ||
     value === 'preferences' ||
     value === 'servers' ||
     value === 'targets' ||
-    value === 'users'
+    value === 'users' ||
+    value === 'audit' ||
+    value === 'connections'
     ? value
     : 'overview'
 }
@@ -47,7 +59,10 @@ export function routeDecision(
     return 'targets'
   if (
     state.phase === 'authenticated' &&
-    (target === 'servers' || target === 'users') &&
+    (target === 'servers' ||
+      target === 'users' ||
+      target === 'audit' ||
+      target === 'connections') &&
     state.user?.role !== 'admin'
   )
     return 'overview'

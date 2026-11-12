@@ -50,3 +50,19 @@ it('copies authoritative typed faults and carries no native error text', () => {
   value.cause = 'fatal'
   expect(fault.terminal).toEqual({ cause: 'network', code: 'connection_failed' })
 })
+
+// 後端以應用代碼結束：4001 時間上限、4002 管理員中斷，皆為終止、不自動重連；1008 維持撤銷。
+it('maps governance close codes to fatal terminals without reconnect', () => {
+  expect(closedTerminal(4001, false)).toEqual({ cause: 'fatal', code: 'time_limit' })
+  expect(closedTerminal(4002, false)).toEqual({ cause: 'fatal', code: 'terminated' })
+  expect(closedTerminal(1008, false)).toEqual({ cause: 'fatal', code: 'access_revoked' })
+  expect(closedTerminal(1006, false).cause).toBe('network')
+})
+// 自動重連取票被拒（連線已結束）時固定為終止，不冒充一般失敗或網路中斷。
+it('maps a refused reconnect ticket to a fatal connection_ended terminal', () => {
+  expect(httpTerminal(409, 'connection_ended')).toEqual({
+    cause: 'fatal',
+    code: 'connection_ended',
+  })
+  expect(httpTerminal(409, 'conflict')).toEqual({ cause: 'fatal', code: 'connection_failed' })
+})

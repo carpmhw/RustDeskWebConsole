@@ -305,3 +305,30 @@ it('does not create a new retry cycle from asynchronous local faults or temporar
   expect(second.states.at(-1)?.phase).toBe('exhausted')
   second.c.dispose()
 })
+
+// 首次與手動開始不標示重連；之後由排程自動發起的 attempt 才標示，供後端擋下已結束連線的自動重連。
+it('marks only scheduled attempts as reconnects', async () => {
+  let now = 0
+  const flags: boolean[] = [],
+    ends: Array<(t: Terminal) => void> = []
+  const c = new RetryController(
+    {
+      run: /* 記錄每次 attempt 是否為自動重連。 */ (_signal, reconnect) => {
+        flags.push(reconnect)
+        return new Promise<Terminal>((end) => ends.push(end))
+      },
+      healthy: () => true,
+      changed: () => {},
+    },
+    () => now,
+  )
+  c.start()
+  // 自動重連只在串流建立後的中斷發生。
+  c.streaming(true)
+  ends[0]!(network)
+  await flush()
+  now += 2000
+  c.tick()
+  c.start()
+  expect(flags).toEqual([false, true, false])
+})

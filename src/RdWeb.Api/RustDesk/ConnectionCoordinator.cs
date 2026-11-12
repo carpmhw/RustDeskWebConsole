@@ -13,13 +13,14 @@ using RdWeb.Api.Targets;
 namespace RdWeb.Api.RustDesk;
 
 public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy policy, RendezvousTransport transport, TimeProvider clock,
-    ConnectionSlots slots, RelayBridge bridge, AuditWriter audits, ActiveConnectionRegistry registry)
+    ConnectionSlots slots, RelayBridge bridge, AuditWriter audits, ActiveConnectionRegistry registry, RdWeb.Api.Infrastructure.Kv.IKvStore store,
+    IHostEnvironment environment, IConfiguration configuration)
 {
     private const string RustDeskProtocolVersion = "1.4.2";
     private static readonly TimeSpan RelayRaceDelay = TimeSpan.FromMilliseconds(300);
 
     // 協調授權relay生命週期，資源／計數先釋放，再寫結束稽核。
-    public async Task RunAsync(ConnectionGrant grant, WebSocket browser, CancellationToken cancellationToken)
+    public async Task RunAsync(ConnectionGrant grant, WebSocket browser, CancellationToken cancellationToken, string? sourceIp = null)
     {
         var watch = Stopwatch.StartNew();
         var progress = new RelayProgress();
@@ -34,23 +35,36 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
                     new(AuditReason.Completed), "target", grant.TargetId), cancellationToken);
                 started = true;
                 await using var relay = await EstablishRelayAsync(grant, cancellationToken);
-                using var active = registry.Register(grant, relay.PeerIdentity ?? throw new AuthException("service_unavailable", 503));
-                using var bridgeLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                var revocation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                using var revocationNotice = active.RevocationToken.Register(() => revocation.TrySetResult());
-                var running = bridge.RunAsync(browser, relay, bridgeLifetime.Token, progress, new(active.Id, grant.TargetId, active.Peer));
-                if (await Task.WhenAny(running, revocation.Task) != running)
+                using var active = registry.Register(grant, relay.PeerIdentity ?? throw new AuthException("service_unavailable", 503),
+                    clock.GetUtcNow().UtcDateTime, sourceIp, progress);
+                // 時間上限取建立當下的設定；到期以 Expired 結束，之後變更設定不影響既有連線。
+                var limits = await ConnectionPolicy.ReadAsync(database, cancellationToken);
+                using var maxDuration = limits.MaxHours > 0
+                    ? clock.CreateTimer(_ => active.Revoke(ConnectionEndReason.Expired), null, limits.MaxHours * ConnectionPolicy.HourUnit(environment.IsDevelopment(), configuration), Timeout.InfiniteTimeSpan)
+                    : null;
+                // 後端結束時 bridge 先切斷上游、依原因送出關閉代碼，並排空瀏覽器端直到收到其 close（有上限），確保代碼送達而非 1006。
+                await bridge.RunAsync(browser, relay, cancellationToken, progress, new(active.Id, grant.TargetId, active.Peer),
+                    active.RevocationToken, () =>
+                    {
+                        var (status, description) = CloseFor(active.EndReason);
+                        return CloseBrowserAsync(browser, status, description);
+                    });
+                if (active.Revoked)
                 {
-                    // ManagedWebSocket取消pending receive會直接中止連線，須先送出1008 close frame再取消bridge。
-                    reason = AuditReason.Revoked;
-                    await CloseBrowserAsync(browser, WebSocketCloseStatus.PolicyViolation, "access revoked");
-                    await bridgeLifetime.CancelAsync();
-                    await ((Task)running).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                    reason = active.EndReason switch
+                    {
+                        ConnectionEndReason.Expired => AuditReason.Expired,
+                        ConnectionEndReason.Terminated => AuditReason.Terminated,
+                        _ => AuditReason.Revoked
+                    };
+                    // 到期與中斷的對象仍有權限：記下結束，讓關閉代碼遺失時的自動重連被拒絕（撤銷本就無權限，不需標記）。
+                    if (active.EndReason != ConnectionEndReason.Revoked && grant.Session != null)
+                        await ConnectionTicketService.MarkEndedAsync(store, grant.Session.FamilyId, grant.TargetId, CancellationToken.None);
                 }
                 else
                 {
-                    await running;
                     success = true;
+                    if (browser.CloseStatus == IdleCloseStatus) reason = AuditReason.Idle;
                 }
             }
         }
@@ -74,6 +88,17 @@ public sealed class ConnectionCoordinator(AppDbContext database, TargetPolicy po
             }
         }
     }
+
+    // 瀏覽器因本機閒置主動結束時使用的應用關閉代碼。
+    public const WebSocketCloseStatus IdleCloseStatus = (WebSocketCloseStatus)4003;
+
+    // 依結束原因選擇關閉代碼：撤銷 1008，時間上限 4001，管理員中斷 4002（4000–4999 為應用自訂範圍）。
+    private static (WebSocketCloseStatus Status, string Description) CloseFor(ConnectionEndReason reason) => reason switch
+    {
+        ConnectionEndReason.Expired => ((WebSocketCloseStatus)4001, "time limit"),
+        ConnectionEndReason.Terminated => ((WebSocketCloseStatus)4002, "terminated"),
+        _ => (WebSocketCloseStatus.PolicyViolation, "access revoked")
+    };
 
     // 只送出close frame、不等待完整close handshake，避免client未讀取時拖住資源回收；已關閉則不重送。
     private static async Task CloseBrowserAsync(WebSocket browser, WebSocketCloseStatus status, string description)

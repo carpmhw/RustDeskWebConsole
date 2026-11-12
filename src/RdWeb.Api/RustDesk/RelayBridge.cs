@@ -20,25 +20,46 @@ public sealed class RelayBridge
     public const int ChunkSize = 16 * 1024;
     public const int QueueCapacity = 16;
     public static readonly TimeSpan ProgressTimeout = TimeSpan.FromSeconds(30);
+    // 結束時等待瀏覽器回應 close 的上限；超過即釋放，不無限等待。
+    public static readonly TimeSpan CloseAckTimeout = TimeSpan.FromSeconds(2);
     private sealed record Chunk(byte[] Data, int Count, bool End);
 
     // 兩方向各自bounded producer/consumer；任何方向終止均取消另一方向。
+    // drain 觸發時先切斷上游（不再轉送任何輸入），交由 closeBrowser 送出 close，再繼續讀取並丟棄瀏覽器資料直到收到其 close
+    // （上限 CloseAckTimeout）。不取消瀏覽器端 pending receive：中止仍有未讀輸入的 socket 會送出 RST，經代理後瀏覽器只看到 1006。
     public async Task<RelayTotals> RunAsync(WebSocket browser, IRustDeskUpstreamSession upstream,
-        CancellationToken cancellationToken, RelayProgress? progress = null, RelayReady? ready = null)
+        CancellationToken cancellationToken, RelayProgress? progress = null, RelayReady? ready = null,
+        CancellationToken drain = default, Func<Task>? closeBrowser = null)
     {
         progress ??= new RelayProgress();
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var upstreamLifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var draining = 0;
         var toBrowser = CreateQueue();
         var toTarget = CreateQueue();
-        var readTarget = ProduceAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toBrowser.Writer, true, upstream.Transport, lifetime.Token);
-        var readBrowser = ProduceAsync(null, browser, toTarget.Writer, false, upstream.Transport, lifetime.Token);
+        var readTarget = ProduceAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toBrowser.Writer, true, upstream.Transport, upstreamLifetime.Token);
+        var readBrowser = ProduceAsync(null, browser, toTarget.Writer, false, upstream.Transport, lifetime.Token,
+            upstreamLifetime.Token, () => Volatile.Read(ref draining) == 1);
         var sendBrowser = ConsumeAsync(null, browser, toBrowser.Reader, true, upstream.Transport, progress, lifetime.Token, ready);
-        var sendTarget = ConsumeAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toTarget.Reader, false, upstream.Transport, progress, lifetime.Token, ready);
+        var sendTarget = ConsumeAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toTarget.Reader, false, upstream.Transport, progress, upstreamLifetime.Token, ready);
         var consumers = new[] { sendBrowser, sendTarget };
+        var drainRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var drainRegistration = drain.Register(() => drainRequested.TrySetResult());
         try
         {
-            await await Task.WhenAny(consumers);
-            cancellationToken.ThrowIfCancellationRequested();
+            var relayEnded = Task.WhenAny(consumers);
+            if (await Task.WhenAny(relayEnded, drainRequested.Task) == relayEnded)
+            {
+                await await relayEnded;
+                cancellationToken.ThrowIfCancellationRequested();
+                return progress.Snapshot();
+            }
+            Volatile.Write(ref draining, 1);
+            await upstreamLifetime.CancelAsync();
+            // 已排入的畫面在上限內送完，避免與 close frame 交錯；之後不再有新資料。
+            await Task.WhenAny(sendBrowser, Task.Delay(CloseAckTimeout, CancellationToken.None));
+            if (closeBrowser != null) await closeBrowser();
+            await Task.WhenAny(readBrowser, Task.Delay(CloseAckTimeout, CancellationToken.None));
             return progress.Snapshot();
         }
         finally
@@ -58,9 +79,11 @@ public sealed class RelayBridge
     });
 
     // 接收stream或WS fragment，TCP只驗framing長度，WS保留EndOfMessage。
+    // writeToken 只控制寫入佇列（預設同 cancellationToken）；discard 為真時讀到的資料直接丟棄，用於結束時排空瀏覽器端。
     private static async Task ProduceAsync(Stream? stream, WebSocket? socket, ChannelWriter<Chunk> output,
-        bool remote, string transport, CancellationToken cancellationToken)
+        bool remote, string transport, CancellationToken cancellationToken, CancellationToken writeToken = default, Func<bool>? discard = null)
     {
+        if (!writeToken.CanBeCanceled) writeToken = cancellationToken;
         var first = true;
         var pairingWatch = Stopwatch.StartNew();
         var messageOpen = false;
@@ -121,10 +144,12 @@ public sealed class RelayBridge
                 }
                 if (remote && first && count == 0) continue;
                 if (count > 0) first = false;
+                if (discard?.Invoke() == true) continue;
                 // 保留零長度WS最後fragment，否則可能合併兩個message。
-                using var queueTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                using var queueTimeout = CancellationTokenSource.CreateLinkedTokenSource(writeToken);
                 queueTimeout.CancelAfter(ProgressTimeout);
                 try { await output.WriteAsync(new(buffer, count, transport == "tcp" || end), queueTimeout.Token); }
+                catch (OperationCanceledException) when (discard?.Invoke() == true) { continue; }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new TimeoutException("Relay backpressure timed out."); }
             }
             output.TryComplete();

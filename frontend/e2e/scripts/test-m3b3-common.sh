@@ -68,6 +68,13 @@ JS
     RDWEB_E2E_COMPOSE_OVERRIDE=frontend/e2e/docker/docker-compose.reconnect-test.yml
     export RDWEB_DEV_PORT RDWEB_E2E_COMPOSE_OVERRIDE
   fi
+  # 時間上限案例只在 security suite 縮短單位（1 小時 = 20 秒，預設 8 小時 = 160 秒，長於其他案例）；其他 suite 一律清除，不沿用呼叫端環境。
+  if [[ "$config" == playwright.reconnect-security.config.ts ]]; then
+    RDWEB_TEST_CONNECTION_HOUR_SECONDS=20
+    export RDWEB_TEST_CONNECTION_HOUR_SECONDS
+  else
+    unset RDWEB_TEST_CONNECTION_HOUR_SECONDS
+  fi
 
   local -a official=(docker compose -f frontend/e2e/docker/docker-compose.rustdesk-test.yml)
   local -a console=(docker compose -f deploy/dev/docker-compose.spikes.yml -f frontend/e2e/docker/docker-compose.browser-login-test.yml)

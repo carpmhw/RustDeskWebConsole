@@ -28,7 +28,10 @@ public sealed class AuditWriter(IDbContextFactory<AppDbContext> factory, int cap
         ArgumentNullException.ThrowIfNull(audit);
         if (!Enum.IsDefined(audit.Action) || !Enum.IsDefined(audit.Result)
             || audit.Detail?.ReasonCode is { } reason && !Enum.IsDefined(reason)
-            || audit.Detail?.DurationMilliseconds < 0 || audit.Detail?.BytesSent < 0 || audit.Detail?.BytesReceived < 0
+            || audit.Detail?.DurationMilliseconds < 0 || audit.Detail?.BytesSent < 0 || audit.Detail?.BytesReceived < 0 || audit.Detail?.Count < 0
+            || audit.Detail?.Filter is { } filter && (filter.TimeZone.Length is 0 or > 64
+                || filter.Action != null && !Enum.GetNames<AuditAction>().Contains(filter.Action)
+                || filter.Result != null && !Enum.GetNames<AuditResult>().Contains(filter.Result))
             || audit.ObjectType is not (null or "user" or "target" or "server" or "setting" or "connection")
             || audit.SourceIp?.Length > 45 || audit.UserAgent?.Length > 512)
             throw new ArgumentException("稽核事件格式無效。", nameof(audit));

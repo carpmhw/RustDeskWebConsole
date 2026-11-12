@@ -78,3 +78,43 @@ export interface UserRow {
   totp_enabled: boolean
   password_change_required: boolean
 }
+
+// 稽核查詢的一筆紀錄；名稱由後端解析，已刪除對象保留識別碼。
+export interface AuditRow {
+  id: string
+  time: string
+  user_id: string | null
+  user_name: string | null
+  user_deleted: boolean
+  action: string
+  result: 'Success' | 'Failure'
+  object_type: string | null
+  object_id: string | null
+  object_name: string | null
+  object_deleted: boolean
+  source_ip: string | null
+  user_agent: string | null
+  reason: string | null
+  duration_ms: number | null
+  bytes_sent: number | null
+  bytes_received: number | null
+}
+export interface AuditPage {
+  items: AuditRow[]
+  page: number
+  page_size: number
+  total: number
+}
+
+// 作用中連線的一列；名稱由後端解析，流量為目前累計位元組。
+export interface ActiveConnection {
+  id: string
+  user_id: string
+  user_name: string | null
+  target_id: string
+  target_name: string | null
+  started_at: string
+  source_ip: string | null
+  bytes_sent: number
+  bytes_received: number
+}

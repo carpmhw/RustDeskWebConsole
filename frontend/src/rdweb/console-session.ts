@@ -21,9 +21,9 @@ export interface SessionAuth {
 }
 export interface SessionHost {
   // 每次建立完整新 operation，而不是復用 crypto sender。
-  open(target: string, peer: string, signal?: AbortSignal): HostAttempt
-  // 只關目前 host operation，outer owner 自己作廢 epoch。
-  dispose(): void
+  open(target: string, peer: string, signal?: AbortSignal, reconnect?: boolean): HostAttempt
+  // 只關目前 host operation，outer owner 自己作廢 epoch；code 只用於閒置結束。
+  dispose(code?: 4003): void
 }
 // 同一 actor 的正常 refresh／DTO clone 不取消，phase／role／MFA 真改變才停。
 export function sameIdentity(a: AuthIdentity, b: AuthIdentity): boolean {
@@ -60,7 +60,7 @@ export class ConsoleSession {
     this.retry = new RetryController(
       {
         // 每次重新取得最新 metadata／actor，再完整 native／ticket attempt。
-        run: (signal) => this.run(signal),
+        run: (signal, reconnect) => this.run(signal, reconnect),
         // 真 presented 且近期有效MAC activity 才能重設 stable budget。
         healthy: () =>
           !!this.attempt &&
@@ -73,7 +73,7 @@ export class ConsoleSession {
     )
   }
   // 每次 metadata／me await 入口均驗 epoch／signal與actor，不採納晚授權。
-  private async run(signal: AbortSignal): Promise<Terminal> {
+  private async run(signal: AbortSignal, reconnect = false): Promise<Terminal> {
     const epoch = this.epoch
     try {
       if (this.closed || signal.aborted) return { cause: 'stopped', code: 'connection_failed' }
@@ -116,7 +116,7 @@ export class ConsoleSession {
       )
         return { cause: 'fatal', code: 'connection_failed' }
       this.targetName = target.name
-      const attempt = this.host.open(this.targetId, target.rustdesk_id, signal)
+      const attempt = this.host.open(this.targetId, target.rustdesk_id, signal, reconnect)
       this.attempt = attempt
       this.lastActivity = -Infinity
       this.socketOpen = false
@@ -181,9 +181,12 @@ export class ConsoleSession {
     if (!this.closed) this.retry.tick()
   }
   // 先作廢epoch再stop，late HTTP或attempt終態不能關新的operation。
-  cancel(): void {
+  // code 只用於閒置結束：須在任何清理之前交給 host，Worker 才以該代碼關閉 WebSocket。
+  cancel(code?: 4003): void {
     if (this.closed) return
     this.epoch++
+    // retry.stop 會中止 attempt 的 signal 並觸發清理，代碼須在此之前交付。
+    if (code !== undefined) this.host.dispose(code)
     this.retry.stop()
     this.attempt?.cancel()
     this.attempt = null

@@ -727,3 +727,15 @@ it('fails a silent attempt as temporary exactly at the thirty second ready deadl
     vi.useRealTimers()
   }
 })
+
+// 閒置結束時 Main 帶入應用關閉代碼，Worker 以該代碼關閉 WebSocket，供後端記錄閒置。
+it('closes the socket with the requested application close code', async () => {
+  const p = await encryptedFixture()
+  try {
+    p.session.handle({ type: 'dispose', revision: 1, code: 4003 })
+    expect(p.socket.close).toHaveBeenCalledWith(4003, 'idle')
+  } finally {
+    p.session.dispose()
+    p.key.fill(0)
+  }
+})

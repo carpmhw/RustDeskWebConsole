@@ -111,9 +111,10 @@ public sealed class RelayBridgeTests
         Assert.False(peer.Output.Reader.TryRead(out _));
     }
 
-    internal sealed record Frame(byte[] Data, WebSocketMessageType Type, bool End);
+    // Close frame 可帶瀏覽器端的關閉代碼，供測試閒置等由瀏覽器主動結束的情境。
+    internal sealed record Frame(byte[] Data, WebSocketMessageType Type, bool End, WebSocketCloseStatus? CloseStatus = null);
 
-    internal sealed class ScriptSocket(bool blockSends = false, bool abortOnCancel = false) : WebSocket
+    internal sealed class ScriptSocket(bool blockSends = false, bool abortOnCancel = false, bool ignoreClose = false) : WebSocket
     {
         public Channel<Frame> Input { get; } = Channel.CreateUnbounded<Frame>();
         public Channel<Frame> Output { get; } = Channel.CreateUnbounded<Frame>();
@@ -123,7 +124,9 @@ public sealed class RelayBridgeTests
         public string? SentCloseDescription { get; private set; }
         private readonly CancellationTokenSource _closed = new();
         private WebSocketState _state = WebSocketState.Open;
-        public override WebSocketCloseStatus? CloseStatus => WebSocketCloseStatus.NormalClosure;
+        public WebSocketCloseStatus? ReceivedCloseStatus { get; private set; }
+        // 收到瀏覽器 close 後回報其代碼，否則維持既有的正常關閉。
+        public override WebSocketCloseStatus? CloseStatus => ReceivedCloseStatus ?? WebSocketCloseStatus.NormalClosure;
         public override string? CloseStatusDescription => null;
         public override WebSocketState State => _state;
         public override string? SubProtocol => "rdweb.v1";
@@ -138,8 +141,13 @@ public sealed class RelayBridgeTests
             _state = WebSocketState.Closed; _closed.Cancel(); return Task.CompletedTask;
         }
         // 輸出close時立即完成，便於驗證雙向取消。
+        // ignoreClose 模擬不回應 close 的瀏覽器：只記錄代碼，pending receive 繼續等待。
         public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
-            => CloseAsync(closeStatus, statusDescription, cancellationToken);
+        {
+            if (!ignoreClose) return CloseAsync(closeStatus, statusDescription, cancellationToken);
+            SentCloseStatus = closeStatus; SentCloseDescription = statusDescription; _state = WebSocketState.CloseSent;
+            return Task.CompletedTask;
+        }
         // 釋放測試socket並結束pending receive。
         public override void Dispose() { Abort(); _closed.Dispose(); }
         // 每次讀取只取一個bounded fixture fragment，不模擬任何認證；abortOnCancel比照ManagedWebSocket取消receive即中止。
@@ -150,7 +158,10 @@ public sealed class RelayBridgeTests
             var frame = await Input.Reader.ReadAsync(linked.Token);
             Interlocked.Increment(ref Receives);
             frame.Data.CopyTo(buffer.AsSpan());
-            return new(frame.Data.Length, frame.Type, frame.End);
+            if (frame.Type == WebSocketMessageType.Close) ReceivedCloseStatus = frame.CloseStatus ?? WebSocketCloseStatus.NormalClosure;
+            return frame.Type == WebSocketMessageType.Close
+                ? new(0, frame.Type, true, ReceivedCloseStatus, null)
+                : new(frame.Data.Length, frame.Type, frame.End);
         }
         // 記錄安全fixture fragment或模擬停止讀取的browser。
         public override async Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)

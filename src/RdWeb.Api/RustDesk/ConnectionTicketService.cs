@@ -13,9 +13,19 @@ namespace RdWeb.Api.RustDesk;
 public sealed class ConnectionTicketService(SessionValidator sessions, TargetPolicy policy, IKvStore store)
 {
     private static readonly TimeSpan TicketLifetime = TimeSpan.FromSeconds(30);
+    // 連線被中斷或到期後，擋下該 session 對同一目標自動重連的期間。
+    public static readonly TimeSpan EndedReconnectWindow = TimeSpan.FromMinutes(5);
+
+    // 結束標記的 KV 鍵：以 session family 與目標識別，不含任何憑證。
+    public static string EndedKey(Guid family, Guid targetId) => $"conn-ended:{family:N}:{targetId:N}";
+
+    // 記錄連線因到期或強制中斷結束，供重連防護使用。
+    public static Task MarkEndedAsync(IKvStore store, Guid family, Guid targetId, CancellationToken ct)
+        => store.SetWithTtlAsync(EndedKey(family, targetId), "1", EndedReconnectWindow, ct);
 
     // 只為目前完整登入且有can_connect權限的使用者簽發短效opaque票證。
-    public async Task<ConnectionTicketResponse> IssueAsync(ClaimsPrincipal principal, Guid targetId, CancellationToken cancellationToken)
+    // reconnect 為真且該 session 對此目標的連線剛被中斷或到期時拒絕（409），避免關閉代碼遺失時被自動重連帶回。
+    public async Task<ConnectionTicketResponse> IssueAsync(ClaimsPrincipal principal, Guid targetId, CancellationToken cancellationToken, bool reconnect = false)
     {
         var actor = await sessions.RequireAsync(principal, cancellationToken: cancellationToken);
         var target = await policy.FindVisibleAsync(actor, targetId, cancellationToken);
@@ -24,6 +34,8 @@ public sealed class ConnectionTicketService(SessionValidator sessions, TargetPol
 
         var session = new ConnectionSessionBinding(Guid.Parse(principal.FindFirstValue("sid")!),
             actor.AuthVersion, actor.Role, principal.FindFirstValue("mfa") == "1");
+        if (reconnect && await store.GetAsync(EndedKey(session.FamilyId, target.Id), cancellationToken) != null)
+            throw new AuthException("connection_ended", StatusCodes.Status409Conflict);
         var binding = JsonSerializer.Serialize(new TicketBinding(actor.Id, target.Id, session));
         for (var attempt = 0; attempt < 3; attempt++)
         {
