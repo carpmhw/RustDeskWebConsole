@@ -15,6 +15,8 @@ export const useAuthStore = defineStore('auth', () => {
   })
   const user = computed(() => state.value.user)
   const phase = computed(() => state.value.phase)
+  // 因閒置被後端登出時為 idle，登入頁據以說明。
+  const ended = computed(() => state.value.ended)
   // 登出失敗保留重試入口，即使本機已匿名。
   async function logout(): Promise<void> {
     try {
@@ -33,6 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     phase,
     user,
+    ended,
     notice,
     logoutPending,
     logout,

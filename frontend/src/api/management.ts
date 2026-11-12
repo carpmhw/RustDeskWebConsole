@@ -118,3 +118,14 @@ export interface ActiveConnection {
   bytes_sent: number
   bytes_received: number
 }
+
+// 一個登入 session（一次登入）；裝置名稱由後端辨識，時間為 UTC ISO 字串。
+export interface SessionRow {
+  id: string
+  browser: string | null
+  os: string | null
+  ip: string | null
+  signed_in_at: string
+  last_used_at: string
+  current: boolean
+}

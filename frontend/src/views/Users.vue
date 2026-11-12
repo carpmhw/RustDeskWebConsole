@@ -5,6 +5,8 @@ import { useAuthStore } from '../stores/auth'
 import type { UserRow } from '../api/management'
 import { generatePassword } from '../utils/password'
 import MfaPolicy from '../components/MfaPolicy.vue'
+import SessionDevices from '../components/SessionDevices.vue'
+import SessionSettings from '../components/SessionSettings.vue'
 import ReauthProof from '../components/ReauthProof.vue'
 defineOptions({ name: 'UsersView' })
 
@@ -33,6 +35,14 @@ const proofCode = ref('')
 const controller = new AbortController()
 let alive = true
 const me = computed(() => auth.user?.id)
+// 正在檢視登入裝置的使用者；對話框關閉時清除，下次開啟重新讀取。
+const devicesFor = ref<UserRow | null>(null)
+const devicesDialog = ref<HTMLDialogElement | null>(null)
+// 開啟某位使用者的登入裝置對話框。
+function showDevices(row: UserRow): void {
+  devicesFor.value = row
+  devicesDialog.value?.showModal()
+}
 const errorText = computed(() =>
   t(te('errors.' + error.value) ? 'errors.' + error.value : 'errors.service_unavailable'),
 )
@@ -359,6 +369,15 @@ onBeforeUnmount(() => {
                       {{ t('usersUI.resetPassword') }}
                     </button>
                     <button
+                      type="button"
+                      class="secondary"
+                      :disabled="busy"
+                      data-testid="user-sessions"
+                      @click="showDevices(row)"
+                    >
+                      {{ t('sessionsUI.open') }}
+                    </button>
+                    <button
                       v-if="row.totp_enabled && row.id !== me"
                       type="button"
                       class="secondary"
@@ -375,6 +394,19 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <MfaPolicy />
+      <SessionSettings />
     </div>
+    <dialog
+      ref="devicesDialog"
+      class="management-dialog"
+      :aria-label="t('sessionsUI.title')"
+      @close="devicesFor = null"
+    >
+      <h2>{{ t('sessionsUI.titleFor', { user: devicesFor?.username ?? '' }) }}</h2>
+      <SessionDevices v-if="devicesFor" :key="devicesFor.id" :user-id="devicesFor.id" />
+      <div class="button-row">
+        <button type="button" @click="devicesDialog?.close()">{{ t('sessionsUI.close') }}</button>
+      </div>
+    </dialog>
   </main>
 </template>

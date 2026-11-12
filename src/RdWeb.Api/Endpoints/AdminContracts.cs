@@ -16,6 +16,12 @@ public sealed record ResetPasswordRequest(
     [property: Required, StringLength(1024, MinimumLength = 12), JsonPropertyName("new_password")] string NewPassword,
     [property: StringLength(1024, MinimumLength = 12)] string? Password,
     [property: RegularExpression("^[0-9]{6}$")] string? Code);
+// session_id 指定要登出的單一 session；省略表示全部（不含發出請求的 session）。
+public sealed record RevokeSessionsRequest([property: JsonPropertyName("session_id")] Guid? SessionId = null);
+public sealed record SessionSettingRequest(
+    [property: Range(0, 1440), JsonPropertyName("idle_minutes")] int IdleMinutes,
+    [property: StringLength(1024, MinimumLength = 12)] string? Password,
+    [property: RegularExpression("^[0-9]{6}$")] string? Code);
 public sealed record ConnectionSettingRequest(
     [property: Range(0, 480), JsonPropertyName("idle_minutes")] int IdleMinutes,
     [property: Range(0, 24), JsonPropertyName("max_hours")] int MaxHours,

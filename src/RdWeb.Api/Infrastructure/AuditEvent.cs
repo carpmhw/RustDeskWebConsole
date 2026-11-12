@@ -1,6 +1,6 @@
 namespace RdWeb.Api.Infrastructure;
 
-public enum AuditAction { Login, Mfa, UserChanged, SettingsChanged, TargetChanged, PasswordViewed, ConnectionStarted, ConnectionEnded, ServerChanged, ServerTested, VaultRotated, AuditExported, AuditPurged, ConnectionTerminated }
+public enum AuditAction { Login, Mfa, UserChanged, SettingsChanged, TargetChanged, PasswordViewed, ConnectionStarted, ConnectionEnded, ServerChanged, ServerTested, VaultRotated, AuditExported, AuditPurged, ConnectionTerminated, SessionRevoked }
 public enum AuditResult { Success, Failure }
 public enum AuditReason { InvalidCredentials, Locked, Denied, Expired, Disconnected, Completed, ConnectionFailed, Revoked, Idle, Terminated }
 public sealed record AuditDetail(AuditReason? ReasonCode = null, long? DurationMilliseconds = null, long? BytesSent = null, long? BytesReceived = null,

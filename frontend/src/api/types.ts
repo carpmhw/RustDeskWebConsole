@@ -21,4 +21,6 @@ export type AuthPhase = 'unknown' | 'anonymous' | 'mfa' | 'authenticated'
 export interface AuthState {
   phase: AuthPhase
   user: SessionUser | null
+  // 被後端因閒置登出時為 idle，供登入頁說明；只是固定字面值，不跨分頁傳遞，下次登入即清除。
+  ended?: 'idle'
 }

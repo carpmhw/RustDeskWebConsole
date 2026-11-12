@@ -14,9 +14,15 @@ public static class SettingsEndpoints
         group.MapGet("/audit", GetAuditAsync); group.MapPut("/audit", PutAuditAsync);
         group.MapGet("/connections", GetConnectionsAsync); group.MapPut("/connections", PutConnectionsAsync);
         group.MapGet("/connections/idle", GetIdleAsync);
+        group.MapGet("/sessions", GetSessionsAsync); group.MapPut("/sessions", PutSessionsAsync);
     }
     // 僅返回分類政策，不含任何安全金鑰。
     private static async Task<IResult> GetAsync(ClaimsPrincipal principal, AdminService admin, CancellationToken ct) => Results.Ok(await admin.GetSecurityAsync(principal, ct));
+    // 網頁閒置登出設定讀取（管理員）。
+    private static async Task<IResult> GetSessionsAsync(ClaimsPrincipal principal, AdminService admin, CancellationToken ct) => Results.Ok(await admin.GetSessionSettingAsync(principal, ct));
+    // 網頁閒置登出設定修改必須完成管理員二次驗證。
+    private static async Task<IResult> PutSessionsAsync(SessionSettingRequest request, ClaimsPrincipal principal, HttpContext http, AdminService admin, CancellationToken ct)
+        => Results.Ok(await admin.SetSessionSettingAsync(principal, request, MfaEndpoints.Ip(http), ct));
     // 連線管控設定讀取（管理員）。
     private static async Task<IResult> GetConnectionsAsync(ClaimsPrincipal principal, AdminService admin, CancellationToken ct) => Results.Ok(await admin.GetConnectionSettingAsync(principal, ct));
     // 閒置分鐘數讀取（所有登入者）。

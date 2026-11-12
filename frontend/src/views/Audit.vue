@@ -24,6 +24,7 @@ const actions = [
   'AuditExported',
   'AuditPurged',
   'ConnectionTerminated',
+  'SessionRevoked',
 ] as const
 const ranges = [1, 7, 30, 90, 365] as const
 const { t, te } = useI18n()

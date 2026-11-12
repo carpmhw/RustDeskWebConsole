@@ -21,7 +21,7 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
     public static Task WarmUpAsync() => DummyHash.Value;
 
     // 未知／停用／鎖定帳號仍跑昂貴雜湊，帳密通過也不能繞過 MFA。
-    public async Task<object> LoginAsync(string username, string password, string ip, CancellationToken cancellationToken)
+    public async Task<object> LoginAsync(string username, string password, string ip, CancellationToken cancellationToken, string? userAgent = null)
     {
         var normalized = username.Trim().ToUpperInvariant();
         await limiter.CheckAsync(normalized, ip, cancellationToken);
@@ -35,7 +35,7 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
             throw new AuthException("invalid_credentials");
         }
         if (user!.TotpEnabledAt != null) return new { mfa_required = true, mfa_token = await ChallengeAsync(user, Now, cancellationToken) };
-        return await CompleteLoginAsync(user, false, Now, ip, cancellationToken);
+        return await CompleteLoginAsync(user, false, Now, ip, cancellationToken, userAgent);
     }
 
     // 五分鐘票證只綁身分與安全版本，不含密碼或 session token。
@@ -46,12 +46,13 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
         return value;
     }
 
-    // 完整認證後才清除失敗狀態並建立 session。
-    public async Task<SessionGrant> CompleteLoginAsync(User user, bool verified, DateTime authenticatedAt, string ip, CancellationToken cancellationToken)
+    // 完整認證後才清除失敗狀態並建立 session；IP 與 User-Agent 供登入裝置列表顯示。
+    public async Task<SessionGrant> CompleteLoginAsync(User user, bool verified, DateTime authenticatedAt, string ip, CancellationToken cancellationToken,
+        string? userAgent = null)
     {
         user.FailedLoginCount = 0; user.LockedUntil = null; user.LastLoginAt = Now;
         var grant = tokens.Create(user, verified, authenticatedAt: authenticatedAt);
-        grant.Token.Ip = ip;
+        grant.Token.Ip = ip; grant.Token.UserAgent = userAgent;
         database.RefreshTokens.Add(grant.Token);
         await database.SaveChangesAsync(cancellationToken);
         await AuditAsync(AuditAction.Login, AuditResult.Success, user.Id, null, ip, cancellationToken);
@@ -89,6 +90,14 @@ public sealed class AuthService(AppDbContext database, PasswordHasher hasher, To
         }
         var user = await database.Users.SingleAsync(user => user.Id == old.UserId, cancellationToken);
         if (!user.IsActive || user.AuthVersion != old.AuthVersion) throw new AuthException("unauthorized");
+        // 網頁閒置登出：距最近使用超過設定即撤銷此 session；有作用中遠端連線時視為使用中，不會走到這裡。
+        var idle = await SessionService.ReadIdleMinutesAsync(database, cancellationToken);
+        if (idle > 0 && Now - await SessionService.LastUsedAsync(connections, store, Now, old.FamilyId, old.CreatedAt, cancellationToken) > TimeSpan.FromMinutes(idle))
+        {
+            await RevokeFamilyAsync(old.FamilyId, cancellationToken);
+            await audits.WriteAsync(new(AuditAction.SessionRevoked, AuditResult.Success, old.UserId, new(AuditReason.Idle, Count: 1), "user", old.UserId), cancellationToken);
+            throw new AuthException("session_idle");
+        }
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var grant = tokens.Create(user, old.MfaVerified, old.FamilyId, old.ExpiresAt, old.AuthenticatedAt);
         old.RevokedAt = Now; old.ReplacedById = grant.Token.Id;

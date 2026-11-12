@@ -40,7 +40,7 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
     }
 
     // 確認一次性 pending，啟用與撤銷舊 session／新 session／備援碼同交易。
-    public async Task<(SessionGrant Grant, string[] Codes)> ConfirmAsync(User user, string code, string ip, CancellationToken cancellationToken)
+    public async Task<(SessionGrant Grant, string[] Codes)> ConfirmAsync(User user, string code, string ip, CancellationToken cancellationToken, string? userAgent = null)
     {
         if (user.TotpEnabledAt != null) throw new AuthException("totp_already_enabled", 409);
         await limiter.CheckAsync(user.NormalizedUsername, ip, cancellationToken, "mfa");
@@ -56,6 +56,7 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
         await auth.RevokeUserAsync(user.Id, cancellationToken);
         var codes = await ReplaceRecoveryAsync(user.Id, cancellationToken);
         var grant = tokens.Create(user, true);
+        grant.Token.Ip = ip; grant.Token.UserAgent = userAgent;
         database.RefreshTokens.Add(grant.Token);
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -65,7 +66,7 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
     }
 
     // 每次消耗 MFA 票證，錯誤驗證提供新票證但保留原始五分鐘期限。
-    public async Task<object> VerifyLoginAsync(string challenge, string code, string ip, CancellationToken cancellationToken)
+    public async Task<object> VerifyLoginAsync(string challenge, string code, string ip, CancellationToken cancellationToken, string? userAgent = null)
     {
         await limiter.CheckIpAsync(ip, cancellationToken, "mfa");
         var raw = await store.TakeOnceAsync("mfa:" + TokenService.Hash(challenge), cancellationToken);
@@ -93,7 +94,7 @@ public sealed class MfaService(AppDbContext database, Vault vault, TotpService t
             await auth.AuditAsync(AuditAction.Mfa, AuditResult.Failure, user.Id, AuditReason.InvalidCredentials, ip, cancellationToken);
             return new MfaRetry(user.LockedUntil > auth.Now ? null : await auth.ChallengeAsync(user, payload.AuthenticatedAt, cancellationToken));
         }
-        return await auth.CompleteLoginAsync(user, true, payload.AuthenticatedAt, ip, cancellationToken);
+        return await auth.CompleteLoginAsync(user, true, payload.AuthenticatedAt, ip, cancellationToken, userAgent);
     }
 
     // 敏感操作的二次驗證亦限流、鎖定與 TOTP 重播保護。

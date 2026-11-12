@@ -12,7 +12,14 @@ public static class UserEndpoints
         var group = app.MapGroup("/api/v1/users").AddEndpointFilter<AuthApiFilter>().RequireRateLimiting("auth-work").RequireAuthorization();
         group.MapGet("/", ListAsync); group.MapPost("/", CreateAsync); group.MapPatch("/{id:guid}", UpdateAsync);
         group.MapPost("/{id:guid}/reset-password", ResetPasswordAsync); group.MapPost("/{id:guid}/reset-totp", ResetTotpAsync);
+        group.MapGet("/{id:guid}/sessions", SessionsAsync); group.MapPost("/{id:guid}/sessions/revoke", RevokeSessionsAsync);
     }
+    // 管理員列出指定使用者的登入 session。
+    private static async Task<IResult> SessionsAsync(Guid id, ClaimsPrincipal principal, SessionService sessions, CancellationToken ct)
+        => Results.Ok(await sessions.ListAsync(principal, id, ct));
+    // 管理員登出指定使用者的單一或全部 session。
+    private static async Task<IResult> RevokeSessionsAsync(Guid id, RevokeSessionsRequest request, ClaimsPrincipal principal, HttpContext http, SessionService sessions, CancellationToken ct)
+        => Results.Ok(await sessions.RevokeAsync(principal, id, request.SessionId, MfaEndpoints.Ip(http), ct));
     // 僅傳安全列表。
     private static async Task<IResult> ListAsync(ClaimsPrincipal principal, AdminService admin, CancellationToken ct) => Results.Ok(await admin.ListAsync(principal, ct));
     // 新增使用者後只回不含密碼的資料。

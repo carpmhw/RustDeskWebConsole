@@ -17,7 +17,7 @@ namespace RdWeb.Tests;
 public sealed class ConnectionEndReasonTests
 {
     // 建立一條串流中的連線，執行 act 後等待 coordinator 結束，回傳瀏覽器 socket 與該連線的結束稽核。
-    private static async Task<(RelayBridgeTests.ScriptSocket Browser, AuditLog Ended, bool ReconnectBlocked)> StreamThenAsync(
+    private async Task<(RelayBridgeTests.ScriptSocket Browser, AuditLog Ended, bool ReconnectBlocked)> StreamThenAsync(
         Func<ActiveConnectionRegistry, ConnectionGrantContext, Task> act, LongTimerClock? clock = null, int? maxHours = null,
         string? hourSeconds = null)
     {
@@ -63,6 +63,8 @@ public sealed class ConnectionEndReasonTests
         await Task.WhenAll(hbbsTask, hbbrTask);
         var blocked = await factory.Services.GetRequiredService<RdWeb.Api.Infrastructure.Kv.IKvStore>()
             .GetAsync(ConnectionTicketService.EndedKey(setup.Grant.Session!.FamilyId, setup.Grant.TargetId)) != null;
+        LastSeen = await factory.Services.GetRequiredService<RdWeb.Api.Infrastructure.Kv.IKvStore>()
+            .GetAsync(RdWeb.Api.Security.SessionService.SeenKey(setup.Grant.Session!.FamilyId));
         await factory.Services.GetRequiredService<AuditWriter>().StopAsync(timeout.Token);
         await using var database = await factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
         return (browser, await database.AuditLogs.SingleAsync(log => log.Action == "ConnectionEnded"), blocked);
@@ -161,6 +163,24 @@ public sealed class ConnectionEndReasonTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(value == null ? [] : [new(ConnectionPolicy.TestHourSecondsKey, value)]).Build();
         Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), ConnectionPolicy.HourUnit(environment == "Development", configuration));
+    }
+
+    // 最近一次 StreamThenAsync 結束後，該 session 的最近使用時間（連線結束時寫入）。
+    private string? LastSeen { get; set; }
+
+    // 連線結束（不論原因）時記錄 session 的最近使用時間，供網頁閒置登出判斷。
+    [Fact]
+    public async Task ConnectionEndRecordsSessionLastSeen()
+    {
+        var before = DateTime.UtcNow;
+        await StreamThenAsync((registry, context) =>
+        {
+            registry.Terminate(grant => grant.UserId == context.UserId);
+            return Task.CompletedTask;
+        });
+        Assert.NotNull(LastSeen);
+        var seen = DateTime.Parse(LastSeen, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal);
+        Assert.InRange(seen, before, DateTime.UtcNow);
     }
 
     // 測試用的連線上下文：使用者與瀏覽器 socket。
