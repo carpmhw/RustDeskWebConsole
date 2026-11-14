@@ -44,18 +44,26 @@ public sealed class RelayBridge
         var sendTarget = ConsumeAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toTarget.Reader, false, upstream.Transport, progress, upstreamLifetime.Token, ready);
         var consumers = new[] { sendBrowser, sendTarget };
         var drainRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var drainRegistration = drain.Register(() => drainRequested.TrySetResult());
+        // 在觸發撤銷的同一執行緒同步切斷上游並改為丟棄瀏覽器資料；若延至延續排程才切斷，
+        // 撤銷 API 回傳後仍可能有瀏覽器輸入搶先轉送到受控端。
+        // 先標記 drain 再取消，因取消上游會令中繼隨即結束，下方須以 drain 是否已觸發選擇收尾路徑。
+        using var drainRegistration = drain.Register(() =>
+        {
+            drainRequested.TrySetResult();
+            Volatile.Write(ref draining, 1);
+            upstreamLifetime.Cancel();
+        });
         try
         {
             var relayEnded = Task.WhenAny(consumers);
-            if (await Task.WhenAny(relayEnded, drainRequested.Task) == relayEnded)
+            await Task.WhenAny(relayEnded, drainRequested.Task);
+            if (!drainRequested.Task.IsCompleted)
             {
                 await await relayEnded;
                 cancellationToken.ThrowIfCancellationRequested();
                 return progress.Snapshot();
             }
-            Volatile.Write(ref draining, 1);
-            await upstreamLifetime.CancelAsync();
+            // 上游已由 drain callback 同步切斷。
             // 已排入的畫面在上限內送完，避免與 close frame 交錯；之後不再有新資料。
             await Task.WhenAny(sendBrowser, Task.Delay(CloseAckTimeout, CancellationToken.None));
             if (closeBrowser != null) await closeBrowser();

@@ -11,11 +11,25 @@ function geometry(value: RemoteInputGeometry): RemoteInputGeometry {
   int32(value.y + value.height - 1)
   return value
 }
+// 上游 Linux 只在 Wayland 時於 platformAdditions 放 is_wayland:true；無法解析或不明值一律不視為 X11。
+function isX11(info: hbb.IPeerInfo): boolean {
+  if (info.platform !== 'Linux' || !info.platformAdditions) return false
+  let value: unknown
+  try {
+    value = JSON.parse(info.platformAdditions)
+  } catch {
+    return false
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const wayland = (value as Record<string, unknown>).is_wayland
+  return wayland === undefined || wayland === false
+}
 export class PeerInputMetadataCache {
   private index = 0
   private displays: RemoteInputGeometry[] = []
   private platform: PeerPlatform = 'unsupported'
   private sas = false
+  private x11 = false
   // 部分 PeerInfo 保留所選 index 及未重送的 platform／SAS。
   accept(info: hbb.IPeerInfo, initial: boolean): PeerInputMetadata {
     const displays = info.displays ?? []
@@ -27,13 +41,15 @@ export class PeerInputMetadataCache {
       /* 每筆幾何在存入前完整驗證。 */ (d, display) =>
         geometry({ display, width: d.width ?? 0, height: d.height ?? 0, x: d.x ?? 0, y: d.y ?? 0 }),
     )
-    if (initial || info.platform)
+    if (initial || info.platform) {
       this.platform =
         info.platform === 'Windows'
           ? 'windows'
           : info.platform === 'Linux'
             ? 'linux'
             : 'unsupported'
+      this.x11 = isX11(info)
+    }
     if (initial || Object.hasOwn(info, 'sasEnabled')) this.sas = info.sasEnabled ?? false
     this.index = index
     this.displays = values
@@ -58,6 +74,6 @@ export class PeerInputMetadataCache {
   snapshot(): PeerInputMetadata {
     const g = this.displays[this.index]
     if (!g) throw new Error('peer_display_invalid')
-    return { geometry: { ...g }, platform: this.platform, sas: this.sas }
+    return { geometry: { ...g }, platform: this.platform, sas: this.sas, x11: this.x11 }
   }
 }

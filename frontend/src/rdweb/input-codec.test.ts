@@ -12,6 +12,7 @@ const meta: PeerInputMetadata = {
   geometry: { display: 0, width: 320, height: 240, x: -320, y: 0 },
   platform: 'windows',
   sas: true,
+  x11: false,
 }
 // 滑鼠 mask 及座標依 pinned 協定，不從 Main 取得原點。
 it('uses signed origin, pinned buttons and canonical wheel signs', () => {
@@ -61,6 +62,36 @@ it('keeps semantic text atomic and Windows shortcuts releasable', () => {
       { ...meta, platform: 'linux' },
     )[0]!.keyEvent?.chr,
   ).toBe(97)
+})
+// Linux X11 上游 Legacy Seq 走 libxdo 單一 scratch keycode 且按下後即還原，慢 client 掉字或重複前字；
+// Translate Seq 改走 TFC 保留式重映射。Wayland／未知顯示伺服器與 Windows 維持 Legacy。
+it('sends Linux X11 text as Translate Seq and keeps other peers on Legacy', () => {
+  const linux = { ...meta, platform: 'linux' as const, sas: false }
+  const intent: InputIntent = { kind: 'text', text: '中文A', modifiers: ['Shift', 'CapsLock'] }
+  expect(encodeInput(intent, { ...linux, x11: true })).toEqual([
+    {
+      keyEvent: {
+        seq: '中文A',
+        down: true,
+        press: false,
+        mode: hbb.KeyboardMode.Translate,
+        modifiers: [hbb.ControlKey.Shift, hbb.ControlKey.CapsLock],
+      },
+    },
+  ])
+  expect(encodeInput(intent, { ...linux, x11: false })[0]!.keyEvent?.mode).toBe(
+    hbb.KeyboardMode.Legacy,
+  )
+  expect(encodeInput(intent, { ...meta, x11: true })[0]!.keyEvent?.mode).toBe(
+    hbb.KeyboardMode.Legacy,
+  )
+  // 文字以外的 Linux 按鍵不受 X11 判定影響。
+  expect(
+    encodeInput(
+      { kind: 'key', key: 'Return', down: true, modifiers: [] },
+      { ...linux, x11: true },
+    )[0]!.keyEvent?.mode,
+  ).toBe(hbb.KeyboardMode.Legacy)
 })
 // 上游Legacy會釋放暫加的modifier，明確down不能將自身家族列為暫加鍵（Windows與Linux）。
 it.each<readonly [ControlName, Modifier, number]>([

@@ -111,6 +111,30 @@ public sealed class RelayBridgeTests
         Assert.False(peer.Output.Reader.TryRead(out _));
     }
 
+    // drain 取消回傳時上游須已同步切斷：撤銷 API 回傳後才到達的瀏覽器輸入不得因延續排程延遲而轉送到受控端。
+    [Fact]
+    public async Task DrainCutsUpstreamBeforeCancelReturns()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var drain = new CancellationTokenSource();
+        using var browser = new ScriptSocket();
+        using var peer = new ScriptSocket(abortOnCancel: true);
+        peer.Input.Writer.TryWrite(new([1], WebSocketMessageType.Binary, true));
+        await using var upstream = new SocketSession(peer);
+        var run = new RelayBridge().RunAsync(browser, upstream, timeout.Token, drain: drain.Token,
+            closeBrowser: () => browser.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, "access revoked", CancellationToken.None));
+        Assert.Equal(WebSocketMessageType.Text, (await browser.Output.Reader.ReadAsync(timeout.Token)).Type);
+        Assert.Equal(WebSocketMessageType.Binary, (await browser.Output.Reader.ReadAsync(timeout.Token)).Type);
+
+        drain.Cancel();
+        Assert.Equal(WebSocketState.Aborted, peer.State);
+        for (var index = 0; index < 8; index++) browser.Input.Writer.TryWrite(new([0, 0, 0, 0], WebSocketMessageType.Binary, true));
+        await run.WaitAsync(timeout.Token);
+
+        Assert.False(peer.Output.Reader.TryRead(out _));
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, browser.SentCloseStatus);
+    }
+
     // Close frame 可帶瀏覽器端的關閉代碼，供測試閒置等由瀏覽器主動結束的情境。
     internal sealed record Frame(byte[] Data, WebSocketMessageType Type, bool End, WebSocketCloseStatus? CloseStatus = null);
 

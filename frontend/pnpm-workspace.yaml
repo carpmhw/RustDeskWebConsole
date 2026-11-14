@@ -5,5 +5,8 @@ minimumReleaseAgeExclude:
 patchedDependencies:
   fzstd@0.1.1: patches/fzstd@0.1.1.patch
 # 2026-10-21 Task17：jsdoc 的 dev-only markdown-it 14.3.2 有 high／low advisory，固定到修補版。
+# 2026-11-14：eslint／typescript-estree 的 dev-only minimatch 10.x 有 GHSA-g3hv-75wg-m249（<11.0.1），
+# 上游僅用 minimatch()／Minimatch#match，未用 11.0 移除的 makeRe 等 API，固定到修補版。
 overrides:
   markdown-it: 14.3.3
+  'minimatch@10': 11.0.8

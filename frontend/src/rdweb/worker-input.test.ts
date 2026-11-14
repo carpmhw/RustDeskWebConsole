@@ -11,6 +11,7 @@ const meta: PeerInputMetadata = {
   geometry: { display: 0, width: 320, height: 240, x: 0, y: 0 },
   platform: 'linux',
   sas: false,
+  x11: false,
 }
 // 注入唯一 sender；測 wire 與 release 語意，不假造 MAC 成功。
 function fixture(platform: PeerInputMetadata['platform'] = 'linux') {
@@ -171,6 +172,20 @@ it('uses temporary Windows modifiers and releases hotkeys before semantic text',
   f.send.mockClear()
   f.sender.release()
   expect(f.send).not.toHaveBeenCalled()
+})
+// X11 判定改變即作廢舊世代，之後文字依新判定選模式；非 boolean 在邊界拒絕。
+it('switches text mode with the X11 peer flag and rejects malformed flags', () => {
+  const f = fixture(),
+    old = f.states.at(-1)!.input_generation
+  f.sender.setPeer({ ...meta, x11: true })
+  expect(f.states.at(-1)!.input_generation).not.toBe(old)
+  f.receive([{ kind: 'text', text: '中文', modifiers: [] }])
+  expect(f.send.mock.calls.map((c) => c[0].keyEvent)).toEqual([
+    { seq: '中文', down: true, press: false, mode: 2, modifiers: [] },
+  ])
+  expect(() => f.sender.setPeer({ ...meta, x11: 'true' } as unknown as PeerInputMetadata)).toThrow(
+    'protocol_error',
+  )
 })
 // 整批預驗格式與額度，不先送第一筆再發現後續非法。
 it('prevalidates full batches and bounds bytes, count and held ledger', () => {

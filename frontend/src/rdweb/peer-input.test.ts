@@ -27,6 +27,7 @@ it('retains platform, SAS and selected display across partial updates', () => {
   expect(next).toEqual({
     platform: 'windows',
     sas: true,
+    x11: false,
     geometry: { display: 1, width: 640, height: 480, x: -1280, y: 0 },
   })
   next.geometry.x = 100
@@ -76,4 +77,33 @@ it('rejects empty, excessive or malformed metadata without mutating valid cache'
   expect(
     cache.accept({ platform: 'Mac OS', displays: [{ width: 1, height: 1 }] }, true).platform,
   ).toBe('unsupported')
+})
+// 上游 Linux 只在 Wayland 時於 platformAdditions 放 is_wayland:true；缺欄位或格式不明一律不視為 X11。
+it.each<readonly [string, string | undefined, boolean]>([
+  ['Linux', '{"support_view_camera":true}', true],
+  ['Linux', '{"is_wayland":false}', true],
+  ['Linux', '{"is_wayland":true,"support_view_camera":true}', false],
+  ['Linux', '{"is_wayland":"yes"}', false],
+  ['Linux', '', false],
+  ['Linux', undefined, false],
+  ['Linux', 'not json', false],
+  ['Linux', '[]', false],
+  ['Linux', 'null', false],
+  ['Windows', '{"support_view_camera":true}', false],
+])('derives X11 from %s platformAdditions %j', (platform, platformAdditions, x11) => {
+  const cache = new PeerInputMetadataCache()
+  expect(
+    cache.accept({ platform, platformAdditions, displays: [{ width: 1, height: 1 }] }, true).x11,
+  ).toBe(x11)
+})
+// 部分 PeerInfo 未重送 platform 時保留原 X11 判定，重送 platform 才重新判定。
+it('retains X11 across partial updates and recomputes with platform', () => {
+  const cache = new PeerInputMetadataCache()
+  const displays = [{ width: 1, height: 1 }]
+  cache.accept({ platform: 'Linux', platformAdditions: '{}', displays }, true)
+  expect(cache.accept({ displays }, false).x11).toBe(true)
+  expect(
+    cache.accept({ platform: 'Linux', platformAdditions: '{"is_wayland":true}', displays }, false)
+      .x11,
+  ).toBe(false)
 })

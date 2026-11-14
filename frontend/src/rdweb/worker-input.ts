@@ -48,7 +48,8 @@ export class WorkerInputSender {
     remotePoint(value, 0, 0)
     if (
       !['windows', 'linux', 'unsupported'].includes(value.platform) ||
-      typeof value.sas !== 'boolean'
+      typeof value.sas !== 'boolean' ||
+      typeof value.x11 !== 'boolean'
     )
       throw new Error('protocol_error')
     const a = this.meta,
@@ -57,6 +58,7 @@ export class WorkerInputSender {
       a &&
       a.platform === value.platform &&
       a.sas === value.sas &&
+      a.x11 === value.x11 &&
       a.geometry.display === b.display &&
       a.geometry.width === b.width &&
       a.geometry.height === b.height &&

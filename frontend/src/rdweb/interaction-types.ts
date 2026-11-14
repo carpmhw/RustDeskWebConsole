@@ -72,6 +72,8 @@ export interface PeerInputMetadata {
   geometry: RemoteInputGeometry
   platform: PeerPlatform
   sas: boolean
+  // Linux 受控端未自報 Wayland 時為 true，僅 Worker 用於選擇文字注入模式。
+  x11: boolean
 }
 export interface InputState extends RemotePermissions {
   revision: number
