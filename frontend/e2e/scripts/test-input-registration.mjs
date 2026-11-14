@@ -167,14 +167,17 @@ test('reliability registers exactly one fixed platform scenario', () => {
     assert.notEqual(list({ ...scope, ...value }, 'playwright.reliability.config.ts').status, 0)
   }
 })
-// 安全五案分開註冊，不能混入基本四案或以Linux冒充Windows。
-test('reconnect security registers eight Linux-only scenarios', () => {
+// 安全案例分開註冊（含連線管控的中斷、時間上限與閒置三案），不能混入基本四案或以Linux冒充Windows。
+test('reconnect security registers eleven Linux-only scenarios', () => {
   const value = list({ RDWEB_INPUT_PLATFORMS: 'linux' }, 'playwright.reconnect-security.config.ts')
   assert.equal(value.status, 0)
-  assert.equal(value.stdout.includes('Total: 8 tests'), true)
+  assert.equal(value.stdout.includes('Total: 11 tests'), true)
   assert.equal(value.stdout.includes('revoked permission closes session without reconnect'), true)
   assert.equal(value.stdout.includes('deactivated user closes session without reconnect'), true)
   assert.equal(value.stdout.includes('retry rate limit stops reconnect'), true)
+  assert.equal(value.stdout.includes('admin terminate closes session without reconnect'), true)
+  assert.equal(value.stdout.includes('time limit closes session without reconnect'), true)
+  assert.equal(value.stdout.includes('idle timeout closes session without reconnect'), true)
   const wrong = list(
     { ...runtime, RDWEB_INPUT_PLATFORMS: 'windows' },
     'playwright.reconnect-security.config.ts',
@@ -243,11 +246,11 @@ test('Windows-only registers the two native clipboard oracles, not Linux', () =>
   assert.equal(result.stdout.includes('public Windows text and clipboard oracle over ws'), true)
   assert.equal(result.stdout.includes('Total: 2 tests'), true)
 })
-// 雙平台保留既有16案，追加一個formal API contract與Windows兩案，不能覆寫原Linux驗收。
-test('both platforms retain the existing sixteen Linux cases', () => {
+// 雙平台保留既有Linux 19案（含權限拒絕與TCP／WS指標語意），追加一個formal API contract與Windows兩案，不能覆寫原Linux驗收。
+test('both platforms retain the existing nineteen Linux cases', () => {
   const result = list({ ...runtime, RDWEB_INPUT_PLATFORMS: 'linux,windows' })
   assert.equal(result.status, 0)
-  assert.equal(result.stdout.includes('Total: 19 tests'), true)
+  assert.equal(result.stdout.includes('Total: 22 tests'), true)
 })
 // Chromium不冒充Chrome；兩個channel以獨立project註冊，缺安裝於launch時明確失敗。
 test('explicit channels produce separate projects and preserve legacy channel selection', () => {
