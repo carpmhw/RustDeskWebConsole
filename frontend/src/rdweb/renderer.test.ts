@@ -6,6 +6,60 @@ it('calculates fit and fixed zoom without changing image geometry', () => {
   expect(imageScale(1280, 720, 640, 500, 'original')).toBe(1)
   expect(imageScale(1280, 720, 640, 500, 1.5)).toBe(1.5)
 })
+// DOM量測或外部zoom值不合法時固定拒絕，不得產生NaN／Infinity比例。
+it('rejects non-positive or non-finite sizes and unknown zoom', () => {
+  for (const size of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(() => imageScale(size, 720, 640, 500, 'fit')).toThrow('protocol_error')
+    expect(() => imageScale(1280, size, 640, 500, 'fit')).toThrow('protocol_error')
+    expect(() => imageScale(1280, 720, size, 500, 'fit')).toThrow('protocol_error')
+    expect(() => imageScale(1280, 720, 640, size, 'fit')).toThrow('protocol_error')
+  }
+  for (const zoom of [0, Number.NaN, 0.75, 3, 'cover'])
+    expect(() => imageScale(1280, 720, 640, 500, zoom as never)).toThrow('protocol_error')
+})
+// 已有一張待draw時第二張立即close並回背壓，不排第二個RAF也不替換原pending。
+it('closes a second in-flight frame and reports video backpressure', () => {
+  let render!: FrameRequestCallback
+  const context = { drawImage: vi.fn(), clearRect: vi.fn() }
+  const canvas = {
+    width: 320,
+    height: 240,
+    getContext: () => context,
+  } as unknown as HTMLCanvasElement
+  const ack = vi.fn(),
+    fail = vi.fn()
+  const schedule = vi.fn((callback: FrameRequestCallback) => {
+    render = callback
+    return 1
+  })
+  const renderer = new CanvasRenderer(canvas, ack, fail, schedule, vi.fn())
+  renderer.setFormat(1, 1, { display: 0, width: 320, height: 240 })
+  const frame = () => ({
+    codedWidth: 320,
+    codedHeight: 240,
+    displayWidth: 320,
+    displayHeight: 240,
+    close: vi.fn(),
+  })
+  const first = frame(),
+    second = frame()
+  renderer.accept(first as unknown as VideoFrame, { revision: 1, generation: 1, frame_id: 1 })
+  renderer.accept(second as unknown as VideoFrame, { revision: 1, generation: 1, frame_id: 2 })
+  expect(second.close).toHaveBeenCalledOnce()
+  expect(fail).toHaveBeenCalledExactlyOnceWith('video_backpressure')
+  expect(first.close).not.toHaveBeenCalled()
+  expect(schedule).toHaveBeenCalledOnce()
+  expect(ack).not.toHaveBeenCalled()
+  render(0)
+  expect(first.close).toHaveBeenCalledOnce()
+  expect(ack).toHaveBeenCalledExactlyOnceWith({
+    revision: 1,
+    generation: 1,
+    frame_id: 1,
+    drawn: true,
+  })
+  renderer.dispose()
+})
 // Main每draw一張finally close並精確ack，不依賴mockDOM套件。
 it('closes a rendered frame and clears ownership on disposal', () => {
   let render!: FrameRequestCallback
