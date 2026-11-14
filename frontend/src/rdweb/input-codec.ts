@@ -111,7 +111,12 @@ export function encodeInput(v: InputIntent, meta: PeerInputMetadata): hbb.IMessa
       )
     )
       throw new Error('input_unsupported')
-    return [{ keyEvent: { seq: v.text, down: true, press: false, mode, modifiers: mods } }]
+    // Linux X11 上游 Legacy Seq 走 libxdo：同一 scratch keycode 按下後即還原，慢 client 會掉字或重複前字；
+    // Translate Seq 改走 TFC，輪替多個 keycode 並保留映射。Wayland 的 Translate 會改用剪貼簿，故不採用。
+    const textMode = meta.platform === 'linux' && meta.x11 ? hbb.KeyboardMode.Translate : mode
+    return [
+      { keyEvent: { seq: v.text, down: true, press: false, mode: textMode, modifiers: mods } },
+    ]
   }
   if (v.kind === 'sas') {
     if (meta.platform !== 'windows' || !meta.sas) throw new Error('input_unsupported')
