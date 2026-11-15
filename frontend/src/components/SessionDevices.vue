@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePreferencesStore } from '../stores/preferences'
 import { formatTimestamp } from '../utils/dateTime'
 import type { SessionRow } from '../api/management'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 // userId 有值時為管理員檢視該使用者；否則為本人的登入裝置。
 const props = defineProps<{ userId?: string }>()
@@ -16,8 +17,7 @@ const loaded = ref(false)
 const busy = ref(false)
 const error = ref<string | null>(null)
 const revoked = ref<number | null>(null)
-// 待確認的操作：單一 session 的 ID，或 all（管理員全部登出／本人登出其他所有裝置）。
-const pending = ref<string | null>(null)
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const controller = new AbortController()
 let alive = true
 const base = computed(() =>
@@ -47,11 +47,16 @@ async function load(): Promise<void> {
     if (alive) error.value = auth.errorCode(failure)
   }
 }
-// 確認後登出：單一、全部或其他所有裝置；完成後顯示數量並重新讀取。
-async function revoke(): Promise<void> {
-  const target = pending.value
-  pending.value = null
-  if (!target || busy.value) return
+// 經確認框同意後登出：target 為單一 session ID，或 all（管理員全部登出／本人登出其他所有裝置）；完成後顯示數量並重新讀取。
+async function revoke(target: string): Promise<void> {
+  const text = t(
+    target !== 'all'
+      ? 'sessionsUI.confirmOne'
+      : props.userId
+        ? 'sessionsUI.confirmAll'
+        : 'sessionsUI.confirmOthers',
+  )
+  if (busy.value || !(await confirmDialog.value?.ask(text)) || !alive) return
   busy.value = true
   error.value = null
   revoked.value = null
@@ -121,7 +126,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="secondary"
                 :disabled="busy"
-                @click="pending = row.id"
+                @click="revoke(row.id)"
               >
                 {{ t('sessionsUI.revoke') }}
               </button>
@@ -133,41 +138,20 @@ onBeforeUnmount(() => {
         </tbody>
       </table>
     </div>
-    <div
-      v-if="pending"
-      class="notice"
-      role="alertdialog"
-      :aria-label="t('sessionsUI.confirmTitle')"
-    >
-      <p>
-        {{
-          t(
-            pending !== 'all'
-              ? 'sessionsUI.confirmOne'
-              : userId
-                ? 'sessionsUI.confirmAll'
-                : 'sessionsUI.confirmOthers',
-          )
-        }}
-      </p>
-      <div class="button-row">
-        <button type="button" class="danger" :disabled="busy" @click="revoke">
-          {{ t('usersUI.confirm') }}
-        </button>
-        <button type="button" class="text-button" @click="pending = null">
-          {{ t('usersUI.cancel') }}
-        </button>
-      </div>
-    </div>
-    <div v-else class="button-row">
+    <div class="button-row">
       <button
         type="button"
         class="danger"
         :disabled="busy || !loaded || others === 0"
-        @click="pending = 'all'"
+        @click="revoke('all')"
       >
         {{ t(userId ? 'sessionsUI.revokeAll' : 'sessionsUI.revokeOthers') }}
       </button>
     </div>
+    <ConfirmDialog
+      ref="confirmDialog"
+      :title="t('sessionsUI.confirmTitle')"
+      :confirm-label="t('usersUI.confirm')"
+    />
   </div>
 </template>
