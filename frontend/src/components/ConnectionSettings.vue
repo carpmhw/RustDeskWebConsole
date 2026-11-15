@@ -119,6 +119,7 @@ onBeforeUnmount(() => {
         <label for="connection-idle">{{ t('connectionsUI.idleLabel') }}</label
         ><input
           id="connection-idle"
+          aria-describedby="connection-idle-hint"
           v-model.number="idle"
           type="number"
           min="0"
@@ -126,10 +127,11 @@ onBeforeUnmount(() => {
           step="1"
           :disabled="!loaded || busy || confirming"
         />
-        <p class="field-hint">{{ t('connectionsUI.idleHint') }}</p>
+        <p id="connection-idle-hint" class="field-hint">{{ t('connectionsUI.idleHint') }}</p>
         <label for="connection-hours">{{ t('connectionsUI.hoursLabel') }}</label
         ><input
           id="connection-hours"
+          aria-describedby="connection-hours-hint"
           v-model.number="hours"
           type="number"
           min="0"
@@ -137,7 +139,7 @@ onBeforeUnmount(() => {
           step="1"
           :disabled="!loaded || busy || confirming"
         />
-        <p class="field-hint">{{ t('connectionsUI.hoursHint') }}</p>
+        <p id="connection-hours-hint" class="field-hint">{{ t('connectionsUI.hoursHint') }}</p>
         <button
           v-if="!confirming"
           class="secondary"

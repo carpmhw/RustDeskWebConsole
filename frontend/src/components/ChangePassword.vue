@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 
@@ -14,6 +14,7 @@ const confirmation = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
 const done = ref(false)
+const confirmationInput = ref<HTMLInputElement | null>(null)
 let controller: AbortController | null = null
 const errorText = computed(() =>
   error.value === 'mismatch'
@@ -21,18 +22,26 @@ const errorText = computed(() =>
     : t(te('errors.' + error.value) ? 'errors.' + error.value : 'errors.service_unavailable'),
 )
 const prefix = computed(() => (props.mode === 'required' ? 'required' : 'change'))
+// 不一致時錯誤訊息隨確認欄位一起被讀出；其他錯誤屬表單層級，不連結到單一欄位。
+const confirmationDescribedBy = computed(() =>
+  error.value === 'mismatch'
+    ? prefix.value + '-password-hint ' + prefix.value + '-password-error'
+    : prefix.value + '-password-hint',
+)
 // 密碼只存在本元件的短命 ref，送出或離開後一律清空。
 function clear(): void {
   current.value = ''
   next.value = ''
   confirmation.value = ''
 }
-// 先在本地比對兩次新密碼，不一致時不送出；成功後通知頁面處理導向。
+// 先在本地比對兩次新密碼，不一致時不送出並把焦點移到確認欄位；成功後通知頁面處理導向。
 async function submit(): Promise<void> {
   done.value = false
   if (next.value !== confirmation.value) {
     error.value = 'mismatch'
     confirmation.value = ''
+    await nextTick()
+    confirmationInput.value?.focus()
     return
   }
   error.value = null
@@ -66,7 +75,9 @@ onBeforeUnmount(() => {
     <div class="card-body">
       <div class="form-narrow">
         <p v-if="mode === 'voluntary'">{{ t('passwordUI.changeHint') }}</p>
-        <p v-if="error" class="error-message" role="alert">{{ errorText }}</p>
+        <p v-if="error" :id="prefix + '-password-error'" class="error-message" role="alert">
+          {{ errorText }}
+        </p>
         <p v-if="done && mode === 'voluntary'" class="success-message" role="status">
           {{ t('passwordUI.changed') }}
         </p>
@@ -86,6 +97,7 @@ onBeforeUnmount(() => {
             :id="prefix + '-new-password'"
             v-model="next"
             type="password"
+            :aria-describedby="prefix + '-password-hint'"
             autocomplete="new-password"
             minlength="12"
             maxlength="1024"
@@ -94,14 +106,17 @@ onBeforeUnmount(() => {
           <label :for="prefix + '-confirm-password'">{{ t('passwordUI.confirmPassword') }}</label
           ><input
             :id="prefix + '-confirm-password'"
+            ref="confirmationInput"
             v-model="confirmation"
             type="password"
+            :aria-invalid="error === 'mismatch' ? 'true' : undefined"
+            :aria-describedby="confirmationDescribedBy"
             autocomplete="new-password"
             minlength="12"
             maxlength="1024"
             required
           />
-          <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
+          <p :id="prefix + '-password-hint'" class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
           <button class="primary" type="submit" :disabled="busy">
             {{
               busy

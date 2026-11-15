@@ -106,6 +106,7 @@ onBeforeUnmount(() => {
         <div class="inline-field">
           <input
             id="audit-retention"
+            aria-describedby="audit-retention-hint"
             v-model.number="days"
             type="number"
             :min="minimum"
@@ -123,7 +124,9 @@ onBeforeUnmount(() => {
             {{ t('auditUI.retentionSave') }}
           </button>
         </div>
-        <p class="field-hint">{{ t('auditUI.retentionRange', { minimum, maximum }) }}</p>
+        <p id="audit-retention-hint" class="field-hint">
+          {{ t('auditUI.retentionRange', { minimum, maximum }) }}
+        </p>
       </div>
       <form v-if="confirming" class="form-narrow" @submit.prevent="apply">
         <p v-if="days < saved" class="notice" role="status">

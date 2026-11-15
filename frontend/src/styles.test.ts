@@ -68,3 +68,11 @@ it('keeps management table row headers sticky with separate borders', () => {
     /\.management-table tbody th \{[^}]*position: sticky;[^}]*inset-inline-start: 0;[^}]*background: var\(--surface\);/,
   )
 })
+
+// 不合法樣式只掛在 :user-invalid，並附顏色以外的形狀提示；不得用會在載入時就符合的 :invalid。
+it('styles invalid fields only after user interaction', () => {
+  expect(css).toMatch(
+    /:is\(input, select, textarea\):user-invalid \{[^}]*border-color: var\(--danger\);[^}]*box-shadow: inset 4px 0 0 var\(--danger\);/,
+  )
+  expect(css).not.toMatch(/(?<!user-):invalid\b/)
+})
