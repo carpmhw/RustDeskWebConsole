@@ -52,3 +52,11 @@ it('uses only the approved font weights', () => {
     weights.filter((value) => !['400', '600', '700', 'inherit', 'normal'].includes(value)),
   ).toEqual([])
 })
+
+// modal 對話框與 backdrop 都要阻止捲動串接，否則在遮罩上捲動會帶動背景頁。
+it('contains scroll inside modal dialogs and their backdrop', () => {
+  expect(css).toMatch(/dialog:modal \{\n {2}overscroll-behavior: contain;\n\}/)
+  expect(css).toMatch(
+    /dialog::backdrop \{\n {2}overflow: hidden;\n {2}overscroll-behavior: contain;\n\}/,
+  )
+})

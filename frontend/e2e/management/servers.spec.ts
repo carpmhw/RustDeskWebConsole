@@ -36,13 +36,19 @@ test('administrator manages a saved server through the UI', async ({ page }) => 
     await page.getByRole('button', { name: '保存設定', exact: true }).click()
     const updated = page.locator('tbody tr').filter({ hasText: name + '-updated' })
     await expect(updated).toHaveCount(1)
-    // 只接受由此次刪除按鈕產生的標準確認對話。
-    page.once('dialog', (dialog) => dialog.accept())
+    // 站內確認框初始焦點須在取消鈕，先取消不得送出刪除，再明確確認。
+    await updated.getByRole('button', { name: '刪除', exact: true }).click()
+    const confirm = page.getByRole('dialog', { name: '確認刪除' })
+    await expect(confirm.getByRole('button', { name: '取消', exact: true })).toBeFocused()
+    await confirm.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(confirm).toHaveCount(0)
+    await expect(updated).toHaveCount(1)
     const deleted = page.waitForResponse(
       (response) =>
         response.request().method() === 'DELETE' && response.url().includes('/api/v1/servers/'),
     )
     await updated.getByRole('button', { name: '刪除', exact: true }).click()
+    await confirm.getByRole('button', { name: '刪除', exact: true }).click()
     expect((await deleted).status()).toBe(204)
     await expect(updated).toHaveCount(0)
   } finally {

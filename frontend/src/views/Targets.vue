@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePreferencesStore } from '../stores/preferences'
 import { formatTimestamp } from '../utils/dateTime'
 import type { AvailableServer, TargetPage, TargetRow } from '../api/management'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import TargetEditor from '../components/TargetEditor.vue'
 import TargetPermissions from '../components/TargetPermissions.vue'
 import TargetReveal from '../components/TargetReveal.vue'
@@ -28,6 +29,7 @@ const editorTarget = ref<TargetRow | null>(null)
 const aclTarget = ref<TargetRow | null>(null)
 const revealTarget = ref<TargetRow | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const controller = new AbortController()
 let alive = true
 let loadRevision = 0
@@ -127,7 +129,12 @@ function select(row: TargetRow, event: Event): void {
 }
 // 用明確版本單筆刪除，確認只含metadata名稱。
 async function remove(row: TargetRow): Promise<void> {
-  if (busy.value || !window.confirm(t('targetUI.confirmDelete', { name: row.name }))) return
+  if (
+    busy.value ||
+    !(await confirmDialog.value?.ask(t('targetUI.confirmDelete', { name: row.name }))) ||
+    !alive
+  )
+    return
   busy.value = true
   error.value = null
   try {
@@ -149,7 +156,8 @@ async function bulkDelete(): Promise<void> {
   if (
     busy.value ||
     !selected.value.size ||
-    !window.confirm(t('targetUI.confirmBulk', { count: selected.value.size }))
+    !(await confirmDialog.value?.ask(t('targetUI.confirmBulk', { count: selected.value.size }))) ||
+    !alive
   )
     return
   busy.value = true
@@ -413,6 +421,10 @@ onBeforeUnmount(() => {
       :target-id="revealTarget.id"
       :name="revealTarget.name"
       @close="revealTarget = null"
+    /><ConfirmDialog
+      ref="confirmDialog"
+      :title="t('manage.confirmDeleteTitle')"
+      :confirm-label="t('manage.remove')"
     />
   </main>
 </template>

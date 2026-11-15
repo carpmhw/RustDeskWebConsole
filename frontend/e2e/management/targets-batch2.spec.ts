@@ -177,8 +177,11 @@ test('operator edits targets and transfers metadata through the UI', async ({ pa
       },
       fixture.admin.access_token,
     )
-    page.once('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: '刪除所選', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: '確認刪除' })
+      .getByRole('button', { name: '刪除', exact: true })
+      .click()
     await expect(page.getByRole('alert')).toContainText('版本')
     await expect(page.getByRole('button', { name: '刪除所選', exact: true })).toBeDisabled()
     await expect(page.locator('tbody input[type=checkbox]:checked')).toHaveCount(0)
@@ -187,8 +190,11 @@ test('operator edits targets and transfers metadata through the UI', async ({ pa
     // 重新選取最新版本後才可再次送出，不自動重送破壞性操作。
     for (const checkbox of await page.locator('tbody input[type=checkbox]').all())
       await checkbox.check()
-    page.once('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: '刪除所選', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: '確認刪除' })
+      .getByRole('button', { name: '刪除', exact: true })
+      .click()
     await expect(page.locator('tbody tr').filter({ hasText: name })).toHaveCount(0)
     await expect(page.locator('tbody tr').filter({ hasText: 'imported-fixture' })).toHaveCount(0)
     await page.setViewportSize({ width: 390, height: 844 })

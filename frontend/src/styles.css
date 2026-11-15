@@ -651,6 +651,14 @@ summary {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+/* modal 開啟時阻止捲動串接到背景頁；::backdrop 須成為捲動容器才會套用 overscroll-behavior。 */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
 .recovery-dialog {
   background: var(--surface);
   color: var(--ink);
@@ -857,7 +865,7 @@ summary {
   border-radius: var(--panel-radius);
   width: calc(100% - 32px);
   max-width: 760px;
-  max-height: 90vh;
+  max-height: 90dvh;
   overflow: auto;
   padding: var(--space-4);
 }

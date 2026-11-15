@@ -399,10 +399,12 @@ onBeforeUnmount(() => {
     <dialog
       ref="devicesDialog"
       class="management-dialog"
-      :aria-label="t('sessionsUI.title')"
+      aria-labelledby="devices-title"
       @close="devicesFor = null"
     >
-      <h2>{{ t('sessionsUI.titleFor', { user: devicesFor?.username ?? '' }) }}</h2>
+      <h2 id="devices-title">
+        {{ t('sessionsUI.titleFor', { user: devicesFor?.username ?? '' }) }}
+      </h2>
       <SessionDevices v-if="devicesFor" :key="devicesFor.id" :user-id="devicesFor.id" />
       <div class="button-row">
         <button type="button" @click="devicesDialog?.close()">{{ t('sessionsUI.close') }}</button>
