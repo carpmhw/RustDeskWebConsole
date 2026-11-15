@@ -90,7 +90,8 @@ function toggleNavigation(): void {
         </template>
       </nav>
       <div class="header-actions">
-        <details
+        <!-- 原生 auto popover：Esc／點外部關閉並由 top layer 呈現；敏感 modal 開啟時瀏覽器會先關閉它。 -->
+        <div
           v-if="
             auth.phase !== 'authenticated' ||
             auth.user?.mfa_enrollment_required ||
@@ -99,9 +100,18 @@ function toggleNavigation(): void {
           class="appearance-menu"
           data-testid="appearance-menu"
         >
-          <summary>{{ t('appearance') }}</summary>
-          <DisplayPreferences />
-        </details>
+          <button
+            type="button"
+            class="appearance-trigger"
+            popovertarget="appearance-panel"
+            aria-controls="appearance-panel"
+          >
+            {{ t('appearance') }}
+          </button>
+          <div id="appearance-panel" class="appearance-panel" popover="auto">
+            <DisplayPreferences />
+          </div>
+        </div>
         <button
           v-if="auth.phase === 'authenticated' || auth.logoutPending"
           type="button"

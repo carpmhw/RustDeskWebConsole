@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test'
 
 const base = (process.env.APP_BASE_PATH ?? '/').replace(/\/$/, '')
 
-// 匿名外觀控制集中在原生disclosure，先以真操作打開再調整同一偏好。
+// 匿名外觀控制集中在原生popover，先以真操作打開再調整同一偏好。
 async function openAppearance(page: Page): Promise<void> {
-  await page.getByTestId('appearance-menu').locator('summary').click()
+  await page.getByTestId('appearance-menu').locator('.appearance-trigger').click()
 }
 
 // 瀏覽器接受的合法別名必須能在下拉選單呈現，不能只在 formatter 中有效。

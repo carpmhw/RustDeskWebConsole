@@ -157,7 +157,7 @@ export async function createFixture(
 export async function loginUi(page: Page, username: string): Promise<void> {
   await page.goto(base + '/login')
   const appearance = page.getByTestId('appearance-menu')
-  if (await appearance.count()) await appearance.locator('summary').click()
+  if (await appearance.count()) await appearance.locator('.appearance-trigger').click()
   await page.getByLabel('語言', { exact: true }).selectOption('zh-TW')
   const initial = pendingInitial.get(username)
   if (initial) pendingInitial.delete(username)
