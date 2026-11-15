@@ -109,6 +109,7 @@ onBeforeUnmount(() => {
         <label for="session-idle">{{ t('sessionsUI.idleLabel') }}</label
         ><input
           id="session-idle"
+          aria-describedby="session-idle-hint"
           v-model.number="idle"
           type="number"
           min="0"
@@ -116,7 +117,7 @@ onBeforeUnmount(() => {
           step="1"
           :disabled="!loaded || busy || confirming"
         />
-        <p class="field-hint">{{ t('sessionsUI.idleHint') }}</p>
+        <p id="session-idle-hint" class="field-hint">{{ t('sessionsUI.idleHint') }}</p>
         <button
           v-if="!confirming"
           class="secondary"

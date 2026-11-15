@@ -274,6 +274,7 @@ onBeforeUnmount(() => {
               }}</label
               ><input
                 id="user-secret"
+                aria-describedby="user-secret-hint"
                 v-model="secret"
                 type="password"
                 autocomplete="new-password"
@@ -289,7 +290,7 @@ onBeforeUnmount(() => {
               <p v-if="generated" class="field-hint" role="status">
                 {{ t('usersUI.generatedPending') }}
               </p>
-              <p class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
+              <p id="user-secret-hint" class="field-hint">{{ t('passwordUI.lengthHint') }}</p>
             </template>
             <ReauthProof
               v-if="operation.kind === 'reset-password' || operation.kind === 'reset-totp'"

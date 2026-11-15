@@ -138,6 +138,22 @@ for (const role of ['admin', 'operator', 'viewer'] as const) {
   })
 }
 
+// 未互動前不標示錯誤；空白送出由原生驗證擋下並聚焦第一欄，aria-invalid與:user-invalid樣式同步，修正後即清除。
+test('login fields flag invalid state only after a submit attempt', async ({ page }) => {
+  await page.goto(base + '/login')
+  const username = page.getByLabel('帳號', { exact: true })
+  await username.focus()
+  await expect(username).toHaveAttribute('aria-invalid', 'false')
+  await expect(username).toHaveCSS('box-shadow', 'none')
+  await page.getByRole('button', { name: '登入', exact: true }).click()
+  await expect(username).toBeFocused()
+  await expect(username).toHaveAttribute('aria-invalid', 'true')
+  await expect(username).not.toHaveCSS('box-shadow', 'none')
+  await username.fill('someone')
+  await expect(username).toHaveAttribute('aria-invalid', 'false')
+  await expect(username).toHaveCSS('box-shadow', 'none')
+})
+
 // 登入表單需具可辨識的語義名稱，不因改版出現管理nav或第二套假登入。
 test('anonymous and MFA surfaces have no management navigation', async ({ page }) => {
   await page.goto(base + '/login')

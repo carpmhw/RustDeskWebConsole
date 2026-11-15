@@ -126,6 +126,12 @@ input {
   display: block;
   width: 100%;
 }
+/* 使用者改值離開或送出失敗後才標示不合法（:user-invalid），不在載入或輸入途中提前報錯；
+   起始側加粗線作為顏色以外的形狀提示。 */
+:is(input, select, textarea):user-invalid {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger);
+}
 input::placeholder {
   color: var(--muted);
 }
