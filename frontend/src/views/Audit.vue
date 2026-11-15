@@ -256,7 +256,7 @@ onBeforeUnmount(() => {
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.id">
-                <td>{{ time(row) }}</td>
+                <th scope="row">{{ time(row) }}</th>
                 <td>{{ userText(row) }}</td>
                 <td>
                   {{

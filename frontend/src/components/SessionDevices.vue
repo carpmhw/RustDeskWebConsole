@@ -106,12 +106,12 @@ onBeforeUnmount(() => {
         </thead>
         <tbody>
           <tr v-for="row in rows" :key="row.id" data-testid="session-row">
-            <td>
+            <th scope="row">
               {{ device(row) }}
               <span v-if="row.current" class="status-pill status-pill--success">{{
                 t('sessionsUI.current')
               }}</span>
-            </td>
+            </th>
             <td>{{ row.ip ?? '—' }}</td>
             <td>{{ time(row.signed_in_at) }}</td>
             <td>{{ time(row.last_used_at) }}</td>

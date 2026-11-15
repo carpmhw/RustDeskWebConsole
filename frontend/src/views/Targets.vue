@@ -341,9 +341,9 @@ onBeforeUnmount(() => {
                   @change="select(row, $event)"
                 />
               </td>
-              <td>
+              <th scope="row">
                 {{ row.name }}<small class="muted">{{ row.tags.join(', ') }}</small>
-              </td>
+              </th>
               <td>{{ row.rustdesk_id }}</td>
               <td>{{ serverName(row.server_id) }}</td>
               <td>{{ row.group_name || '—' }}</td>

@@ -101,8 +101,16 @@ test('admin views, filters and exports audit and changes retention', async ({ pa
     // 窄螢幕下表格在自己的容器捲動，頁面不水平溢出。
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    // 列標頭（時間）在表格容器捲到最右側後仍固定於起始側，保留該列識別。
+    const scroller = page.locator('.table-scroll').first()
+    await scroller.evaluate((node) => node.scrollTo({ left: node.scrollWidth }))
+    expect(await scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
+    const rowHeader = page.locator('tbody tr').first().getByRole('rowheader')
+    const scrollerBox = (await scroller.boundingBox())!
+    expect(Math.abs((await rowHeader.boundingBox())!.x - scrollerBox.x)).toBeLessThanOrEqual(1)
+    await scroller.evaluate((node) => node.scrollTo({ left: 0 }))
     // 窄螢幕的動作欄不逐字折行：單一儲存格維持一行高。
-    const action = page.locator('tbody tr').first().locator('td').nth(2)
+    const action = page.locator('tbody tr').first().locator('th, td').nth(2)
     const lineHeight = parseFloat(
       await action.evaluate((node) => getComputedStyle(node).lineHeight),
     )

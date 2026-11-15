@@ -60,3 +60,11 @@ it('contains scroll inside modal dialogs and their backdrop', () => {
     /dialog::backdrop \{\n {2}overflow: hidden;\n {2}overscroll-behavior: contain;\n\}/,
   )
 })
+
+// 管理表格的列標頭需 sticky 於起始側；collapse 模式下框線不隨 sticky 儲存格移動，須用 separate。
+it('keeps management table row headers sticky with separate borders', () => {
+  expect(css).toMatch(/\.management-table \{[^}]*border-collapse: separate;[^}]*border-spacing: 0;/)
+  expect(css).toMatch(
+    /\.management-table tbody th \{[^}]*position: sticky;[^}]*inset-inline-start: 0;[^}]*background: var\(--surface\);/,
+  )
+})

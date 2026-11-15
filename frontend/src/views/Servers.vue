@@ -337,9 +337,9 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="row.id">
-              <td>
+              <th scope="row">
                 {{ row.name }}<small class="muted">{{ row.transport.toUpperCase() }}</small>
-              </td>
+              </th>
               <td>{{ row.id_server }}</td>
               <td>{{ row.relay_server }}</td>
               <td>

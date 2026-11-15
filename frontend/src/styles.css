@@ -869,7 +869,7 @@ dialog::backdrop {
   min-width: 0;
 }
 /* 稽核表的短欄位不逐字折行，窄螢幕改由表格容器橫向捲動；細節欄保留折行。 */
-.audit-table td:not(:last-child) {
+.audit-table :is(td, th):not(:last-child) {
   white-space: nowrap;
 }
 .management-dialog {
@@ -1007,8 +1007,10 @@ textarea {
   max-width: 100%;
   overflow-x: auto;
 }
+/* separate + 0 間距：sticky 列標頭的框線才會隨儲存格移動（collapse 下框線屬於表格）。 */
 .management-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   font-size: var(--fs-sm);
 }
@@ -1019,19 +1021,29 @@ textarea {
   border-bottom: 1px solid var(--soft-line);
   vertical-align: middle;
 }
-.management-table th {
+.management-table thead th {
   background: var(--raised);
   color: var(--muted);
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
-.management-table td small {
-  display: block;
+/* 列標頭（scope=row）外觀同資料格；窄螢幕橫向捲動時固定在起始側，保留該列識別。 */
+.management-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
 }
-.management-table td .status-pill {
+.management-table :is(td, th) small {
+  display: block;
+  font-weight: 400;
+}
+.management-table :is(td, th) .status-pill {
   margin-left: var(--space-1);
 }
-.management-table tbody tr:last-child td {
+.management-table tbody tr:last-child :is(td, th) {
   border-bottom: 0;
 }
 .row-actions {

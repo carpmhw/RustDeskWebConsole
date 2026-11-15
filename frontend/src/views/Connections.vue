@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.id">
-                <td>{{ row.user_name ?? t('auditUI.deleted') }}</td>
+                <th scope="row">{{ row.user_name ?? t('auditUI.deleted') }}</th>
                 <td>{{ row.target_name ?? t('auditUI.deleted') }}</td>
                 <td>{{ started(row) }}</td>
                 <td>{{ elapsed(row) }}</td>

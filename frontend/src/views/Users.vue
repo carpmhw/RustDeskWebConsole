@@ -333,14 +333,14 @@ onBeforeUnmount(() => {
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.id" data-testid="user-row">
-                <td>
+                <th scope="row">
                   {{ row.username }}<span v-if="row.id === me">{{ t('usersUI.you') }}</span>
                   <span
                     v-if="row.password_change_required"
                     class="status-pill status-pill--warning"
                     >{{ t('usersUI.pendingChange') }}</span
                   >
-                </td>
+                </th>
                 <td>{{ row.email ?? '' }}</td>
                 <td>{{ t('roles.' + row.role) }}</td>
                 <td>{{ t(row.is_active ? 'usersUI.active' : 'usersUI.inactive') }}</td>
