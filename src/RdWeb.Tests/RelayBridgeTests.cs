@@ -135,6 +135,26 @@ public sealed class RelayBridgeTests
         Assert.Equal(WebSocketCloseStatus.PolicyViolation, browser.SentCloseStatus);
     }
 
+    // 撤銷早於 bridge 註冊 drain callback 時（中繼已開始、callback 尚未註冊的空檔），已到達的瀏覽器輸入也不得轉送到受控端。
+    [Fact]
+    public async Task DrainCancelledBeforeRunNeverForwardsBrowserInput()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var drain = new CancellationTokenSource();
+        using var browser = new ScriptSocket();
+        using var peer = new ScriptSocket(abortOnCancel: true);
+        await using var upstream = new SocketSession(peer);
+        for (var index = 0; index < 8; index++) browser.Input.Writer.TryWrite(new([0, 0, 0, 0], WebSocketMessageType.Binary, true));
+        drain.Cancel();
+
+        await new RelayBridge().RunAsync(browser, upstream, timeout.Token, drain: drain.Token,
+            closeBrowser: () => browser.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, "access revoked", CancellationToken.None))
+            .WaitAsync(timeout.Token);
+
+        Assert.False(peer.Output.Reader.TryRead(out _));
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, browser.SentCloseStatus);
+    }
+
     // Close frame 可帶瀏覽器端的關閉代碼，供測試閒置等由瀏覽器主動結束的情境。
     internal sealed record Frame(byte[] Data, WebSocketMessageType Type, bool End, WebSocketCloseStatus? CloseStatus = null);
 

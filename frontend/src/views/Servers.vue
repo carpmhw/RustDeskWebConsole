@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import type { ServerRow, ServerProbe } from '../api/management'
 import { DEFAULT_PORTS, joinEndpoint, splitEndpoint, switchedPort } from '../utils/serverEndpoint'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 defineOptions({ name: 'ServersView' })
 const { t, te } = useI18n()
 const auth = useAuthStore()
@@ -15,6 +16,7 @@ const error = ref<string | null>(null)
 const success = ref(false)
 const probes = ref<Record<string, ServerProbe>>({})
 const draft = ref(emptyDraft())
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const controller = new AbortController()
 let alive = true
 const errorText = computed(() =>
@@ -112,7 +114,12 @@ async function save(): Promise<void> {
 }
 // 刪除需使用者操作確認，版本查詢只有非敏感整數。
 async function remove(row: ServerRow): Promise<void> {
-  if (busy.value || !window.confirm(t('manage.confirmDelete', { name: row.name }))) return
+  if (
+    busy.value ||
+    !(await confirmDialog.value?.ask(t('manage.confirmDelete', { name: row.name }))) ||
+    !alive
+  )
+    return
   busy.value = true
   error.value = null
   try {
@@ -330,9 +337,9 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="row.id">
-              <td>
+              <th scope="row">
                 {{ row.name }}<small class="muted">{{ row.transport.toUpperCase() }}</small>
-              </td>
+              </th>
               <td>{{ row.id_server }}</td>
               <td>{{ row.relay_server }}</td>
               <td>
@@ -368,5 +375,10 @@ onBeforeUnmount(() => {
         </table>
       </div>
     </section>
+    <ConfirmDialog
+      ref="confirmDialog"
+      :title="t('manage.confirmDeleteTitle')"
+      :confirm-label="t('manage.remove')"
+    />
   </main>
 </template>

@@ -41,6 +41,8 @@
   --form-width: 560px;
   --panel-radius: 14px;
   --control-radius: 8px;
+  /* 勾選框等原生控制項改用品牌主色，深色主題隨 --primary 一併切換。 */
+  accent-color: var(--primary);
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
@@ -275,10 +277,8 @@ p {
 .navigation-toggle {
   display: none;
 }
-.appearance-menu {
-  position: relative;
-}
-.appearance-menu > summary {
+.appearance-trigger {
+  anchor-name: --appearance-trigger;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
@@ -286,14 +286,21 @@ p {
   background: var(--surface);
   white-space: nowrap;
 }
-/* 導覽浮層只用第二層，原生敏感dialog仍由瀏覽器top layer管理。 */
-.appearance-menu > .display-preferences {
-  position: absolute;
-  right: 0;
-  top: calc(100% + var(--space-1));
-  z-index: 2;
-  width: min(360px, calc(100vw - 32px));
+/* 外觀選單是 auto popover；不設定 display，保留 UA 對關閉狀態的隱藏。
+   不支援 anchor() 的瀏覽器會沿用前一個固定偏移宣告。 */
+.appearance-panel {
+  position: fixed;
+  inset: auto;
+  top: 72px;
+  top: anchor(--appearance-trigger bottom);
+  right: var(--space-3);
+  right: anchor(--appearance-trigger right);
+  margin: var(--space-1) 0 0;
+  width: min(360px, calc(100dvw - 32px));
+  max-height: calc(100dvh - 96px); /* px-allow: 頁首高度加上下留白 */
+  overflow: auto;
   padding: var(--space-3);
+  color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--panel-radius);
@@ -375,10 +382,17 @@ p {
   white-space: nowrap;
   font-size: var(--fs-sm);
 }
-.app-nav a.router-link-exact-active {
+/* RouterLink 於精確符合時自動輸出 aria-current="page"，以語義屬性作樣式掛點。 */
+.app-nav a[aria-current='page'] {
   background: var(--subtle);
   color: var(--ink);
   font-weight: 600;
+}
+/* 強制色彩模式會移除背景，改以系統色外框保留目前頁面指示。 */
+@media (forced-colors: active) {
+  .app-nav a[aria-current='page'] {
+    outline: 2px solid LinkText;
+  }
 }
 .header-actions {
   display: flex;
@@ -651,6 +665,14 @@ summary {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+/* modal 開啟時阻止捲動串接到背景頁；::backdrop 須成為捲動容器才會套用 overscroll-behavior。 */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
 .recovery-dialog {
   background: var(--surface);
   color: var(--ink);
@@ -847,7 +869,7 @@ summary {
   min-width: 0;
 }
 /* 稽核表的短欄位不逐字折行，窄螢幕改由表格容器橫向捲動；細節欄保留折行。 */
-.audit-table td:not(:last-child) {
+.audit-table :is(td, th):not(:last-child) {
   white-space: nowrap;
 }
 .management-dialog {
@@ -857,7 +879,7 @@ summary {
   border-radius: var(--panel-radius);
   width: calc(100% - 32px);
   max-width: 760px;
-  max-height: 90vh;
+  max-height: 90dvh;
   overflow: auto;
   padding: var(--space-4);
 }
@@ -985,8 +1007,10 @@ textarea {
   max-width: 100%;
   overflow-x: auto;
 }
+/* separate + 0 間距：sticky 列標頭的框線才會隨儲存格移動（collapse 下框線屬於表格）。 */
 .management-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   font-size: var(--fs-sm);
 }
@@ -997,19 +1021,29 @@ textarea {
   border-bottom: 1px solid var(--soft-line);
   vertical-align: middle;
 }
-.management-table th {
+.management-table thead th {
   background: var(--raised);
   color: var(--muted);
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
-.management-table td small {
-  display: block;
+/* 列標頭（scope=row）外觀同資料格；窄螢幕橫向捲動時固定在起始側，保留該列識別。 */
+.management-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
 }
-.management-table td .status-pill {
+.management-table :is(td, th) small {
+  display: block;
+  font-weight: 400;
+}
+.management-table :is(td, th) .status-pill {
   margin-left: var(--space-1);
 }
-.management-table tbody tr:last-child td {
+.management-table tbody tr:last-child :is(td, th) {
   border-bottom: 0;
 }
 .row-actions {

@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePreferencesStore } from '../stores/preferences'
 import { formatTimestamp } from '../utils/dateTime'
 import type { ActiveConnection } from '../api/management'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ConnectionSettings from '../components/ConnectionSettings.vue'
 defineOptions({ name: 'ConnectionsView' })
 
@@ -19,8 +20,7 @@ const done = ref(false)
 const loaded = ref(false)
 // 已連線時間以每秒更新的「現在」計算，不另發 API。
 const now = ref(Date.now())
-const pending = ref<ActiveConnection | null>(null)
-const confirmDialog = ref<HTMLDialogElement | null>(null)
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const controller = new AbortController()
 let ticker: ReturnType<typeof setInterval> | null = null
 let alive = true
@@ -53,21 +53,13 @@ function refresh(): void {
   done.value = false
   void load()
 }
-// 開啟確認對話框；實際中斷只在確認後送出。
-function ask(row: ActiveConnection): void {
-  pending.value = row
-  confirmDialog.value?.showModal()
-}
-// 關閉確認對話框而不中斷。
-function dismiss(): void {
-  confirmDialog.value?.close()
-  pending.value = null
-}
-// 確認後強制中斷，完成後重新讀取列表。
-async function terminate(): Promise<void> {
-  const row = pending.value
-  dismiss()
-  if (!row || busy.value) return
+// 經確認對話框同意後才強制中斷，完成後重新讀取列表。
+async function terminate(row: ActiveConnection): Promise<void> {
+  const text = t('connectionsUI.confirmText', {
+    user: row.user_name ?? '—',
+    target: row.target_name ?? '—',
+  })
+  if (busy.value || !(await confirmDialog.value?.ask(text)) || !alive) return
   busy.value = true
   error.value = null
   done.value = false
@@ -148,7 +140,7 @@ onBeforeUnmount(() => {
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.id">
-                <td>{{ row.user_name ?? t('auditUI.deleted') }}</td>
+                <th scope="row">{{ row.user_name ?? t('auditUI.deleted') }}</th>
                 <td>{{ row.target_name ?? t('auditUI.deleted') }}</td>
                 <td>{{ started(row) }}</td>
                 <td>{{ elapsed(row) }}</td>
@@ -162,7 +154,7 @@ onBeforeUnmount(() => {
                   }}
                 </td>
                 <td>
-                  <button type="button" class="danger" :disabled="busy" @click="ask(row)">
+                  <button type="button" class="danger" :disabled="busy" @click="terminate(row)">
                     {{ t('connectionsUI.terminate') }}
                   </button>
                 </td>
@@ -176,27 +168,10 @@ onBeforeUnmount(() => {
       </section>
       <ConnectionSettings />
     </div>
-    <dialog
+    <ConfirmDialog
       ref="confirmDialog"
-      class="management-dialog"
-      :aria-label="t('connectionsUI.confirmTitle')"
-      @close="pending = null"
-    >
-      <h2>{{ t('connectionsUI.confirmTitle') }}</h2>
-      <p v-if="pending">
-        {{
-          t('connectionsUI.confirmText', {
-            user: pending.user_name ?? '—',
-            target: pending.target_name ?? '—',
-          })
-        }}
-      </p>
-      <div class="button-row">
-        <button type="button" class="danger" @click="terminate">
-          {{ t('connectionsUI.terminate') }}
-        </button>
-        <button type="button" @click="dismiss">{{ t('usersUI.cancel') }}</button>
-      </div>
-    </dialog>
+      :title="t('connectionsUI.confirmTitle')"
+      :confirm-label="t('connectionsUI.terminate')"
+    />
   </main>
 </template>

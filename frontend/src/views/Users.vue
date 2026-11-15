@@ -333,14 +333,14 @@ onBeforeUnmount(() => {
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.id" data-testid="user-row">
-                <td>
+                <th scope="row">
                   {{ row.username }}<span v-if="row.id === me">{{ t('usersUI.you') }}</span>
                   <span
                     v-if="row.password_change_required"
                     class="status-pill status-pill--warning"
                     >{{ t('usersUI.pendingChange') }}</span
                   >
-                </td>
+                </th>
                 <td>{{ row.email ?? '' }}</td>
                 <td>{{ t('roles.' + row.role) }}</td>
                 <td>{{ t(row.is_active ? 'usersUI.active' : 'usersUI.inactive') }}</td>
@@ -399,10 +399,12 @@ onBeforeUnmount(() => {
     <dialog
       ref="devicesDialog"
       class="management-dialog"
-      :aria-label="t('sessionsUI.title')"
+      aria-labelledby="devices-title"
       @close="devicesFor = null"
     >
-      <h2>{{ t('sessionsUI.titleFor', { user: devicesFor?.username ?? '' }) }}</h2>
+      <h2 id="devices-title">
+        {{ t('sessionsUI.titleFor', { user: devicesFor?.username ?? '' }) }}
+      </h2>
       <SessionDevices v-if="devicesFor" :key="devicesFor.id" :user-id="devicesFor.id" />
       <div class="button-row">
         <button type="button" @click="devicesDialog?.close()">{{ t('sessionsUI.close') }}</button>

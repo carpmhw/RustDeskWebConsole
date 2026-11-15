@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { i18n, readLocale, type Locale } from '../i18n'
-import { readColorMode, resolveTheme, saveColorMode, type ColorMode } from '../utils/theme'
+import {
+  parseColorMode,
+  readColorMode,
+  resolveTheme,
+  saveColorMode,
+  type ColorMode,
+} from '../utils/theme'
 import { readTimeZone, saveTimeZone } from '../utils/dateTime'
 
 // 只存非敏感偏好，封鎖 localStorage 時由工具安全回退。
@@ -16,9 +22,14 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const locale = ref<Locale>(readLocale(storage))
   const timeZone = ref(readTimeZone(storage, window.RDWEB_CONFIG?.defaultDisplayTimeZone))
   const media = window.matchMedia('(prefers-color-scheme: dark)')
-  // 實際主題與手動／系統選擇分開，系統事件不覆寫手動偏好。
+  // 目前系統偏好，供「跟隨系統」選項顯示解析結果。
+  const systemDark = ref(media.matches)
+  // 實際主題與手動／系統選擇分開，系統事件不覆寫手動偏好；meta 同步供原生 UI 使用。
   function applyTheme(): void {
-    document.documentElement.dataset.theme = resolveTheme(colorMode.value, media.matches)
+    systemDark.value = media.matches
+    const theme = resolveTheme(colorMode.value, media.matches)
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme)
   }
   // 使用已核准的三種外觀，儲存僅為非敏感設定。
   function setColorMode(value: ColorMode): void {
@@ -43,7 +54,13 @@ export const usePreferencesStore = defineStore('preferences', () => {
     timeZone.value = value
   }
   media.addEventListener('change', applyTheme)
+  // 其他分頁變更外觀時同步；key 為 null 代表儲存被整批清除，回到跟隨系統。
+  window.addEventListener('storage', (event) => {
+    if (event.key !== 'rdweb.colorMode' && event.key !== null) return
+    colorMode.value = parseColorMode(event.newValue)
+    applyTheme()
+  })
   applyTheme()
   setLocale(locale.value)
-  return { colorMode, locale, timeZone, setColorMode, setLocale, setTimeZone }
+  return { colorMode, systemDark, locale, timeZone, setColorMode, setLocale, setTimeZone }
 })

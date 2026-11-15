@@ -47,7 +47,7 @@ test('all non-streaming pages adapt to both locales themes and four widths', asy
   try {
     await page.goto(base + '/login')
     const appearance = page.getByTestId('appearance-menu')
-    await appearance.locator('summary').click()
+    await appearance.locator('.appearance-trigger').click()
     await appearance.locator('[data-theme-choice="system"]').click()
     for (const locale of ['zh-TW', 'en']) {
       await appearance.getByLabel(/^(語言|Language)$/).selectOption(locale)
