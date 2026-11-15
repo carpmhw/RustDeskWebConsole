@@ -35,6 +35,18 @@ public sealed class RelayBridge
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var upstreamLifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var draining = 0;
+        var drainRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // 在觸發撤銷的同一執行緒同步切斷上游並改為丟棄瀏覽器資料；若延至延續排程才切斷，
+        // 撤銷 API 回傳後仍可能有瀏覽器輸入搶先轉送到受控端。
+        // 先標記 drain 再取消，因取消上游會令中繼隨即結束，下方須以 drain 是否已觸發選擇收尾路徑。
+        // 必須在啟動任何方向的中繼前註冊：否則撤銷落在「中繼已開始、callback 尚未註冊」的空檔時，
+        // 期間到達的瀏覽器輸入仍會轉送；已取消的 token 註冊時會立即同步執行 callback。
+        using var drainRegistration = drain.Register(() =>
+        {
+            drainRequested.TrySetResult();
+            Volatile.Write(ref draining, 1);
+            upstreamLifetime.Cancel();
+        });
         var toBrowser = CreateQueue();
         var toTarget = CreateQueue();
         var readTarget = ProduceAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toBrowser.Writer, true, upstream.Transport, upstreamLifetime.Token);
@@ -43,16 +55,6 @@ public sealed class RelayBridge
         var sendBrowser = ConsumeAsync(null, browser, toBrowser.Reader, true, upstream.Transport, progress, lifetime.Token, ready);
         var sendTarget = ConsumeAsync(upstream.TcpRelayStream, upstream.WebSocketRelay, toTarget.Reader, false, upstream.Transport, progress, upstreamLifetime.Token, ready);
         var consumers = new[] { sendBrowser, sendTarget };
-        var drainRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        // 在觸發撤銷的同一執行緒同步切斷上游並改為丟棄瀏覽器資料；若延至延續排程才切斷，
-        // 撤銷 API 回傳後仍可能有瀏覽器輸入搶先轉送到受控端。
-        // 先標記 drain 再取消，因取消上游會令中繼隨即結束，下方須以 drain 是否已觸發選擇收尾路徑。
-        using var drainRegistration = drain.Register(() =>
-        {
-            drainRequested.TrySetResult();
-            Volatile.Write(ref draining, 1);
-            upstreamLifetime.Cancel();
-        });
         try
         {
             var relayEnded = Task.WhenAny(consumers);
