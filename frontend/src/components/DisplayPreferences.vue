@@ -11,6 +11,10 @@ const id = useId()
 const modes: ColorMode[] = ['light', 'dark', 'system']
 // 沿原時區工具保留合法別名，不因Intl列表缺少目前值而清空選項。
 const zones = computed(() => displayTimeZones(preferences.timeZone))
+// 「跟隨系統」一併顯示目前解析結果，減少使用者猜測實際套用的主題。
+const systemLabel = computed(() =>
+  t('systemCurrent', { theme: t(preferences.systemDark ? 'dark' : 'light') }),
+)
 
 // 只接受已支援的兩語系，未知DOM事件恢復目前選擇而不污染store。
 function changeLocale(event: Event): void {
@@ -40,7 +44,7 @@ function changeZone(event: Event): void {
           :aria-pressed="preferences.colorMode === mode"
           @click="preferences.setColorMode(mode)"
         >
-          {{ t(mode) }}
+          {{ mode === 'system' ? systemLabel : t(mode) }}
         </button>
       </div>
     </fieldset>

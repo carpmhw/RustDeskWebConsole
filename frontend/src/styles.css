@@ -41,6 +41,8 @@
   --form-width: 560px;
   --panel-radius: 14px;
   --control-radius: 8px;
+  /* 勾選框等原生控制項改用品牌主色，深色主題隨 --primary 一併切換。 */
+  accent-color: var(--primary);
 }
 :root[data-theme='dark'] {
   color-scheme: dark;

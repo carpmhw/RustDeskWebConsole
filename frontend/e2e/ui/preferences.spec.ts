@@ -77,6 +77,38 @@ test('manual mode ignores system changes', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 })
 
+// 跟隨系統的選項需顯示目前解析結果，color-scheme meta與data-theme同步供原生UI使用。
+test('system choice shows the resolved theme and syncs the color-scheme meta', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto(fixture)
+  const system = page.locator('[data-theme-choice="system"]')
+  const meta = page.locator('meta[name="color-scheme"]')
+  await system.click()
+  await expect(system).toHaveText('跟隨系統（目前為淺色）')
+  await expect(meta).toHaveAttribute('content', 'light')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(system).toHaveText('跟隨系統（目前為深色）')
+  await expect(meta).toHaveAttribute('content', 'dark')
+  await page.locator('[data-theme-choice="light"]').click()
+  await expect(meta).toHaveAttribute('content', 'light')
+})
+
+// 另一分頁變更外觀模式時本頁即時同步，不需重新整理。
+test('color mode follows changes from another tab', async ({ page, context }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto(fixture)
+  const other = await context.newPage()
+  await other.emulateMedia({ colorScheme: 'light' })
+  await other.goto(fixture)
+  await other.locator('[data-theme-choice="dark"]').click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('[data-theme-choice="dark"]')).toHaveAttribute('aria-pressed', 'true')
+  await other.locator('[data-theme-choice="system"]').click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('[data-theme-choice="system"]')).toHaveAttribute('aria-pressed', 'true')
+  await other.close()
+})
+
 // 真元件必須沿原三個storage keys儲存並於reload恢復，不另造偏好資料來源。
 test('saved display preferences restore after reload', async ({ page }) => {
   await page.goto(fixture)
