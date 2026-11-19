@@ -6,7 +6,7 @@ RUN corepack pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN corepack pnpm build
 
-FROM nginx:stable-trixie@sha256:42c68eab6f7e22611786a9fe1d1c019e275c50185bd54b8f75dc2b9184322703
+FROM nginx:stable-trixie@sha256:7fad6c0dff97965adbddf28027d934b111fc0221a554315dc274712f3fba24d3
 COPY --from=build /source/dist/ /usr/share/nginx/html/
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/nginx/html/
 COPY deploy/dev/nginx.conf.template deploy/dev/ingress.conf.template /etc/rdweb/
